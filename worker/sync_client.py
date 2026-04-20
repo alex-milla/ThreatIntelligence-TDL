@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 
 def get_keywords(host_url: str, api_key: str) -> list[dict]:
     """Fetch active keywords from the hosting API."""
-    url = f"{host_url}/api/v1/keywords"
+    url = f"{host_url}/api/v1/keywords.php"
     headers = {"X-API-Key": api_key}
     r = requests.get(url, headers=headers, timeout=30)
     r.raise_for_status()
@@ -22,7 +22,7 @@ def send_matches(host_url: str, api_key: str, matches: list[dict]) -> bool:
     """Send matches to the hosting API. Returns True on success."""
     if not matches:
         return True
-    url = f"{host_url}/api/v1/matches"
+    url = f"{host_url}/api/v1/matches.php"
     headers = {
         "X-API-Key": api_key,
         "Content-Type": "application/json",
@@ -42,7 +42,7 @@ def send_matches(host_url: str, api_key: str, matches: list[dict]) -> bool:
 
 def send_heartbeat(host_url: str, api_key: str, stats: dict) -> bool:
     """Send worker heartbeat/status to hosting."""
-    url = f"{host_url}/api/v1/heartbeat"
+    url = f"{host_url}/api/v1/heartbeat.php"
     headers = {
         "X-API-Key": api_key,
         "Content-Type": "application/json",
