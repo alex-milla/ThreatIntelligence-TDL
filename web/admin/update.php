@@ -18,22 +18,58 @@ $info = '';
 $versionFile = __DIR__ . '/../../VERSION';
 $branch = 'main';
 
-function fetchUrl(string $url, string $token = ''): ?string {
+function fetchUrl(string $url, string $token = ''): array {
+    $result = ['success' => false, 'data' => '', 'error' => ''];
+    
+    $headers = [
+        'User-Agent: ThreatIntelligence-TDL-Updater',
+    ];
+    if ($token) {
+        $headers[] = "Authorization: Bearer {$token}";
+    }
+    
+    // Try cURL first (most reliable on shared hosting)
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        $data = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+        
+        if ($data !== false && $httpCode >= 200 && $httpCode < 300) {
+            $result['success'] = true;
+            $result['data'] = trim($data);
+            return $result;
+        }
+        $result['error'] = "cURL error: {$curlError} (HTTP {$httpCode})";
+        return $result;
+    }
+    
+    // Fallback to file_get_contents
     $opts = [
         'http' => [
             'method' => 'GET',
-            'header' => [
-                'User-Agent: ThreatIntelligence-TDL-Updater',
-            ],
+            'header' => $headers,
             'timeout' => 15,
+        ],
+        'ssl' => [
+            'verify_peer' => true,
         ]
     ];
-    if ($token) {
-        $opts['http']['header'][] = "Authorization: Bearer {$token}";
-    }
     $context = stream_context_create($opts);
-    $response = @file_get_contents($url, false, $context);
-    return $response === false ? null : trim($response);
+    $data = @file_get_contents($url, false, $context);
+    if ($data !== false) {
+        $result['success'] = true;
+        $result['data'] = trim($data);
+        return $result;
+    }
+    $result['error'] = 'file_get_contents failed. allow_url_fopen may be disabled.';
+    return $result;
 }
 
 function rrmdir(string $dir): void {
@@ -47,16 +83,22 @@ function rrmdir(string $dir): void {
 }
 
 // Get current installed version
-$currentVersion = file_exists($versionFile) ? trim(file_get_contents($versionFile)) : '0.0.0';
-
-// Fetch latest version from GitHub
-$remoteVersion = fetchUrl("https://raw.githubusercontent.com/{$repoOwner}/{$repoName}/{$branch}/VERSION", $githubToken);
-
-if ($remoteVersion === null) {
-    $error = 'Could not fetch VERSION file from GitHub. Rate limit exceeded, network error, or repository is inaccessible.';
+if (!file_exists($versionFile)) {
+    $error = 'Local VERSION file not found. Please upload the VERSION file to the hosting root.';
+    $currentVersion = '0.0.0';
+} else {
+    $currentVersion = trim(file_get_contents($versionFile));
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $remoteVersion !== null) {
+// Fetch latest version from GitHub
+$remoteResult = fetchUrl("https://raw.githubusercontent.com/{$repoOwner}/{$repoName}/{$branch}/VERSION", $githubToken);
+$remoteVersion = $remoteResult['success'] ? $remoteResult['data'] : null;
+
+if ($remoteVersion === null && empty($error)) {
+    $error = 'Could not fetch VERSION from GitHub. ' . $remoteResult['error'];
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $remoteVersion !== null && empty($error)) {
     if (version_compare($currentVersion, $remoteVersion, '>=')) {
         $info = "You are already on the latest version ({$currentVersion}). No update needed.";
     } else {
@@ -65,13 +107,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $remoteVersion !== null) {
         $extractDir = sys_get_temp_dir() . '/tdl_extract_' . time();
         
         // Download ZIP
-        $zipData = @file_get_contents($zipUrl, false, stream_context_create([
-            'http' => ['header' => ['User-Agent: ThreatIntelligence-TDL-Updater'], 'timeout' => 120]
-        ]));
-        if (!$zipData) {
-            $error = 'Failed to download source ZIP from GitHub.';
+        $zipResult = fetchUrl($zipUrl, $githubToken);
+        if (!$zipResult['success']) {
+            $error = 'Failed to download ZIP: ' . $zipResult['error'];
         } else {
-            file_put_contents($tempZip, $zipData);
+            file_put_contents($tempZip, $zipResult['data']);
             
             // Extract
             $zip = new ZipArchive();
@@ -79,7 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $remoteVersion !== null) {
                 $zip->extractTo($extractDir);
                 $zip->close();
                 
-                // Find extracted root (GitHub adds owner-repo-branch-hash folder)
+                // Find extracted root
                 $entries = array_diff(scandir($extractDir), ['.', '..']);
                 $sourceDir = $extractDir;
                 foreach ($entries as $entry) {
@@ -89,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $remoteVersion !== null) {
                     }
                 }
                 
-                // Copy web/ and worker/ directories
+                // Copy web/ and worker/
                 $copied = 0;
                 foreach (['web', 'worker'] as $dir) {
                     $src = $sourceDir . '/' . $dir;
@@ -111,13 +151,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $remoteVersion !== null) {
                 $srcVersion = $sourceDir . '/VERSION';
                 if (file_exists($srcVersion)) {
                     copy($srcVersion, $versionFile);
+                    $currentVersion = trim(file_get_contents($versionFile));
                 }
                 
                 // Cleanup
                 @unlink($tempZip);
                 rrmdir($extractDir);
                 
-                $info = "Updated successfully from {$currentVersion} to {$remoteVersion}. Files copied: {$copied}.";
+                $info = "Updated successfully to {$currentVersion}. Files copied: {$copied}.";
             } else {
                 $error = 'Failed to open downloaded ZIP.';
             }
@@ -144,12 +185,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $remoteVersion !== null) {
     <?php endif; ?>
     
     <form method="POST">
-        <button type="submit" class="btn">Check & Install Latest Version</button>
+        <button type="submit" class="btn" <?= ($remoteVersion === null) ? 'disabled' : '' ?>>Check & Install Latest Version</button>
     </form>
     
     <p style="margin-top: 15px; color: #666; font-size: 0.9rem;">
-        <strong>Note:</strong> Your database (<code>data/app.db</code>) and config files will not be overwritten. 
-        If the repository is private, edit this file and set <code>$githubToken</code>.
+        <strong>Note:</strong> Your database (<code>data/app.db</code>) and config files will not be overwritten.
+        <?php if ($remoteVersion === null): ?><br><strong>Diagnosis:</strong> Your hosting cannot reach GitHub. Check if cURL is enabled or if outgoing HTTPS is blocked.<?php endif; ?>
     </p>
 </div>
 
