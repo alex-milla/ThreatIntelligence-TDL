@@ -15,13 +15,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     if (strlen($keyword) < 2) {
         $error = 'Keyword must be at least 2 characters.';
     } else {
-            $stmt = $db->prepare("INSERT INTO keywords (user_id, keyword) VALUES (?, ?)");
-            try {
-                $stmt->execute([$userId, $keyword]);
-                $message = 'Keyword added successfully.';
-            } catch (PDOException $e) {
-                $error = 'This keyword already exists in your list.';
-            }
+        $stmt = $db->prepare("INSERT INTO keywords (user_id, keyword) VALUES (?, ?)");
+        try {
+            $stmt->execute([$userId, $keyword]);
+            $message = 'Keyword added successfully.';
+        } catch (PDOException $e) {
+            $error = 'This keyword already exists in your list.';
         }
     }
 }
