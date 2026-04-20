@@ -209,6 +209,16 @@ def main() -> int:
         print("[-] No TLDs to process.")
         return 1
 
+    # 3b. Apply whitelist if configured
+    whitelist_raw = cfg.get("tlds", "whitelist", fallback="").strip()
+    if whitelist_raw:
+        whitelist = [t.strip().lower() for t in whitelist_raw.split(",") if t.strip()]
+        tlds = [t for t in tlds if t in whitelist]
+        print(f"[*] Whitelist applied: {len(tlds)} TLDs to process.")
+        if not tlds:
+            print("[-] No TLDs match the whitelist.")
+            return 1
+
     # 4. Get keywords from hosting
     print("[*] Fetching keywords from hosting ...")
     try:
