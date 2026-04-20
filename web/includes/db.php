@@ -93,5 +93,33 @@ class Database {
             error TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )");
+
+        $db->exec("CREATE TABLE IF NOT EXISTS commands (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            command TEXT NOT NULL,
+            payload TEXT,
+            status TEXT DEFAULT 'pending',
+            result TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            executed_at TEXT
+        )");
+
+        $db->exec("CREATE TABLE IF NOT EXISTS worker_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            level TEXT,
+            message TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )");
+
+        $db->exec("CREATE TABLE IF NOT EXISTS worker_status (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            last_heartbeat TEXT,
+            last_run TEXT,
+            tlds_processed INTEGER DEFAULT 0,
+            domains_processed INTEGER DEFAULT 0,
+            matches_found INTEGER DEFAULT 0,
+            is_running INTEGER DEFAULT 0,
+            version TEXT
+        )");
     }
 }

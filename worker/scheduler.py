@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Main orchestrator: download zones, parse, deduplicate, match keywords, sync to hosting."""
+"""Main orchestrator: download zones, parse, deduplicate, match keywords, sync to hosting.
+Supports daemon mode with command polling from the web panel."""
 
+import argparse
 import configparser
 import json
 import os
 import sqlite3
 import sys
+import time
 from datetime import datetime, timezone, timedelta
 
 import downloader
@@ -168,30 +171,20 @@ def queue_matches(db: sqlite3.Connection, matches: list[dict]) -> None:
     print(f"[!] Queued {len(matches)} matches for retry.")
 
 
-def main() -> int:
-    config_path = os.path.join(os.path.dirname(__file__), "config.ini")
-    if not os.path.exists(config_path):
-        print(f"[-] Config file not found: {config_path}")
-        print("    Copy config.ini.example to config.ini and fill in your credentials.")
-        return 1
-
-    cfg = configparser.ConfigParser()
-    cfg.read(config_path)
-
-    icann_user = cfg.get("icann", "username")
-    icann_pass = cfg.get("icann", "password")
-    host_url = cfg.get("hosting", "url").rstrip("/")
-    api_key = cfg.get("hosting", "api_key")
+def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str) -> dict:
+    """Run one full worker cycle. Returns stats dict."""
     download_dir = cfg.get("worker", "download_dir", fallback="./zones")
     data_dir = cfg.get("worker", "data_dir", fallback="./data")
     max_retries = cfg.getint("worker", "max_retries", fallback=5)
+    icann_user = cfg.get("icann", "username")
+    icann_pass = cfg.get("icann", "password")
 
-    if icann_user == "TU_USUARIO_ICANN" or api_key == "TU_API_KEY":
-        print("[-] Please edit config.ini with real credentials.")
-        return 1
-
-    db_path = os.path.join(data_dir, "worker.db")
-    db = init_local_db(db_path)
+    stats = {
+        "tlds_processed": 0,
+        "domains_processed": 0,
+        "matches_found": 0,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
     print(f"[*] Start: {datetime.now(timezone.utc).isoformat()}")
 
@@ -201,13 +194,13 @@ def main() -> int:
     # 2. Get ICANN token
     token = downloader.get_token(icann_user, icann_pass)
     if not token:
-        return 1
+        return stats
 
     # 3. Get approved TLDs
     tlds = downloader.get_approved_tlds(token)
     if not tlds:
         print("[-] No TLDs to process.")
-        return 1
+        return stats
 
     # 3b. Apply whitelist if configured
     whitelist_raw = cfg.get("tlds", "whitelist", fallback="").strip()
@@ -217,7 +210,7 @@ def main() -> int:
         print(f"[*] Whitelist applied: {len(tlds)} TLDs to process.")
         if not tlds:
             print("[-] No TLDs match the whitelist.")
-            return 1
+            return stats
 
     # 4. Get keywords from hosting
     print("[*] Fetching keywords from hosting ...")
@@ -226,11 +219,11 @@ def main() -> int:
         print(f"[+] Keywords loaded: {len(keywords)}")
     except Exception as e:
         print(f"[-] Failed to fetch keywords: {e}")
-        return 1
+        return stats
 
     if not keywords:
         print("[!] No active keywords on hosting. Nothing to match.")
-        return 0
+        return stats
 
     # 5. Process each TLD
     all_matches = []
@@ -238,6 +231,7 @@ def main() -> int:
         try:
             matches = process_tld(tld, token, download_dir, db, keywords)
             all_matches.extend(matches)
+            stats["tlds_processed"] += 1
         except Exception as e:
             print(f"[-] Exception processing {tld}: {e}")
 
@@ -247,21 +241,135 @@ def main() -> int:
         ok = sync_client.send_matches(host_url, api_key, all_matches)
         if not ok:
             queue_matches(db, all_matches)
+        stats["matches_found"] = len(all_matches)
     else:
         print("[*] No new matches to send.")
 
-    # 7. Send heartbeat
-    stats = {
-        "tlds_processed": len(tlds),
-        "matches_found": len(all_matches),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    try:
-        sync_client.send_heartbeat(host_url, api_key, stats)
-    except Exception:
-        pass
-
+    stats["domains_processed"] = sum(1 for _ in db.execute("SELECT 1 FROM domains_cache"))
     print(f"[*] End: {datetime.now(timezone.utc).isoformat()}")
+    return stats
+
+
+def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str) -> list[dict]:
+    """Poll and execute pending commands from the hosting. Returns log entries."""
+    logs = []
+    try:
+        commands = sync_client.get_commands(host_url, api_key)
+    except Exception as e:
+        logs.append({"level": "error", "message": f"Failed to fetch commands: {e}"})
+        return logs
+
+    if not commands:
+        return logs
+
+    config_path = os.path.join(os.path.dirname(__file__), "config.ini")
+
+    for cmd in commands:
+        cmd_id = cmd["id"]
+        command = cmd["command"]
+        payload = cmd.get("payload", "")
+        logs.append({"level": "info", "message": f"Executing command {cmd_id}: {command}"})
+
+        try:
+            if command == "run_worker":
+                stats = run_worker_cycle(db, cfg, host_url, api_key)
+                result = json.dumps(stats)
+                logs.append({"level": "info", "message": f"Worker cycle completed: {stats['tlds_processed']} TLDs, {stats['matches_found']} matches"})
+
+            elif command == "update_whitelist":
+                if not cfg.has_section("tlds"):
+                    cfg.add_section("tlds")
+                cfg.set("tlds", "whitelist", payload)
+                with open(config_path, "w") as f:
+                    cfg.write(f)
+                result = f"Whitelist updated to: {payload}"
+                logs.append({"level": "info", "message": result})
+
+            elif command == "update_worker":
+                result = "Manual update not implemented. Use git pull."
+                logs.append({"level": "warning", "message": result})
+
+            else:
+                result = f"Unknown command: {command}"
+                logs.append({"level": "warning", "message": result})
+
+            sync_client.mark_command_done(host_url, api_key, cmd_id, "completed", result)
+
+        except Exception as e:
+            error_msg = str(e)
+            logs.append({"level": "error", "message": f"Command {cmd_id} failed: {error_msg}"})
+            sync_client.mark_command_done(host_url, api_key, cmd_id, "failed", error_msg)
+
+    return logs
+
+
+def main() -> int:
+    parser_args = argparse.ArgumentParser(description="ThreatIntelligence-TDL Worker")
+    parser_args.add_argument("--daemon", action="store_true", help="Run in daemon mode with command polling")
+    parser_args.add_argument("--interval", type=int, default=60, help="Polling interval in seconds (daemon mode)")
+    parser_args.add_argument("--once", action="store_true", help="Run one worker cycle and exit (legacy)")
+    args = parser_args.parse_args()
+
+    config_path = os.path.join(os.path.dirname(__file__), "config.ini")
+    if not os.path.exists(config_path):
+        print(f"[-] Config file not found: {config_path}")
+        print("    Copy config.ini.example to config.ini and fill in your credentials.")
+        return 1
+
+    cfg = configparser.ConfigParser()
+    cfg.read(config_path)
+
+    host_url = cfg.get("hosting", "url").rstrip("/")
+    api_key = cfg.get("hosting", "api_key")
+    data_dir = cfg.get("worker", "data_dir", fallback="./data")
+
+    if api_key == "TU_API_KEY":
+        print("[-] Please edit config.ini with real credentials.")
+        return 1
+
+    db_path = os.path.join(data_dir, "worker.db")
+    db = init_local_db(db_path)
+
+    if args.daemon:
+        print(f"[*] Daemon mode started. Polling every {args.interval}s. Press Ctrl+C to stop.")
+        while True:
+            logs = []
+            try:
+                # Poll commands
+                cmd_logs = handle_commands(db, cfg, host_url, api_key)
+                logs.extend(cmd_logs)
+
+                # Send heartbeat
+                sync_client.send_heartbeat(host_url, api_key, {
+                    "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+                    "is_running": 1,
+                    "version": "1.0",
+                })
+
+                # Send logs
+                if logs:
+                    sync_client.send_logs(host_url, api_key, logs)
+
+            except Exception as e:
+                print(f"[-] Daemon loop error: {e}")
+
+            time.sleep(args.interval)
+    else:
+        # One-shot mode: process commands first, then run worker cycle
+        logs = handle_commands(db, cfg, host_url, api_key)
+        if not any(cmd.get("command") == "run_worker" for cmd in sync_client.get_commands(host_url, api_key)):
+            # No explicit run_worker command, execute cycle directly
+            stats = run_worker_cycle(db, cfg, host_url, api_key)
+            logs.append({"level": "info", "message": f"Worker cycle completed: {stats['tlds_processed']} TLDs, {stats['matches_found']} matches"})
+
+        sync_client.send_heartbeat(host_url, api_key, {
+            "last_run": datetime.now(timezone.utc).isoformat(),
+            "is_running": 0,
+            "version": "1.0",
+        })
+        if logs:
+            sync_client.send_logs(host_url, api_key, logs)
+
     db.close()
     return 0
 
