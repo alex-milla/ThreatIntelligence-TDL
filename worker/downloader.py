@@ -6,8 +6,8 @@ import requests
 from datetime import datetime, timezone
 
 AUTH_URL = "https://account-api.icann.org/api/authenticate"
-LINKS_URL = "https://czds-download-api.icann.org/czds/downloads/links"
-BASE_API = "https://czds-download-api.icann.org"
+LINKS_URL = "https://czds-api.icann.org/czds/downloads/links"
+BASE_API = "https://czds-api.icann.org"
 
 
 def get_token(username: str, password: str) -> str | None:
