@@ -202,15 +202,31 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         print("[-] No TLDs to process.")
         return stats
 
-    # 3b. Apply whitelist if configured
-    whitelist_raw = cfg.get("tlds", "whitelist", fallback="").strip()
-    if whitelist_raw:
-        whitelist = [t.strip().lower() for t in whitelist_raw.split(",") if t.strip()]
-        tlds = [t for t in tlds if t in whitelist]
-        print(f"[*] Whitelist applied: {len(tlds)} TLDs to process.")
-        if not tlds:
-            print("[-] No TLDs match the whitelist.")
-            return stats
+    # 3b. Send TLD list to hosting and get active ones
+    try:
+        sync_client.send_tlds(host_url, api_key, tlds)
+        active_tlds = sync_client.get_active_tlds(host_url, api_key)
+        if active_tlds:
+            tlds = [t for t in tlds if t in active_tlds]
+            print(f"[*] Active TLDs from hosting: {len(tlds)}")
+        else:
+            # Fallback to config whitelist if no active TLDs set in web
+            whitelist_raw = cfg.get("tlds", "whitelist", fallback="").strip()
+            if whitelist_raw:
+                whitelist = [t.strip().lower() for t in whitelist_raw.split(",") if t.strip()]
+                tlds = [t for t in tlds if t in whitelist]
+                print(f"[*] Fallback whitelist applied: {len(tlds)} TLDs to process.")
+    except Exception as e:
+        print(f"[-] Failed to sync TLDs with hosting: {e}")
+        # Fallback to config whitelist
+        whitelist_raw = cfg.get("tlds", "whitelist", fallback="").strip()
+        if whitelist_raw:
+            whitelist = [t.strip().lower() for t in whitelist_raw.split(",") if t.strip()]
+            tlds = [t for t in tlds if t in whitelist]
+
+    if not tlds:
+        print("[-] No TLDs to process.")
+        return stats
 
     # 4. Get keywords from hosting
     print("[*] Fetching keywords from hosting ...")

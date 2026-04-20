@@ -72,6 +72,7 @@ require __DIR__ . '/../templates/header.php';
             <input type="hidden" name="action" value="run_worker">
             <button type="submit" class="btn">Run Worker Now</button>
         </form>
+        <a href="/admin/tlds.php" class="btn">Manage TLDs</a>
         <a href="/admin/update.php" class="btn">Check for Updates</a>
     </div>
 </div>

@@ -91,3 +91,26 @@ def send_logs(host_url: str, api_key: str, logs: list[dict]) -> bool:
     payload = {"logs": logs}
     r = requests.post(url, headers=headers, json=payload, timeout=30)
     return r.status_code == 200
+
+
+def send_tlds(host_url: str, api_key: str, tlds: list[str]) -> bool:
+    """Send approved TLD list to the hosting API."""
+    url = f"{host_url}/api/v1/tlds.php"
+    headers = {
+        "X-API-Key": api_key,
+        "Content-Type": "application/json",
+    }
+    r = requests.post(url, headers=headers, json={"tlds": tlds}, timeout=60)
+    return r.status_code == 200
+
+
+def get_active_tlds(host_url: str, api_key: str) -> list[str]:
+    """Fetch active TLDs from the hosting API."""
+    url = f"{host_url}/api/v1/tlds.php?active=1"
+    headers = {"X-API-Key": api_key}
+    r = requests.get(url, headers=headers, timeout=30)
+    r.raise_for_status()
+    data = r.json()
+    if data.get("success"):
+        return [row["name"] for row in data.get("tlds", [])]
+    return []
