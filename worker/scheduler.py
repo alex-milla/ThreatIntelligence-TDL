@@ -319,6 +319,14 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
     return logs
 
 
+def get_version() -> str:
+    version_path = os.path.join(os.path.dirname(__file__), "..", "VERSION")
+    if os.path.exists(version_path):
+        with open(version_path, "r") as f:
+            return f.read().strip()
+    return "unknown"
+
+
 def main() -> int:
     parser_args = argparse.ArgumentParser(description="ThreatIntelligence-TDL Worker")
     parser_args.add_argument("--daemon", action="store_true", help="Run in daemon mode with command polling")
@@ -338,6 +346,7 @@ def main() -> int:
     host_url = cfg.get("hosting", "url").rstrip("/")
     api_key = cfg.get("hosting", "api_key")
     data_dir = cfg.get("worker", "data_dir", fallback="./data")
+    version = get_version()
 
     if api_key == "TU_API_KEY":
         print("[-] Please edit config.ini with real credentials.")
@@ -359,7 +368,7 @@ def main() -> int:
                 sync_client.send_heartbeat(host_url, api_key, {
                     "last_heartbeat": datetime.now(timezone.utc).isoformat(),
                     "is_running": 1,
-                    "version": "1.0",
+                    "version": version,
                 })
 
                 # Send logs
@@ -381,7 +390,7 @@ def main() -> int:
         sync_client.send_heartbeat(host_url, api_key, {
             "last_run": datetime.now(timezone.utc).isoformat(),
             "is_running": 0,
-            "version": "1.0",
+            "version": version,
         })
         if logs:
             sync_client.send_logs(host_url, api_key, logs)

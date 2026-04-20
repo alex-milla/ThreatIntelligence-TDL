@@ -15,16 +15,15 @@ $githubToken = ''; // Set a GitHub personal access token if repo is private
 $error = '';
 $info = '';
 
-$versionFile = __DIR__ . '/../../.version';
+$versionFile = __DIR__ . '/../../VERSION';
 $branch = 'main';
 
-function githubApiGet(string $url, string $token = ''): ?array {
+function fetchUrl(string $url, string $token = ''): ?string {
     $opts = [
         'http' => [
             'method' => 'GET',
             'header' => [
                 'User-Agent: ThreatIntelligence-TDL-Updater',
-                'Accept: application/vnd.github+json',
             ],
             'timeout' => 15,
         ]
@@ -34,8 +33,7 @@ function githubApiGet(string $url, string $token = ''): ?array {
     }
     $context = stream_context_create($opts);
     $response = @file_get_contents($url, false, $context);
-    if ($response === false) return null;
-    return json_decode($response, true);
+    return $response === false ? null : trim($response);
 }
 
 function rrmdir(string $dir): void {
@@ -49,20 +47,18 @@ function rrmdir(string $dir): void {
 }
 
 // Get current installed version
-$currentSha = file_exists($versionFile) ? trim(file_get_contents($versionFile)) : 'none';
+$currentVersion = file_exists($versionFile) ? trim(file_get_contents($versionFile)) : '0.0.0';
 
-// Fetch latest commit from GitHub
-$commitData = githubApiGet("https://api.github.com/repos/{$repoOwner}/{$repoName}/commits/{$branch}", $githubToken);
-$latestSha = $commitData['sha'] ?? '';
-$latestMessage = $commitData['commit']['message'] ?? 'Unknown';
+// Fetch latest version from GitHub
+$remoteVersion = fetchUrl("https://raw.githubusercontent.com/{$repoOwner}/{$repoName}/{$branch}/VERSION", $githubToken);
 
-if (!$latestSha) {
-    $error = 'Could not fetch latest commit from GitHub. Rate limit exceeded or repository is inaccessible.';
+if ($remoteVersion === null) {
+    $error = 'Could not fetch VERSION file from GitHub. Rate limit exceeded, network error, or repository is inaccessible.';
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $latestSha) {
-    if ($currentSha === $latestSha) {
-        $info = 'You are already on the latest version (' . substr($latestSha, 0, 7) . '). No update needed.';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $remoteVersion !== null) {
+    if (version_compare($currentVersion, $remoteVersion, '>=')) {
+        $info = "You are already on the latest version ({$currentVersion}). No update needed.";
     } else {
         $zipUrl = "https://github.com/{$repoOwner}/{$repoName}/archive/{$branch}.zip";
         $tempZip = sys_get_temp_dir() . '/tdl_update_' . time() . '.zip';
@@ -111,14 +107,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $latestSha) {
                     }
                 }
                 
-                // Save new version
-                file_put_contents($versionFile, $latestSha);
+                // Copy VERSION file
+                $srcVersion = $sourceDir . '/VERSION';
+                if (file_exists($srcVersion)) {
+                    copy($srcVersion, $versionFile);
+                }
                 
                 // Cleanup
                 @unlink($tempZip);
                 rrmdir($extractDir);
                 
-                $info = "Updated successfully from {$currentSha} to " . substr($latestSha, 0, 7) . ". Files copied: {$copied}. Commit: " . substr($latestMessage, 0, 60) . "...";
+                $info = "Updated successfully from {$currentVersion} to {$remoteVersion}. Files copied: {$copied}.";
             } else {
                 $error = 'Failed to open downloaded ZIP.';
             }
@@ -129,13 +128,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $latestSha) {
 
 <div class="card">
     <h2>System Update</h2>
-    <p>This checks the latest commit on GitHub <code><?= htmlspecialchars($branch) ?></code> branch and updates the application files.</p>
+    <p>This checks the latest version on GitHub <code><?= htmlspecialchars($branch) ?></code> branch and updates the application files.</p>
     <p><strong>Repository:</strong> <?= htmlspecialchars("{$repoOwner}/{$repoName}") ?></p>
     
     <table style="margin: 15px 0;">
-        <tr><td><strong>Installed version:</strong></td><td><code><?= htmlspecialchars(substr($currentSha, 0, 7)) ?></code></td></tr>
-        <tr><td><strong>Latest version:</strong></td><td><code><?= htmlspecialchars(substr($latestSha, 0, 7)) ?></code></td></tr>
-        <tr><td><strong>Latest commit:</strong></td><td><?= htmlspecialchars($latestMessage) ?></td></tr>
+        <tr><td><strong>Installed version:</strong></td><td><?= htmlspecialchars($currentVersion) ?></td></tr>
+        <tr><td><strong>Latest version:</strong></td><td><?= htmlspecialchars($remoteVersion ?? 'Unknown') ?></td></tr>
     </table>
     
     <?php if ($error): ?>
@@ -146,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $latestSha) {
     <?php endif; ?>
     
     <form method="POST">
-        <button type="submit" class="btn">Check & Install Latest Commit</button>
+        <button type="submit" class="btn">Check & Install Latest Version</button>
     </form>
     
     <p style="margin-top: 15px; color: #666; font-size: 0.9rem;">
