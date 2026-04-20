@@ -33,12 +33,18 @@ def get_approved_tlds(token: str) -> list[str]:
         print(f"[-] Failed to list TLDs: HTTP {r.status_code} - {r.text}")
         return []
     data = r.json()
-    # Response is a list of objects like {"tld": "zip", "link": "..."}
+    # Response is a list of download URLs like "https://czds-api.icann.org/czds/downloads/zip.zone"
     tlds = []
     for item in data:
-        tld = item.get("tld", "")
-        if tld:
-            tlds.append(tld.lower())
+        if isinstance(item, str):
+            # Extract TLD from URL: https://.../downloads/zip.zone -> zip
+            tld = item.rsplit("/", 1)[-1].replace(".zone", "").lower()
+            if tld:
+                tlds.append(tld)
+        elif isinstance(item, dict):
+            tld = item.get("tld", "")
+            if tld:
+                tlds.append(tld.lower())
     print(f"[+] Approved TLDs found: {len(tlds)}")
     return tlds
 
