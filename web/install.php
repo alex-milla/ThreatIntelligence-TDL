@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/includes/db.php';
+require_once __DIR__ . '/includes/db.php';
 
 $step = $_GET['step'] ?? 'check';
 $error = '';
