@@ -1,0 +1,17 @@
+# Worker
+worker/zones/
+worker/data/
+worker/config.ini
+
+# Web
+web/data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

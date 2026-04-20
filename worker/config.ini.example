@@ -1,0 +1,14 @@
+[icann]
+username = TU_USUARIO_ICANN
+password = TU_PASSWORD_ICANN
+
+[hosting]
+url = https://tudominio.com
+api_key = TU_API_KEY
+
+[worker]
+download_dir = ./zones
+data_dir = ./data
+batch_size = 10000
+max_retries = 5
+retry_delay_seconds = 300

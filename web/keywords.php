@@ -1,0 +1,106 @@
+<?php
+require __DIR__ . '/includes/db.php';
+require __DIR__ . '/includes/auth.php';
+requireAuth();
+
+$db = Database::get();
+$userId = (int)$_SESSION['user_id'];
+
+// Get user's max keyword limit
+$stmt = $db->prepare("SELECT max_keywords FROM users WHERE id = ?");
+$stmt->execute([$userId]);
+$maxKeywords = (int)$stmt->fetchColumn();
+
+$message = '';
+$error = '';
+
+// Add keyword
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add') {
+    $keyword = strtolower(trim($_POST['keyword'] ?? ''));
+    if (strlen($keyword) < 2) {
+        $error = 'Keyword must be at least 2 characters.';
+    } else {
+        $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE user_id = ?");
+        $stmt->execute([$userId]);
+        $currentCount = (int)$stmt->fetchColumn();
+        
+        if ($currentCount >= $maxKeywords) {
+            $error = "You have reached your limit of {$maxKeywords} keywords.";
+        } else {
+            $stmt = $db->prepare("INSERT INTO keywords (user_id, keyword) VALUES (?, ?)");
+            try {
+                $stmt->execute([$userId, $keyword]);
+                $message = 'Keyword added successfully.';
+            } catch (PDOException $e) {
+                $error = 'This keyword already exists in your list.';
+            }
+        }
+    }
+}
+
+// Delete keyword
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+    $keywordId = (int)($_POST['keyword_id'] ?? 0);
+    $stmt = $db->prepare("DELETE FROM keywords WHERE id = ? AND user_id = ?");
+    $stmt->execute([$keywordId, $userId]);
+    $message = 'Keyword deleted.';
+}
+
+// List keywords
+$stmt = $db->prepare("SELECT id, keyword, match_count, created_at FROM keywords WHERE user_id = ? ORDER BY created_at DESC");
+$stmt->execute([$userId]);
+$keywords = $stmt->fetchAll();
+
+$pageTitle = 'My Keywords';
+require __DIR__ . '/templates/header.php';
+?>
+
+<div class="card">
+    <h2>My Keywords (<?= count($keywords) ?> / <?= $maxKeywords ?>)</h2>
+    
+    <?php if ($message): ?>
+        <div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
+    <?php endif; ?>
+    <?php if ($error): ?>
+        <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
+    <?php endif; ?>
+    
+    <form method="POST" style="display: flex; gap: 10px; margin-bottom: 20px;">
+        <input type="hidden" name="action" value="add">
+        <input type="text" name="keyword" placeholder="e.g. santander, nasa, caixabank" required style="flex: 1;">
+        <button type="submit" class="btn">Add Keyword</button>
+    </form>
+    
+    <?php if (empty($keywords)): ?>
+        <p>No keywords yet. Add your first keyword above.</p>
+    <?php else: ?>
+        <table>
+            <thead>
+                <tr>
+                    <th>Keyword</th>
+                    <th>Matches</th>
+                    <th>Added</th>
+                    <th style="width: 100px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($keywords as $k): ?>
+                <tr>
+                    <td><?= htmlspecialchars($k['keyword']) ?></td>
+                    <td><?= (int)$k['match_count'] ?></td>
+                    <td><?= htmlspecialchars($k['created_at']) ?></td>
+                    <td>
+                        <form method="POST" style="display: inline;">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
+                            <button type="submit" class="btn btn-danger btn-small" onclick="return confirm('Delete this keyword?')">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php endif; ?>
+</div>
+
+<?php require __DIR__ . '/templates/footer.php'; ?>

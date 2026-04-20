@@ -1,0 +1,8 @@
+# Protect data directory
+RewriteEngine On
+RewriteRule ^data/ - [F,L]
+
+# Optional: Pretty URLs (if supported by hosting)
+# RewriteCond %{REQUEST_FILENAME} !-f
+# RewriteCond %{REQUEST_FILENAME} !-d
+# RewriteRule ^(.*)$ index.php [QSA,L]
