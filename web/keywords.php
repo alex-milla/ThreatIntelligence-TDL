@@ -6,11 +6,6 @@ requireAuth();
 $db = Database::get();
 $userId = (int)$_SESSION['user_id'];
 
-// Get user's max keyword limit
-$stmt = $db->prepare("SELECT max_keywords FROM users WHERE id = ?");
-$stmt->execute([$userId]);
-$maxKeywords = (int)$stmt->fetchColumn();
-
 $message = '';
 $error = '';
 
@@ -20,13 +15,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     if (strlen($keyword) < 2) {
         $error = 'Keyword must be at least 2 characters.';
     } else {
-        $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE user_id = ?");
-        $stmt->execute([$userId]);
-        $currentCount = (int)$stmt->fetchColumn();
-        
-        if ($currentCount >= $maxKeywords) {
-            $error = "You have reached your limit of {$maxKeywords} keywords.";
-        } else {
             $stmt = $db->prepare("INSERT INTO keywords (user_id, keyword) VALUES (?, ?)");
             try {
                 $stmt->execute([$userId, $keyword]);
@@ -56,7 +44,7 @@ require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="card">
-    <h2>My Keywords (<?= count($keywords) ?> / <?= $maxKeywords ?>)</h2>
+    <h2>My Keywords</h2>
     
     <?php if ($message): ?>
         <div class="alert alert-success"><?= htmlspecialchars($message) ?></div>

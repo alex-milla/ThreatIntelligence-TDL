@@ -16,13 +16,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = 'User status updated.';
     }
     
-    if ($action === 'set_limit') {
-        $uid = (int)($_POST['user_id'] ?? 0);
-        $limit = (int)($_POST['max_keywords'] ?? 10);
-        $db->prepare("UPDATE users SET max_keywords = ? WHERE id = ?")->execute([$limit, $uid]);
-        $message = 'Keyword limit updated.';
-    }
-    
     if ($action === 'regen_api') {
         $uid = (int)($_POST['user_id'] ?? 0);
         $newKey = bin2hex(random_bytes(32));
@@ -32,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Data
-$users = $db->query("SELECT id, username, email, is_active, is_admin, max_keywords, api_key, created_at FROM users ORDER BY created_at DESC")->fetchAll();
+$users = $db->query("SELECT id, username, email, is_active, is_admin, api_key, created_at FROM users ORDER BY created_at DESC")->fetchAll();
 $syncLogs = $db->query("SELECT * FROM sync_logs ORDER BY created_at DESC LIMIT 20")->fetchAll();
 
 $pageTitle = 'Admin Panel';
@@ -53,7 +46,7 @@ require __DIR__ . '/../templates/header.php';
                 <th>Email</th>
                 <th>Active</th>
                 <th>Admin</th>
-                <th>Keyword Limit</th>
+
                 <th>API Key</th>
                 <th>Actions</th>
             </tr>
@@ -66,14 +59,7 @@ require __DIR__ . '/../templates/header.php';
                 <td><?= htmlspecialchars($u['email']) ?></td>
                 <td><?= $u['is_active'] ? 'Yes' : 'No' ?></td>
                 <td><?= $u['is_admin'] ? 'Yes' : 'No' ?></td>
-                <td>
-                    <form method="POST" style="display: flex; gap: 5px;">
-                        <input type="hidden" name="action" value="set_limit">
-                        <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
-                        <input type="number" name="max_keywords" value="<?= (int)$u['max_keywords'] ?>" style="width: 60px;">
-                        <button type="submit" class="btn btn-small">Save</button>
-                    </form>
-                </td>
+
                 <td style="font-family: monospace; font-size: 0.8rem;"><?= substr(htmlspecialchars($u['api_key']), 0, 16) ?>...</td>
                 <td>
                     <form method="POST" style="display: inline;">

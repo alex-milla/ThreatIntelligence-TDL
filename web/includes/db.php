@@ -33,7 +33,6 @@ class Database {
             api_key TEXT UNIQUE,
             is_active INTEGER DEFAULT 1,
             is_admin INTEGER DEFAULT 0,
-            max_keywords INTEGER DEFAULT 10,
             email_notifications INTEGER DEFAULT 1,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )");

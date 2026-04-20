@@ -97,13 +97,6 @@ Then schedule it via cron (daily at 06:00 UTC):
 - **Dashboard**: View recent matches and statistics.
 - **Admin Panel**: Manage users, keyword limits, API keys, sync logs, and system updates.
 
-## Monetization Ready
-
-The schema already includes:
-- `users.max_keywords` — limit keywords per user.
-- `users.is_active` — enable/disable accounts.
-- Planned tiers can be enforced in `keywords.php` and `register.php`.
-
 ## Updates
 
 The admin panel includes a **System Update** page that checks GitHub releases and updates application files automatically. Your SQLite database is never overwritten during updates.
