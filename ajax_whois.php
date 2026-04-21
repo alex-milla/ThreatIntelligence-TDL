@@ -18,28 +18,54 @@ if (!$domain || strlen($domain) > 253 || !preg_match('/^[a-z0-9\-\.]+$/', $domai
 
 $rdapUrl = 'https://rdap.org/domain/' . urlencode(strtolower($domain));
 
-$ctx = stream_context_create([
-    'http' => [
-        'timeout' => 15,
-        'user_agent' => 'TDL-Whois/1.0',
-    ],
-    'ssl' => [
-        'verify_peer' => true,
-        'verify_peer_name' => true,
-    ],
-]);
+function fetchRdap(string $url): array {
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_USERAGENT => 'TDL-Whois/1.0',
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+        CURLOPT_HTTPHEADER => ['Accept: application/json'],
+    ]);
+    $body = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
 
-$response = @file_get_contents($rdapUrl, false, $ctx);
-if ($response === false) {
-    echo json_encode(['success' => false, 'error' => 'RDAP query failed']);
+    if ($body === false) {
+        return ['ok' => false, 'error' => 'cURL error: ' . $err];
+    }
+    if ($httpCode !== 200) {
+        return ['ok' => false, 'error' => 'HTTP ' . $httpCode];
+    }
+
+    $data = json_decode($body, true);
+    if (!$data) {
+        return ['ok' => false, 'error' => 'Invalid JSON response'];
+    }
+    return ['ok' => true, 'data' => $data];
+}
+
+$result = fetchRdap($rdapUrl);
+
+if (!$result['ok']) {
+    // Fallback: try TLD-specific RDAP bootstrap
+    $parts = explode('.', strtolower($domain));
+    $tld = end($parts);
+    $fallbackUrl = "https://rdap.org/domain/" . urlencode(strtolower($domain));
+    // No real fallback needed, rdap.org handles all TLDs via redirect
+    echo json_encode([
+        'success' => false,
+        'error' => $result['error'],
+        'fallback_url' => 'https://who.is/whois/' . urlencode(strtolower($domain)),
+    ]);
     exit;
 }
 
-$data = json_decode($response, true);
-if (!$data) {
-    echo json_encode(['success' => false, 'error' => 'Invalid RDAP response']);
-    exit;
-}
+$data = $result['data'];
 
 // Extract useful fields
 $creationDate = null;
@@ -96,5 +122,4 @@ echo json_encode([
     'expirationDate' => $expirationDate,
     'registrar' => $registrar,
     'nameServers' => array_filter($nameServers),
-    'raw' => $data,
 ]);
