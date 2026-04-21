@@ -214,16 +214,21 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         active_tlds = sync_client.get_active_tlds(host_url, api_key)
         if active_tlds:
             tlds = [t for t in tlds if t in active_tlds]
-            print(f"[*] Active TLDs from hosting: {len(tlds)}")
+            log.info(f"Active TLDs from hosting: {len(tlds)}")
         else:
-            # Fallback to config whitelist if no active TLDs set in web
+            # No active TLDs selected in web — check config whitelist
             whitelist_raw = cfg.get("tlds", "whitelist", fallback="").strip()
             if whitelist_raw:
                 whitelist = [t.strip().lower() for t in whitelist_raw.split(",") if t.strip()]
                 tlds = [t for t in tlds if t in whitelist]
-                print(f"[*] Fallback whitelist applied: {len(tlds)} TLDs to process.")
+                log.info(f"Fallback whitelist applied: {len(tlds)} TLDs to process.")
+            else:
+                log.warning("No active TLDs selected in web panel and no whitelist configured. "
+                            "Go to /admin/tlds.php and mark at least one TLD, or set a whitelist in config.ini. "
+                            "Skipping worker cycle to avoid downloading all zones.")
+                return stats
     except Exception as e:
-        print(f"[-] Failed to sync TLDs with hosting: {e}")
+        log.error(f"Failed to sync TLDs with hosting: {e}")
         # Fallback to config whitelist
         whitelist_raw = cfg.get("tlds", "whitelist", fallback="").strip()
         if whitelist_raw:
@@ -231,7 +236,7 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
             tlds = [t for t in tlds if t in whitelist]
 
     if not tlds:
-        print("[-] No TLDs to process.")
+        log.warning("No TLDs to process.")
         return stats
 
     # 4. Get keywords from hosting

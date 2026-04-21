@@ -13,8 +13,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if ($action === 'toggle_user') {
         $uid = (int)($_POST['user_id'] ?? 0);
-        $db->prepare("UPDATE users SET is_active = NOT is_active WHERE id = ?")->execute([$uid]);
-        $message = 'User status updated.';
+        if ($uid === (int)$_SESSION['user_id']) {
+            $message = 'You cannot disable your own account.';
+        } else {
+            $db->prepare("UPDATE users SET is_active = NOT is_active WHERE id = ?")->execute([$uid]);
+            $message = 'User status updated.';
+        }
     }
     
     if ($action === 'regen_api') {

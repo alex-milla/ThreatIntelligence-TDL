@@ -144,17 +144,24 @@ function canAddKeyword(PDO $db, int $userId): bool {
 
 function checkApiRateLimit(PDO $db, string $ip, string $apiKey = '', string $endpoint = ''): bool {
     $windowSeconds = 60;
-    $maxRequests = $apiKey ? 120 : 10; // 120/min for valid keys, 10/min for anonymous
+
+    // Check if key belongs to admin -> higher limit
+    $isAdmin = false;
+    if ($apiKey) {
+        $stmt = $db->prepare("SELECT is_admin FROM users WHERE api_key = ? LIMIT 1");
+        $stmt->execute([$apiKey]);
+        $isAdmin = (bool)$stmt->fetchColumn();
+    }
+
+    $maxRequests = $isAdmin ? 600 : ($apiKey ? 120 : 10);
 
     $since = date('Y-m-d H:i:s', strtotime("-{$windowSeconds} seconds"));
 
-    // Occasional cleanup (1 in 50 chance) to prevent table bloat
-    if (mt_rand(1, 50) === 1) {
-        try {
-            $db->prepare("DELETE FROM api_requests WHERE requested_at < ?")->execute([$since]);
-        } catch (Throwable $e) {
-            // ignore cleanup errors
-        }
+    // Deterministic cleanup to prevent table bloat
+    try {
+        $db->prepare("DELETE FROM api_requests WHERE requested_at < ?")->execute([$since]);
+    } catch (Throwable $e) {
+        // ignore cleanup errors
     }
 
     // Check IP-based limit

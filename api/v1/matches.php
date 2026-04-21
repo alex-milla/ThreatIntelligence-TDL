@@ -89,16 +89,30 @@ try {
 
     $db->commit();
 
-    // Send emails after commit (so DB is not blocked)
-    foreach ($emailQueue as $queue) {
-        sendMatchEmail($queue['email'], $queue['username'], $queue['matches']);
-    }
-
     // Log sync
     $logStmt = $db->prepare("INSERT INTO sync_logs (source, records_received, records_inserted) VALUES (?, ?, ?)");
     $logStmt->execute(['worker', count($matches), $inserted]);
 
-    jsonResponse(['success' => true, 'inserted' => $inserted]);
+    // Respond immediately so the worker gets 200 before email delay
+    http_response_code(200);
+    header('Content-Type: application/json');
+    echo json_encode(['success' => true, 'inserted' => $inserted], JSON_PRETTY_PRINT);
+
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    } else {
+        ob_flush();
+        flush();
+    }
+
+    ignore_user_abort(true);
+
+    // Send emails after response (so DB is not blocked and worker doesn't timeout)
+    foreach ($emailQueue as $queue) {
+        sendMatchEmail($queue['email'], $queue['username'], $queue['matches']);
+    }
+
+    exit;
 } catch (Exception $e) {
     $db->rollBack();
     // Log error

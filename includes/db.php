@@ -40,7 +40,7 @@ class Database {
         $db->exec("CREATE TABLE IF NOT EXISTS tlds (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE NOT NULL,
-            is_active INTEGER DEFAULT 1,
+            is_active INTEGER DEFAULT 0,
             last_sync TEXT,
             status TEXT
         )");
