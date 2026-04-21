@@ -7,6 +7,7 @@ $db = Database::get();
 $message = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    validateCsrf();
     $active = $_POST['active'] ?? [];
     $db->beginTransaction();
     $db->exec("UPDATE tlds SET is_active = 0");
@@ -33,6 +34,7 @@ require __DIR__ . '/../templates/header.php';
     <p>Check the TLDs you want the worker to monitor. Unchecked TLDs will be ignored.</p>
     
     <form method="POST">
+        <?php csrfField(); ?>
         <div style="margin-bottom: 15px;">
             <button type="button" class="btn btn-small" onclick="document.querySelectorAll('input[name=active[]]').forEach(c => c.checked = true)">Select All</button>
             <button type="button" class="btn btn-small" onclick="document.querySelectorAll('input[name=active[]]').forEach(c => c.checked = false)">Deselect All</button>

@@ -1,6 +1,6 @@
 <?php
 /**
- * Authentication helpers
+ * Authentication helpers + CSRF protection
  */
 
 session_start();
@@ -32,4 +32,38 @@ function jsonResponse(array $data, int $code = 200): void {
     header('Content-Type: application/json');
     echo json_encode($data, JSON_PRETTY_PRINT);
     exit;
+}
+
+/* ---------- CSRF Protection ---------- */
+
+function csrfToken(): string {
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+function csrfField(): void {
+    $token = csrfToken();
+    echo '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($token) . '">';
+}
+
+function validateCsrf(): void {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        return;
+    }
+    $sent   = $_POST['csrf_token'] ?? '';
+    $stored = $_SESSION['csrf_token'] ?? '';
+    if (!hash_equals($stored, $sent)) {
+        http_response_code(403);
+        exit('Invalid CSRF token');
+    }
+}
+
+/* ---------- Security Headers ---------- */
+
+function sendSecurityHeaders(): void {
+    header('X-Frame-Options: DENY');
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
 }

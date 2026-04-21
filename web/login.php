@@ -9,6 +9,7 @@ if (!empty($_SESSION['user_id'])) {
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    validateCsrf();
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
     
@@ -18,6 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $user = $stmt->fetch();
     
     if ($user && password_verify($password, $user['password_hash'])) {
+        session_regenerate_id(true);
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
         $_SESSION['is_admin'] = $user['is_admin'];
@@ -38,6 +40,7 @@ require __DIR__ . '/templates/header.php';
         <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
     <form method="POST">
+        <?php csrfField(); ?>
         <div class="form-group">
             <label>Username</label>
             <input type="text" name="username" required autofocus>

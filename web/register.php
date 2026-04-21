@@ -9,6 +9,7 @@ if (!empty($_SESSION['user_id'])) {
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    validateCsrf();
     $username = trim($_POST['username'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
@@ -43,6 +44,7 @@ require __DIR__ . '/templates/header.php';
         <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
     <form method="POST">
+        <?php csrfField(); ?>
         <div class="form-group">
             <label>Username</label>
             <input type="text" name="username" required minlength="3">

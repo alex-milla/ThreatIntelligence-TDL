@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
+sendSecurityHeaders();
 ?>
 <!DOCTYPE html>
 <html lang="en">

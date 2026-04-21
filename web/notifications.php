@@ -6,6 +6,10 @@ requireAuth();
 $db = Database::get();
 $userId = (int)$_SESSION['user_id'];
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    validateCsrf();
+}
+
 // Mark single as read
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'mark_read') {
     $notifId = (int)($_POST['notif_id'] ?? 0);
@@ -43,6 +47,7 @@ require __DIR__ . '/templates/header.php';
         <h2>Notifications</h2>
         <?php if (!empty($notifications)): ?>
         <form method="POST" style="margin: 0;">
+            <?php csrfField(); ?>
             <input type="hidden" name="action" value="mark_all_read">
             <button type="submit" class="btn btn-small">Mark All Read</button>
         </form>
@@ -74,6 +79,7 @@ require __DIR__ . '/templates/header.php';
                     <td>
                         <?php if (!$n['is_read']): ?>
                         <form method="POST" style="display: inline;">
+                            <?php csrfField(); ?>
                             <input type="hidden" name="action" value="mark_read">
                             <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
                             <button type="submit" class="btn btn-small">Mark Read</button>

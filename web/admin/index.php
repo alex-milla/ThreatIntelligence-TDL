@@ -8,6 +8,7 @@ $message = '';
 
 // Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    validateCsrf();
     $action = $_POST['action'] ?? '';
     
     if ($action === 'toggle_user') {
@@ -69,6 +70,7 @@ require __DIR__ . '/../templates/header.php';
     
     <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
         <form method="POST" style="display: inline;">
+            <?php csrfField(); ?>
             <input type="hidden" name="action" value="run_worker">
             <button type="submit" class="btn">Run Worker Now</button>
         </form>
@@ -80,6 +82,7 @@ require __DIR__ . '/../templates/header.php';
 <div class="card">
     <h2>Worker TLD Whitelist</h2>
     <form method="POST">
+        <?php csrfField(); ?>
         <input type="hidden" name="action" value="update_whitelist">
         <label>TLDs to process (comma separated, empty = all approved)</label>
         <input type="text" name="whitelist" value="zip, wine" placeholder="zip, wine, xyz" style="width: 100%; margin-bottom: 10px;">
@@ -136,11 +139,13 @@ require __DIR__ . '/../templates/header.php';
                 <td style="font-family: monospace; font-size: 0.8rem;"><?= substr(htmlspecialchars($u['api_key']), 0, 16) ?>...</td>
                 <td>
                     <form method="POST" style="display: inline;">
+                        <?php csrfField(); ?>
                         <input type="hidden" name="action" value="toggle_user">
                         <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
                         <button type="submit" class="btn btn-small"><?= $u['is_active'] ? 'Disable' : 'Enable' ?></button>
                     </form>
                     <form method="POST" style="display: inline;">
+                        <?php csrfField(); ?>
                         <input type="hidden" name="action" value="regen_api">
                         <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
                         <button type="submit" class="btn btn-small btn-danger" onclick="return confirm('Regenerate API key?')">Regen Key</button>

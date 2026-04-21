@@ -1,5 +1,13 @@
 <?php
 require_once __DIR__ . '/includes/db.php';
+require_once __DIR__ . '/includes/auth.php';
+
+$lockFile = __DIR__ . '/data/.installed';
+
+if (file_exists($lockFile)) {
+    header('Location: /');
+    exit;
+}
 
 $step = $_GET['step'] ?? 'check';
 $error = '';
@@ -28,6 +36,7 @@ if ($step === 'check') {
 }
 
 if ($step === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    validateCsrf();
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
     $email = trim($_POST['email'] ?? '');
@@ -42,6 +51,7 @@ if ($step === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $db->prepare("INSERT INTO users (username, email, password_hash, api_key, is_admin) VALUES (?, ?, ?, ?, 1)");
         try {
             $stmt->execute([$username, $email, $hash, $apiKey]);
+            touch($lockFile);
             $success = "Admin user created successfully.";
             $showKey = $apiKey;
         } catch (PDOException $e) {
@@ -83,6 +93,7 @@ if ($step === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             <p><a href="/">Go to Dashboard</a></p>
         <?php else: ?>
             <form method="POST" action="install.php?step=create">
+                <?php csrfField(); ?>
                 <label>Admin Username</label>
                 <input type="text" name="username" required minlength="3">
                 

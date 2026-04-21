@@ -9,6 +9,10 @@ $userId = (int)$_SESSION['user_id'];
 $message = '';
 $error = '';
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    validateCsrf();
+}
+
 // Add keyword
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add') {
     $keyword = strtolower(trim($_POST['keyword'] ?? ''));
@@ -53,6 +57,7 @@ require __DIR__ . '/templates/header.php';
     <?php endif; ?>
     
     <form method="POST" style="display: flex; gap: 10px; margin-bottom: 20px;">
+        <?php csrfField(); ?>
         <input type="hidden" name="action" value="add">
         <input type="text" name="keyword" placeholder="e.g. santander, nasa, caixabank" required style="flex: 1;">
         <button type="submit" class="btn">Add Keyword</button>
@@ -78,6 +83,7 @@ require __DIR__ . '/templates/header.php';
                     <td><?= htmlspecialchars($k['created_at']) ?></td>
                     <td>
                         <form method="POST" style="display: inline;">
+                            <?php csrfField(); ?>
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
                             <button type="submit" class="btn btn-danger btn-small" onclick="return confirm('Delete this keyword?')">Delete</button>

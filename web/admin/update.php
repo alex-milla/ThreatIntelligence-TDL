@@ -10,12 +10,21 @@ $pageTitle = 'System Update';
 require __DIR__ . '/../templates/header.php';
 
 $repoOwner = 'alex-milla';
-$repoName = 'ThreatIntelligence-TDL';
-$githubToken = ''; // <-- Set a GitHub personal access token here if repo is private or to avoid rate limits
+$repoName  = 'ThreatIntelligence-TDL';
+
+// GitHub token from environment (preferred) or data file.
+// For shared hosting create web/data/.github_token with the token.
+$githubToken = getenv('GITHUB_TOKEN') ?: '';
+$tokenFile   = dirname(__DIR__) . '/data/.github_token';
+if (!$githubToken && file_exists($tokenFile)) {
+    $githubToken = trim(file_get_contents($tokenFile));
+}
+
 $error = '';
-$info = '';
+$info  = '';
 
 $versionFile = dirname(__DIR__) . '/VERSION';
+$backupBase  = dirname(__DIR__) . '/data/backups';
 
 function githubApiGet(string $url, string $token = ''): array {
     $result = ['success' => false, 'data' => null, 'error' => ''];
@@ -24,7 +33,7 @@ function githubApiGet(string $url, string $token = ''): array {
         'Accept: application/vnd.github+json',
     ];
     if ($token) {
-        $headers[] = "Authorization: Bearer {$token}";
+        $headers[] = 'Authorization: Bearer ' . $token;
     }
 
     if (function_exists('curl_init')) {
@@ -45,7 +54,7 @@ function githubApiGet(string $url, string $token = ''): array {
             return $result;
         }
         if ($httpCode == 403) {
-            $result['error'] = 'GitHub API rate limit exceeded. Set a personal access token in update.php.';
+            $result['error'] = 'GitHub API rate limit exceeded. Set GITHUB_TOKEN env var or create data/.github_token.';
         } elseif ($httpCode == 404) {
             $result['error'] = 'No releases found. Create a release on GitHub first.';
         } else {
@@ -82,29 +91,76 @@ function rrmdir(string $dir): void {
     @rmdir($dir);
 }
 
-function doUpdate(string $zipUrl, string $versionFile): array {
+function copyDir(string $src, string $dst): int {
+    $copied = 0;
+    $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($src));
+    foreach ($rii as $file) {
+        if ($file->isDir()) continue;
+        $relative = substr($file->getPathname(), strlen($src) + 1);
+        $target = $dst . '/' . $relative;
+        @mkdir(dirname($target), 0755, true);
+        copy($file->getPathname(), $target);
+        $copied++;
+    }
+    return $copied;
+}
+
+function backupApp(string $backupBase): string {
+    $timestamp = date('Ymd_His');
+    $backupDir = $backupBase . '/backup_' . $timestamp;
+    @mkdir($backupDir, 0755, true);
+
+    $appRoot = dirname(__DIR__);
+    foreach (['web', 'worker'] as $dir) {
+        $src = $appRoot . '/' . $dir;
+        if (is_dir($src)) {
+            copyDir($src, $backupDir . '/' . $dir);
+        }
+    }
+    // Also backup VERSION
+    if (file_exists($appRoot . '/VERSION')) {
+        copy($appRoot . '/VERSION', $backupDir . '/VERSION');
+    }
+    return $backupDir;
+}
+
+function doUpdate(string $zipUrl, string $versionFile, string $backupBase): array {
+    $appRoot = dirname(__DIR__);
+
+    // 1. Backup current installation
+    if (!is_dir($backupBase)) {
+        @mkdir($backupBase, 0755, true);
+    }
+    $backupDir = backupApp($backupBase);
+
+    // 2. Download ZIP to temp
     $tempZip = sys_get_temp_dir() . '/tdl_update_' . time() . '.zip';
     $extractDir = sys_get_temp_dir() . '/tdl_extract_' . time();
 
-    // Download ZIP
     $zipData = @file_get_contents($zipUrl, false, stream_context_create([
-        'http' => ['header' => ['User-Agent: ThreatIntelligence-TDL-Updater'], 'timeout' => 120]
+        'http' => [
+            'header' => ['User-Agent: ThreatIntelligence-TDL-Updater'],
+            'timeout' => 120,
+            'follow_location' => 1,
+            'max_redirects' => 3,
+        ]
     ]));
     if (!$zipData) {
-        return ['success' => false, 'error' => 'Failed to download release ZIP from GitHub.'];
+        return ['success' => false, 'error' => 'Failed to download release ZIP from GitHub.', 'backup' => $backupDir];
     }
 
     file_put_contents($tempZip, $zipData);
 
+    // 3. Verify ZIP integrity
     $zip = new ZipArchive();
     if ($zip->open($tempZip) !== true) {
-        return ['success' => false, 'error' => 'Failed to open downloaded ZIP.'];
+        @unlink($tempZip);
+        return ['success' => false, 'error' => 'Downloaded file is not a valid ZIP archive.', 'backup' => $backupDir];
     }
-
     $zip->extractTo($extractDir);
     $zip->close();
 
-    // Find extracted root
+    // 4. Find extracted root (GitHub releases create a subfolder like repo-tag/)
     $entries = array_diff(scandir($extractDir), ['.', '..']);
     $sourceDir = $extractDir;
     foreach ($entries as $entry) {
@@ -114,29 +170,44 @@ function doUpdate(string $zipUrl, string $versionFile): array {
         }
     }
 
-    // Copy web/ and worker/
+    // 5. Validate that expected directories exist inside the ZIP
+    $hasWeb = is_dir($sourceDir . '/web');
+    $hasWorker = is_dir($sourceDir . '/worker');
+    if (!$hasWeb && !$hasWorker) {
+        rrmdir($extractDir);
+        @unlink($tempZip);
+        return ['success' => false, 'error' => 'Release ZIP does not contain web/ or worker/ directories. Aborting.', 'backup' => $backupDir];
+    }
+
+    // 6. Copy files (skip data/ inside web to avoid overwriting DB)
     $copied = 0;
     foreach (['web', 'worker'] as $dir) {
         $src = $sourceDir . '/' . $dir;
-        $dst = dirname(__DIR__) . '/' . $dir;
-        if (is_dir($src)) {
-            $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($src));
-            foreach ($rii as $file) {
-                if ($file->isDir()) continue;
-                $relative = substr($file->getPathname(), strlen($src) + 1);
-                $target = $dst . '/' . $relative;
-                @mkdir(dirname($target), 0755, true);
-                copy($file->getPathname(), $target);
-                $copied++;
+        $dst = $appRoot . '/' . $dir;
+        if (!is_dir($src)) continue;
+
+        $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($src));
+        foreach ($rii as $file) {
+            if ($file->isDir()) continue;
+            $relative = substr($file->getPathname(), strlen($src) + 1);
+
+            // Never overwrite the data directory or config files
+            if (strpos($relative, 'data/') === 0 || strpos($relative, 'data\\') === 0) {
+                continue;
             }
+
+            $target = $dst . '/' . $relative;
+            @mkdir(dirname($target), 0755, true);
+            copy($file->getPathname(), $target);
+            $copied++;
         }
     }
 
-    // Cleanup
+    // 7. Cleanup
     @unlink($tempZip);
     rrmdir($extractDir);
 
-    return ['success' => true, 'copied' => $copied];
+    return ['success' => true, 'copied' => $copied, 'backup' => $backupDir];
 }
 
 // Get current installed version
@@ -167,21 +238,34 @@ if (!$release && empty($error)) {
 $forceUpdate = isset($_POST['force']) && $_POST['force'] === '1';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $release && empty($error)) {
+    validateCsrf();
+
     if (!$forceUpdate && version_compare($currentVersion, $remoteVersion, '>=')) {
         $info = "You are already on the latest release (v{$currentVersion}). No update needed.";
     } elseif (empty($zipUrl)) {
         $error = 'No download URL found in the release.';
     } else {
-        $result = doUpdate($zipUrl, $versionFile);
+        $result = doUpdate($zipUrl, $versionFile, $backupBase);
         if ($result['success']) {
-            // Write new version
             file_put_contents($versionFile, $remoteVersion);
             $action = $forceUpdate ? 'Force updated' : 'Updated';
-            $info = "{$action} successfully to v{$remoteVersion}. Files copied: {$result['copied']}.";
+            $info = "{$action} successfully to v{$remoteVersion}. Files copied: {$result['copied']}.<br>Backup saved to: <code>" . htmlspecialchars(basename($result['backup'])) . "</code>";
         } else {
             $error = $result['error'];
+            if (!empty($result['backup'])) {
+                $error .= '<br>Backup available at: <code>' . htmlspecialchars(basename($result['backup'])) . '</code>';
+            }
         }
     }
+}
+
+// List available backups
+$backups = [];
+if (is_dir($backupBase)) {
+    foreach (glob($backupBase . '/backup_*') as $b) {
+        $backups[] = basename($b);
+    }
+    rsort($backups);
 }
 ?>
 
@@ -206,25 +290,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $release && empty($error)) {
     <?php endif; ?>
 
     <?php if ($error): ?>
-        <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
+        <div class="alert alert-error"><?= $error ?></div>
     <?php endif; ?>
     <?php if ($info): ?>
-        <div class="alert alert-success"><?= htmlspecialchars($info) ?></div>
+        <div class="alert alert-success"><?= $info ?></div>
     <?php endif; ?>
 
     <form method="POST" style="margin-bottom: 10px;">
+        <?php csrfField(); ?>
         <button type="submit" class="btn" <?= ($release === null) ? 'disabled' : '' ?>>Check & Install Latest Release</button>
     </form>
 
     <form method="POST">
+        <?php csrfField(); ?>
         <input type="hidden" name="force" value="1">
         <button type="submit" class="btn btn-danger" <?= ($release === null) ? 'disabled' : '' ?>>Force Reinstall Latest Release</button>
     </form>
 
     <p style="margin-top: 15px; color: #666; font-size: 0.9rem;">
-        <strong>Note:</strong> Your database (<code>data/app.db</code>) and config files will not be overwritten.
-        <?php if ($release === null): ?><br><strong>Diagnosis:</strong> No GitHub release found. Create one at <code>https://github.com/alex-milla/ThreatIntelligence-TDL/releases</code><?php endif; ?>
+        <strong>Note:</strong> Your database (<code>data/app.db</code>) and config files will not be overwritten.<br>
+        A full backup of <code>web/</code> and <code>worker/</code> is created automatically before every update.<br>
+        <?php if ($release === null): ?><strong>Diagnosis:</strong> No GitHub release found. Create one at <code>https://github.com/alex-milla/ThreatIntelligence-TDL/releases</code><?php endif; ?>
     </p>
 </div>
+
+<?php if (!empty($backups)): ?>
+<div class="card">
+    <h2>Backups</h2>
+    <p>Stored in <code>data/backups/</code></p>
+    <table>
+        <thead>
+            <tr><th>Backup</th><th>Size</th></tr>
+        </thead>
+        <tbody>
+            <?php foreach (array_slice($backups, 0, 10) as $b):
+                $bPath = $backupBase . '/' . $b;
+                $size = is_dir($bPath) ? 'Dir' : 'File';
+            ?>
+            <tr>
+                <td><?= htmlspecialchars($b) ?></td>
+                <td><?= htmlspecialchars($size) ?></td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+<?php endif; ?>
 
 <?php require __DIR__ . '/../templates/footer.php'; ?>
