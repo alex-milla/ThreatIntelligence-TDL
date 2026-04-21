@@ -34,9 +34,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $limit = (int)($_GET['limit'] ?? 50);
-    $stmt = $db->prepare("SELECT * FROM worker_logs ORDER BY created_at DESC LIMIT ?");
-    $stmt->execute([$limit]);
-    jsonResponse(['success' => true, 'logs' => $stmt->fetchAll()]);
+    $offset = (int)($_GET['offset'] ?? 0);
+    if ($limit < 1 || $limit > 500) {
+        $limit = 50;
+    }
+    if ($offset < 0) {
+        $offset = 0;
+    }
+
+    $total = (int)$db->query("SELECT COUNT(*) FROM worker_logs")->fetchColumn();
+    $stmt = $db->prepare("SELECT * FROM worker_logs ORDER BY created_at DESC LIMIT ? OFFSET ?");
+    $stmt->execute([$limit, $offset]);
+    jsonResponse([
+        'success' => true,
+        'logs' => $stmt->fetchAll(),
+        'pagination' => [
+            'total' => $total,
+            'limit' => $limit,
+            'offset' => $offset,
+        ],
+    ]);
 }
 
 jsonResponse(['success' => false, 'error' => 'Method not allowed'], 405);
