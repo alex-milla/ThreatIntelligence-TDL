@@ -277,6 +277,69 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
     return stats
 
 
+def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str) -> dict:
+    """Re-check all cached domains against current keywords. Returns stats."""
+    stats = {
+        "domains_checked": 0,
+        "matches_found": 0,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    print("[*] Starting keyword recheck against all cached domains...")
+
+    try:
+        keywords = sync_client.get_keywords(host_url, api_key)
+        print(f"[+] Keywords loaded: {len(keywords)}")
+    except Exception as e:
+        print(f"[-] Failed to fetch keywords: {e}")
+        return stats
+
+    if not keywords:
+        print("[!] No active keywords. Nothing to recheck.")
+        return stats
+
+    batch_size = 50000
+    offset = 0
+    all_matches = []
+
+    while True:
+        cursor = db.cursor()
+        cursor.execute(
+            "SELECT domain, tld FROM domains_cache ORDER BY domain LIMIT ? OFFSET ?",
+            (batch_size, offset)
+        )
+        rows = cursor.fetchall()
+        if not rows:
+            break
+
+        domains = []
+        tld_map = {}
+        for domain, tld in rows:
+            domains.append(domain)
+            tld_map[domain] = tld
+
+        matches = matcher.match_domains(domains, keywords)
+        for m in matches:
+            m["tld"] = tld_map.get(m["domain"], m["tld"])
+            all_matches.append(m)
+
+        stats["domains_checked"] += len(domains)
+        offset += batch_size
+        print(f"[*] Checked {stats['domains_checked']:,} domains so far...")
+
+    if all_matches:
+        print(f"[*] Sending {len(all_matches)} recheck matches to hosting...")
+        ok = sync_client.send_matches(host_url, api_key, all_matches)
+        if not ok:
+            queue_matches(db, all_matches)
+        stats["matches_found"] = len(all_matches)
+    else:
+        print("[*] No new matches found during recheck.")
+
+    print(f"[*] Recheck complete. Domains checked: {stats['domains_checked']:,}, Matches: {stats['matches_found']}")
+    return stats
+
+
 def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str) -> list[dict]:
     """Poll and execute pending commands from the hosting. Returns log entries."""
     logs = []
@@ -302,6 +365,11 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 stats = run_worker_cycle(db, cfg, host_url, api_key)
                 result = json.dumps(stats)
                 logs.append({"level": "info", "message": f"Worker cycle completed: {stats['tlds_processed']} TLDs, {stats['matches_found']} matches"})
+
+            elif command == "recheck_keywords":
+                stats = recheck_all_domains(db, host_url, api_key)
+                result = json.dumps(stats)
+                logs.append({"level": "info", "message": f"Recheck completed: {stats['domains_checked']:,} domains, {stats['matches_found']} matches"})
 
             elif command == "update_whitelist":
                 if not cfg.has_section("tlds"):

@@ -29,6 +29,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = 'Worker execution queued. It will run on next poll.';
     }
     
+    if ($action === 'recheck_keywords') {
+        $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['recheck_keywords', '']);
+        $message = 'Keyword recheck queued. The worker will scan all cached domains against current keywords.';
+    }
+    
     if ($action === 'update_whitelist') {
         $whitelist = trim($_POST['whitelist'] ?? '');
         $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['update_whitelist', $whitelist]);
@@ -87,6 +92,11 @@ require __DIR__ . '/../templates/header.php';
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="run_worker">
             <button type="submit" class="btn">Run Worker Now</button>
+        </form>
+        <form method="POST" style="display: inline;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="recheck_keywords">
+            <button type="submit" class="btn btn-danger">Recheck Keywords</button>
         </form>
         <a href="/admin/tlds.php" class="btn">Manage TLDs</a>
         <a href="/admin/update.php" class="btn">Check for Updates</a>
