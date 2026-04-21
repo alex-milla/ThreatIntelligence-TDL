@@ -287,13 +287,19 @@ require __DIR__ . '/templates/header.php';
 
 <!-- Domain detail modal -->
 <div id="domain-modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); align-items: center; justify-content: center;">
-    <div style="background: white; padding: 25px; border-radius: 8px; max-width: 500px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+    <div style="background: white; padding: 25px; border-radius: 8px; max-width: 520px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto;">
         <h3 id="modal-domain-title" style="margin-top: 0; word-break: break-all;"></h3>
-        <p style="color: #666; font-size: 0.9rem;">External tools for this domain:</p>
-        <div style="display: flex; flex-direction: column; gap: 10px;">
-            <a id="modal-whois" href="#" target="_blank" class="btn" style="text-align: center;">🔍 Whois Lookup</a>
-            <a id="modal-vt" href="#" target="_blank" class="btn" style="text-align: center; background: #3949ab;">🛡️ VirusTotal</a>
-            <a id="modal-urlscan" href="#" target="_blank" class="btn" style="text-align: center; background: #546e7a;">🌐 URLScan</a>
+        <div id="modal-whois-loading" style="color: #666; font-size: 0.9rem; margin: 15px 0;">Loading whois data...</div>
+        <div id="modal-whois-content" style="display: none; margin: 15px 0;">
+            <table style="width: 100%; font-size: 0.9rem;">
+                <tr><td style="color: #666; padding: 4px 8px 4px 0;">Creation Date</td><td id="modal-creation" style="font-weight: 600;"></td></tr>
+                <tr><td style="color: #666; padding: 4px 8px 4px 0;">Expiration Date</td><td id="modal-expiration" style="font-weight: 600;"></td></tr>
+                <tr><td style="color: #666; padding: 4px 8px 4px 0;">Registrar</td><td id="modal-registrar" style="font-weight: 600;"></td></tr>
+                <tr><td style="color: #666; padding: 4px 8px 4px 0; vertical-align: top;">Name Servers</td><td id="modal-ns" style="font-weight: 600;"></td></tr>
+            </table>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
+            <a id="modal-vt" href="#" target="_blank" class="btn" style="text-align: center; background: #3949ab;">🛡️ Open in VirusTotal</a>
         </div>
         <button onclick="document.getElementById('domain-modal').style.display='none'" class="btn btn-danger" style="margin-top: 15px; width: 100%;">Close</button>
     </div>
@@ -302,10 +308,28 @@ require __DIR__ . '/templates/header.php';
 <script>
 function openDomainModal(domain) {
     document.getElementById('modal-domain-title').textContent = domain;
-    document.getElementById('modal-whois').href = 'https://who.is/whois/' + encodeURIComponent(domain);
     document.getElementById('modal-vt').href = 'https://www.virustotal.com/gui/domain/' + encodeURIComponent(domain);
-    document.getElementById('modal-urlscan').href = 'https://urlscan.io/domain/' + encodeURIComponent(domain);
+    document.getElementById('modal-whois-loading').style.display = 'block';
+    document.getElementById('modal-whois-content').style.display = 'none';
     document.getElementById('domain-modal').style.display = 'flex';
+
+    fetch('/ajax_whois.php?domain=' + encodeURIComponent(domain))
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('modal-whois-loading').style.display = 'none';
+            if (data.success) {
+                document.getElementById('modal-creation').textContent = data.creationDate ? new Date(data.creationDate).toLocaleString() : 'N/A';
+                document.getElementById('modal-expiration').textContent = data.expirationDate ? new Date(data.expirationDate).toLocaleString() : 'N/A';
+                document.getElementById('modal-registrar').textContent = data.registrar || 'N/A';
+                document.getElementById('modal-ns').innerHTML = data.nameServers.length ? data.nameServers.map(ns => '<div>' + ns + '</div>').join('') : 'N/A';
+                document.getElementById('modal-whois-content').style.display = 'block';
+            } else {
+                document.getElementById('modal-whois-loading').textContent = 'Whois unavailable: ' + (data.error || 'Unknown error');
+            }
+        })
+        .catch(() => {
+            document.getElementById('modal-whois-loading').textContent = 'Whois query failed. Try again later.';
+        });
 }
 document.getElementById('domain-modal').addEventListener('click', function(e) {
     if (e.target === this) this.style.display = 'none';
