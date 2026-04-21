@@ -26,6 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($user && password_verify($password, $user['password_hash'])) {
             clearLoginAttempts($db, $ip);
             session_regenerate_id(true);
+            unset($_SESSION['csrf_token']); // force new CSRF token on fresh session
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['username'] = $user['username'];
             $_SESSION['is_admin'] = $user['is_admin'];
