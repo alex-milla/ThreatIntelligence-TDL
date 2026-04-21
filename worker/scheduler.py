@@ -281,15 +281,15 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
     return stats
 
 
-def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str) -> dict:
-    """Re-check all cached domains against current keywords. Returns stats."""
+def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max_age_days: int = 30) -> dict:
+    """Re-check cached domains against current keywords. Returns stats."""
     stats = {
         "domains_checked": 0,
         "matches_found": 0,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    log.info("Starting keyword recheck against all cached domains...")
+    log.info("Starting keyword recheck against cached domains...")
 
     try:
         keywords = sync_client.get_keywords(host_url, api_key)
@@ -302,8 +302,14 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str) -> 
         log.warning("No active keywords. Nothing to recheck.")
         return stats
 
-    total_domains = db.execute("SELECT COUNT(*) FROM domains_cache").fetchone()[0]
-    log.info(f"Total cached domains to check: {total_domains:,}")
+    age_clause = ""
+    age_param = ()
+    if max_age_days > 0:
+        age_clause = " WHERE first_seen >= datetime('now', '-' || ? || ' days')"
+        age_param = (max_age_days,)
+
+    total_domains = db.execute(f"SELECT COUNT(*) FROM domains_cache{age_clause}", age_param).fetchone()[0]
+    log.info(f"Cached domains to check (max {max_age_days} days): {total_domains:,}")
     started_at = datetime.now(timezone.utc).isoformat()
 
     if total_domains == 0:
@@ -333,12 +339,22 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str) -> 
     all_matches = []
     last_progress_report = 0
 
+    base_query = "SELECT domain, tld FROM domains_cache"
+    if max_age_days > 0:
+        base_query += " WHERE first_seen >= datetime('now', '-' || ? || ' days')"
+
     while True:
         cursor = db.cursor()
-        cursor.execute(
-            "SELECT domain, tld FROM domains_cache ORDER BY domain LIMIT ? OFFSET ?",
-            (batch_size, offset)
-        )
+        if max_age_days > 0:
+            cursor.execute(
+                f"{base_query} ORDER BY domain LIMIT ? OFFSET ?",
+                (max_age_days, batch_size, offset)
+            )
+        else:
+            cursor.execute(
+                "SELECT domain, tld FROM domains_cache ORDER BY domain LIMIT ? OFFSET ?",
+                (batch_size, offset)
+            )
         rows = cursor.fetchall()
         if not rows:
             break
@@ -420,7 +436,8 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 logs.append({"level": "info", "message": f"Worker cycle completed: {stats['tlds_processed']} TLDs, {stats['matches_found']} matches"})
 
             elif command == "recheck_keywords":
-                stats = recheck_all_domains(db, host_url, api_key)
+                max_age = cfg.getint("worker", "max_domain_age_days", fallback=30)
+                stats = recheck_all_domains(db, host_url, api_key, max_age)
                 result = json.dumps(stats)
                 logs.append({"level": "info", "message": f"Recheck completed: {stats['domains_checked']:,} domains, {stats['matches_found']} matches"})
 

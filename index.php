@@ -33,13 +33,24 @@ $stmt = $db->prepare("SELECT email_notifications FROM users WHERE id = ? LIMIT 1
 $stmt->execute([$userId]);
 $emailNotifications = (bool)$stmt->fetchColumn();
 
+// Period filter for dashboard
+$period = $_GET['period'] ?? '30d';
+$validPeriods = ['24h' => '-1 day', '7d' => '-7 days', '30d' => '-30 days', 'all' => ''];
+$periodSql = '';
+$periodParams = [];
+if (!empty($validPeriods[$period])) {
+    $periodSql = " AND m.discovered_at >= datetime('now', ?)";
+    $periodParams[] = $validPeriods[$period];
+}
+
 // Stats
 $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE user_id = ?");
 $stmt->execute([$userId]);
 $keywordCount = (int)$stmt->fetchColumn();
 
-$stmt = $db->prepare("SELECT COUNT(*) FROM matches m JOIN keywords k ON m.keyword_id = k.id WHERE k.user_id = ?");
-$stmt->execute([$userId]);
+$matchSql = "SELECT COUNT(*) FROM matches m JOIN keywords k ON m.keyword_id = k.id WHERE k.user_id = ?" . $periodSql;
+$stmt = $db->prepare($matchSql);
+$stmt->execute(array_merge([$userId], $periodParams));
 $matchCount = (int)$stmt->fetchColumn();
 
 $stmt = $db->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0");
@@ -50,10 +61,10 @@ $unreadCount = (int)$stmt->fetchColumn();
 $stmt = $db->prepare("SELECT m.id, m.domain, m.tld, m.discovered_at, k.keyword 
     FROM matches m 
     JOIN keywords k ON m.keyword_id = k.id 
-    WHERE k.user_id = ? 
+    WHERE k.user_id = ? $periodSql
     ORDER BY m.discovered_at DESC 
     LIMIT 20");
-$stmt->execute([$userId]);
+$stmt->execute(array_merge([$userId], $periodParams));
 $recentMatches = $stmt->fetchAll();
 
 $pageTitle = 'Dashboard';
@@ -80,9 +91,20 @@ require __DIR__ . '/templates/header.php';
 </div>
 
 <div class="card">
-    <h2>Recent Matches</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <h2>Recent Matches</h2>
+        <form method="GET" style="display: flex; gap: 10px; align-items: center;">
+            <select name="period" style="padding: 6px;">
+                <option value="24h" <?= $period === '24h' ? 'selected' : '' ?>>Last 24h</option>
+                <option value="7d" <?= $period === '7d' ? 'selected' : '' ?>>Last 7 days</option>
+                <option value="30d" <?= $period === '30d' ? 'selected' : '' ?>>Last 30 days</option>
+                <option value="all" <?= $period === 'all' ? 'selected' : '' ?>>All time</option>
+            </select>
+            <button type="submit" class="btn btn-small">Filter</button>
+        </form>
+    </div>
     <?php if (empty($recentMatches)): ?>
-        <p>No matches yet. Start by adding <a href="/keywords.php">keywords</a>.</p>
+        <p>No matches in this period. Start by adding <a href="/keywords.php">keywords</a>.</p>
     <?php else: ?>
         <table>
             <thead>

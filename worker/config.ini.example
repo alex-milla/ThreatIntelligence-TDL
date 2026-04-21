@@ -12,6 +12,9 @@ data_dir = ./data
 batch_size = 10000
 max_retries = 5
 retry_delay_seconds = 300
+; Maximum age in days for domains to be considered during recheck.
+; Domains first_seen older than this will be skipped.
+max_domain_age_days = 30
 
 [tlds]
 ; Comma-separated list of TLDs to process. Leave empty to process all approved TLDs.
