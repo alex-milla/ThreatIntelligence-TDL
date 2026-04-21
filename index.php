@@ -108,7 +108,24 @@ require __DIR__ . '/templates/header.php';
     <?php
     $stmt = $db->query("SELECT * FROM sync_logs ORDER BY created_at DESC LIMIT 5");
     $logs = $stmt->fetchAll();
+    $workerStatus = $db->query("SELECT * FROM worker_status WHERE id = 1")->fetch();
     ?>
+    <?php if ($workerStatus): ?>
+    <div class="stats" style="margin-bottom: 15px;">
+        <div class="stat-box">
+            <div class="number"><?= (int)($workerStatus['tlds_processed'] ?? 0) ?></div>
+            <div class="label">TLDs Processed</div>
+        </div>
+        <div class="stat-box">
+            <div class="number"><?= (int)($workerStatus['domains_processed'] ?? 0) ?></div>
+            <div class="label">Domains Processed</div>
+        </div>
+        <div class="stat-box">
+            <div class="number"><?= (int)($workerStatus['matches_found'] ?? 0) ?></div>
+            <div class="label">Matches Found</div>
+        </div>
+    </div>
+    <?php endif; ?>
     <?php if (empty($logs)): ?>
         <p>No sync logs yet.</p>
     <?php else: ?>
