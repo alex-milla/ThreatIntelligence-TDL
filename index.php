@@ -119,7 +119,7 @@ require __DIR__ . '/templates/header.php';
             <tbody>
                 <?php foreach ($recentMatches as $m): ?>
                 <tr>
-                    <td><?= htmlspecialchars($m['domain']) ?></td>
+                    <td><a href="javascript:void(0)" onclick="openDomainModal('<?= htmlspecialchars(addslashes($m['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($m['domain']) ?></a></td>
                     <td><?= htmlspecialchars($m['tld']) ?></td>
                     <td><?= htmlspecialchars($m['keyword']) ?></td>
                     <td><?= htmlspecialchars($m['first_seen'] ?? '-') ?></td>
@@ -283,5 +283,32 @@ require __DIR__ . '/templates/header.php';
 })();
 </script>
 <?php endif; ?>
+
+<!-- Domain detail modal -->
+<div id="domain-modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); align-items: center; justify-content: center;">
+    <div style="background: white; padding: 25px; border-radius: 8px; max-width: 500px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+        <h3 id="modal-domain-title" style="margin-top: 0; word-break: break-all;"></h3>
+        <p style="color: #666; font-size: 0.9rem;">External tools for this domain:</p>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+            <a id="modal-whois" href="#" target="_blank" class="btn" style="text-align: center;">🔍 Whois Lookup</a>
+            <a id="modal-vt" href="#" target="_blank" class="btn" style="text-align: center; background: #3949ab;">🛡️ VirusTotal</a>
+            <a id="modal-urlscan" href="#" target="_blank" class="btn" style="text-align: center; background: #546e7a;">🌐 URLScan</a>
+        </div>
+        <button onclick="document.getElementById('domain-modal').style.display='none'" class="btn btn-danger" style="margin-top: 15px; width: 100%;">Close</button>
+    </div>
+</div>
+
+<script>
+function openDomainModal(domain) {
+    document.getElementById('modal-domain-title').textContent = domain;
+    document.getElementById('modal-whois').href = 'https://who.is/whois/' + encodeURIComponent(domain);
+    document.getElementById('modal-vt').href = 'https://www.virustotal.com/gui/domain/' + encodeURIComponent(domain);
+    document.getElementById('modal-urlscan').href = 'https://urlscan.io/domain/' + encodeURIComponent(domain);
+    document.getElementById('domain-modal').style.display = 'flex';
+}
+document.getElementById('domain-modal').addEventListener('click', function(e) {
+    if (e.target === this) this.style.display = 'none';
+});
+</script>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>
