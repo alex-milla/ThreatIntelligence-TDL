@@ -4,6 +4,7 @@
 import os
 import requests
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 AUTH_URL = "https://account-api.icann.org/api/authenticate"
 LINKS_URL = "https://czds-api.icann.org/czds/downloads/links"
@@ -37,10 +38,13 @@ def get_approved_tlds(token: str) -> list[str]:
     tlds = []
     for item in data:
         if isinstance(item, str):
-            # Extract TLD from URL: https://.../downloads/zip.zone -> zip
-            tld = item.rsplit("/", 1)[-1].replace(".zone", "").lower()
-            if tld:
-                tlds.append(tld)
+            # Extract TLD from URL robustly: https://.../downloads/zip.zone -> zip
+            path = urlparse(item).path
+            name = os.path.basename(path)
+            if name.endswith(".zone"):
+                tld = name[:-5].lower()
+                if tld:
+                    tlds.append(tld)
         elif isinstance(item, dict):
             tld = item.get("tld", "")
             if tld:

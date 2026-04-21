@@ -42,7 +42,19 @@ def parse_zone_gz(filepath: str, tld: str):
             starts_with_space = raw_line[0] in " \t"
 
             tokens = line.split()
-            if "NS" not in tokens:
+            # Determine record type by skipping owner (if present), TTL (numeric), and class (IN/CH/HS)
+            type_candidates = []
+            for idx, tok in enumerate(tokens):
+                if idx == 0 and not starts_with_space:
+                    continue  # skip owner
+                if tok.isdigit():
+                    continue  # skip TTL
+                if tok.upper() in ("IN", "CH", "HS"):
+                    continue  # skip class
+                type_candidates.append(tok.upper())
+                if len(type_candidates) >= 1:
+                    break
+            if not type_candidates or type_candidates[0] != "NS":
                 continue
 
             if starts_with_space:

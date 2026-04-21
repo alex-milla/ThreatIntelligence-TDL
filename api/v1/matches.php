@@ -25,6 +25,7 @@ if (!isset($input['matches']) || !is_array($input['matches'])) {
 $matches = $input['matches'];
 $discoveredAt = $input['discovered_at'] ?? date('c');
 $inserted = 0;
+$skippedDomains = 0;
 
 // Track emails to send per user
 $emailQueue = []; // [user_id => [email, username, matches[]]]
@@ -45,9 +46,10 @@ try {
             continue;
         }
 
-        // Basic domain sanitization
+        // Basic domain sanitization (allows Unicode/IDN domains)
         $domain = strtolower(trim($domain));
-        if (strlen($domain) > 253 || !preg_match('/^[a-z0-9\-\.]+$/', $domain)) {
+        if (strlen($domain) > 253 || !preg_match('/^[a-z0-9\p{L}\-\.]+$/u', $domain)) {
+            $skippedDomains++;
             continue; // skip invalid domain
         }
         if (strpos($domain, '..') !== false) {
@@ -90,8 +92,9 @@ try {
     $db->commit();
 
     // Log sync
-    $logStmt = $db->prepare("INSERT INTO sync_logs (source, records_received, records_inserted) VALUES (?, ?, ?)");
-    $logStmt->execute(['worker', count($matches), $inserted]);
+    $errorMsg = $skippedDomains > 0 ? "Skipped {$skippedDomains} invalid/IDN domains" : null;
+    $logStmt = $db->prepare("INSERT INTO sync_logs (source, records_received, records_inserted, error) VALUES (?, ?, ?, ?)");
+    $logStmt->execute(['worker', count($matches), $inserted, $errorMsg]);
 
     // Respond immediately so the worker gets 200 before email delay
     http_response_code(200);

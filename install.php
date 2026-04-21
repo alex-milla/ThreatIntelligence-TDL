@@ -9,6 +9,14 @@ if (file_exists($lockFile)) {
     exit;
 }
 
+// Hard gate: if an admin already exists in the database, redirect even without lock file
+$db = Database::get();
+$hasAdmin = (int)$db->query("SELECT COUNT(*) FROM users WHERE is_admin=1")->fetchColumn();
+if ($hasAdmin > 0) {
+    header('Location: /');
+    exit;
+}
+
 $step = $_GET['step'] ?? 'check';
 $error = '';
 $success = '';

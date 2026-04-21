@@ -256,6 +256,10 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         sync_client.send_tlds(host_url, api_key, tlds)
         active_tlds = sync_client.get_active_tlds(host_url, api_key)
         if active_tlds:
+            sent_count = len(tlds)
+            active_count = len(active_tlds)
+            if active_count < sent_count:
+                log.info(f"Hosting returned {active_count}/{sent_count} active TLDs.")
             tlds = [t for t in tlds if t in active_tlds]
             log.info(f"Active TLDs from hosting: {len(tlds)}")
         else:
@@ -462,31 +466,35 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
     return stats
 
 
-def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str) -> list[dict]:
-    """Poll and execute pending commands from the hosting. Returns log entries."""
+def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str) -> tuple[list[dict], dict | None, bool]:
+    """Poll and execute pending commands from the hosting. Returns (log entries, worker_stats, commands_processed)."""
     logs = []
+    worker_stats = None
+    commands_processed = False
     try:
         commands = sync_client.get_commands(host_url, api_key)
     except Exception as e:
         logs.append({"level": "error", "message": f"Failed to fetch commands: {e}"})
-        return logs
+        return logs, worker_stats, commands_processed
 
     if not commands:
-        return logs
+        return logs, worker_stats, commands_processed
 
     config_path = os.path.join(os.path.dirname(__file__), "config.ini")
 
     for cmd in commands:
+        commands_processed = True
         cmd_id = cmd["id"]
         command = cmd["command"]
         payload = cmd.get("payload", "")
         logs.append({"level": "info", "message": f"Executing command {cmd_id}: {command}"})
 
         try:
+            status = "completed"
             if command == "run_worker":
-                stats = run_worker_cycle(db, cfg, host_url, api_key)
-                result = json.dumps(stats)
-                logs.append({"level": "info", "message": f"Worker cycle completed: {stats['tlds_processed']} TLDs, {stats['matches_found']} matches"})
+                worker_stats = run_worker_cycle(db, cfg, host_url, api_key)
+                result = json.dumps(worker_stats)
+                logs.append({"level": "info", "message": f"Worker cycle completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
 
             elif command == "recheck_keywords":
                 max_age = cfg.getint("worker", "max_domain_age_days", fallback=30)
@@ -506,19 +514,20 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
             elif command == "update_worker":
                 result = "Manual update not implemented. Use git pull."
                 logs.append({"level": "warning", "message": result})
+                status = "failed"
 
             else:
                 result = f"Unknown command: {command}"
                 logs.append({"level": "warning", "message": result})
 
-            sync_client.mark_command_done(host_url, api_key, cmd_id, "completed", result)
+            sync_client.mark_command_done(host_url, api_key, cmd_id, status, result)
 
         except Exception as e:
             error_msg = str(e)
             logs.append({"level": "error", "message": f"Command {cmd_id} failed: {error_msg}"})
             sync_client.mark_command_done(host_url, api_key, cmd_id, "failed", error_msg)
 
-    return logs
+    return logs, worker_stats, commands_processed
 
 
 def get_version() -> str:
@@ -589,19 +598,24 @@ def main() -> int:
         log.info(f"Daemon mode started. Polling every {args.interval}s. Press Ctrl+C to stop.")
         while True:
             logs = []
+            worker_stats = None
             try:
-                # Poll commands
-                cmd_logs = handle_commands(db, cfg, host_url, api_key)
+                cmd_logs, worker_stats, _ = handle_commands(db, cfg, host_url, api_key)
                 logs.extend(cmd_logs)
 
-                # Send heartbeat
-                sync_client.send_heartbeat(host_url, api_key, {
+                heartbeat_payload = {
                     "last_heartbeat": datetime.now(timezone.utc).isoformat(),
                     "is_running": 1,
                     "version": version,
-                })
+                }
+                if worker_stats:
+                    heartbeat_payload["last_run"] = worker_stats.get("timestamp")
+                    heartbeat_payload["tlds_processed"] = worker_stats["tlds_processed"]
+                    heartbeat_payload["domains_processed"] = worker_stats["domains_processed"]
+                    heartbeat_payload["matches_found"] = worker_stats["matches_found"]
 
-                # Send logs
+                sync_client.send_heartbeat(host_url, api_key, heartbeat_payload)
+
                 if logs:
                     sync_client.send_logs(host_url, api_key, logs)
 
@@ -610,26 +624,23 @@ def main() -> int:
 
             time.sleep(args.interval)
     else:
-        # One-shot mode: process commands first, then run worker cycle
-        pending = sync_client.get_commands(host_url, api_key)
-        had_run_worker = any(cmd.get("command") == "run_worker" for cmd in pending)
-        logs = handle_commands(db, cfg, host_url, api_key)
+        # One-shot mode: process commands first, then run worker cycle if nothing was processed
+        logs, worker_stats, commands_processed = handle_commands(db, cfg, host_url, api_key)
 
-        stats = None
-        if not had_run_worker and not pending:
-            # No commands pending at all → legacy cron behavior: run full cycle
-            stats = run_worker_cycle(db, cfg, host_url, api_key)
-            logs.append({"level": "info", "message": f"Worker cycle completed: {stats['tlds_processed']} TLDs, {stats['matches_found']} matches"})
+        if not commands_processed and not worker_stats:
+            # No commands pending → legacy cron behavior: run full cycle
+            worker_stats = run_worker_cycle(db, cfg, host_url, api_key)
+            logs.append({"level": "info", "message": f"Worker cycle completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
 
         heartbeat_payload = {
             "last_run": datetime.now(timezone.utc).isoformat(),
             "is_running": 0,
             "version": version,
         }
-        if stats:
-            heartbeat_payload["tlds_processed"] = stats["tlds_processed"]
-            heartbeat_payload["domains_processed"] = stats["domains_processed"]
-            heartbeat_payload["matches_found"] = stats["matches_found"]
+        if worker_stats:
+            heartbeat_payload["tlds_processed"] = worker_stats["tlds_processed"]
+            heartbeat_payload["domains_processed"] = worker_stats["domains_processed"]
+            heartbeat_payload["matches_found"] = worker_stats["matches_found"]
 
         sync_client.send_heartbeat(host_url, api_key, heartbeat_payload)
         if logs:

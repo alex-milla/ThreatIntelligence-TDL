@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.6] - 2026-04-21
+
+### Fase 4 – Robustez final del diagnóstico
+- **B-06** Worker daemon mode now sends `tlds_processed`, `domains_processed`, and `matches_found` in the heartbeat payload after each cycle.
+- **B-08** `matches.php` domain validation now accepts Unicode/IDN domains (`\p{L}`). Skipped invalid domains are counted and logged in `sync_logs.error`.
+- **B-11** Worker logs the difference between TLDs discovered and TLDs returned as active by the hosting.
+- **B-12** `downloader.py` uses `urllib.parse.urlparse` + `os.path.basename` for robust TLD extraction from CZDS URLs.
+- **B-13** `parser.py` now correctly identifies NS records by skipping owner, TTL, and class tokens, preventing false positives from RRSIG lines containing "NS".
+- **B-16** `update_worker` command now marks as `failed` instead of `completed` since manual update is not implemented.
+- **B-18** `install.php` hard gate: redirects to home if any admin user already exists in the database, even if the lock file is missing.
+- **B-19** Removed duplicate `session_start()` in `ajax_recheck_status.php`.
+- **B-20** `mail.php` sanitizes `HTTP_HOST` to prevent header injection in notification emails.
+
 ## [v1.3.5] - 2026-04-21
 
 ### Fase 3 – Higiene / Cleanup
