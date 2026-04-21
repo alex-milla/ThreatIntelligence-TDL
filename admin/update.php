@@ -13,7 +13,7 @@ $repoOwner = 'alex-milla';
 $repoName  = 'ThreatIntelligence-TDL';
 
 // GitHub token from environment (preferred) or data file.
-// For shared hosting create web/data/.github_token with the token.
+// For shared hosting create data/.github_token with the token.
 $githubToken = getenv('GITHUB_TOKEN') ?: '';
 $tokenFile   = dirname(__DIR__) . '/data/.github_token';
 if (!$githubToken && file_exists($tokenFile)) {
@@ -111,15 +111,23 @@ function backupApp(string $backupBase): string {
     @mkdir($backupDir, 0755, true);
 
     $appRoot = dirname(__DIR__);
-    foreach (['web', 'worker'] as $dir) {
+
+    // Backup all app directories except data
+    $dirsToBackup = ['admin', 'api', 'assets', 'includes', 'templates', 'worker'];
+    foreach ($dirsToBackup as $dir) {
         $src = $appRoot . '/' . $dir;
         if (is_dir($src)) {
             copyDir($src, $backupDir . '/' . $dir);
         }
     }
-    // Also backup VERSION
-    if (file_exists($appRoot . '/VERSION')) {
-        copy($appRoot . '/VERSION', $backupDir . '/VERSION');
+
+    // Backup root files
+    $filesToBackup = ['index.php', 'install.php', 'keywords.php', 'login.php', 'logout.php', 'notifications.php', 'register.php', '.htaccess', 'VERSION'];
+    foreach ($filesToBackup as $file) {
+        $src = $appRoot . '/' . $file;
+        if (file_exists($src)) {
+            copy($src, $backupDir . '/' . $file);
+        }
     }
     return $backupDir;
 }
@@ -170,33 +178,61 @@ function doUpdate(string $zipUrl, string $versionFile, string $backupBase): arra
         }
     }
 
-    // 5. Validate that expected directories exist inside the ZIP
-    $hasWeb = is_dir($sourceDir . '/web');
+    // 5. Detect ZIP structure: legacy (has web/) or flat (modern)
+    $hasLegacyWeb = is_dir($sourceDir . '/web');
     $hasWorker = is_dir($sourceDir . '/worker');
-    if (!$hasWeb && !$hasWorker) {
+    $hasFlatApp = is_dir($sourceDir . '/admin') || is_dir($sourceDir . '/includes');
+
+    if (!$hasLegacyWeb && !$hasFlatApp && !$hasWorker) {
         rrmdir($extractDir);
         @unlink($tempZip);
-        return ['success' => false, 'error' => 'Release ZIP does not contain web/ or worker/ directories. Aborting.', 'backup' => $backupDir];
+        return ['success' => false, 'error' => 'Release ZIP does not contain recognizable application files. Aborting.', 'backup' => $backupDir];
     }
 
-    // 6. Copy files (skip data/ inside web to avoid overwriting DB)
+    // 6. Copy files
     $copied = 0;
-    foreach (['web', 'worker'] as $dir) {
-        $src = $sourceDir . '/' . $dir;
-        $dst = $appRoot . '/' . $dir;
-        if (!is_dir($src)) continue;
 
-        $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($src));
+    if ($hasLegacyWeb) {
+        // Legacy mode: copy web/ → root, worker/ → worker/
+        foreach (['web', 'worker'] as $dir) {
+            $src = $sourceDir . '/' . $dir;
+            $dst = $appRoot . '/' . $dir;
+            if (!is_dir($src)) continue;
+
+            $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($src));
+            foreach ($rii as $file) {
+                if ($file->isDir()) continue;
+                $relative = substr($file->getPathname(), strlen($src) + 1);
+
+                if (strpos($relative, 'data/') === 0 || strpos($relative, 'data\\') === 0) {
+                    continue;
+                }
+
+                $target = $dst . '/' . $relative;
+                @mkdir(dirname($target), 0755, true);
+                copy($file->getPathname(), $target);
+                $copied++;
+            }
+        }
+    } else {
+        // Flat mode: copy everything from ZIP root except exclusions
+        $excluded = ['data', '.git', 'README.md', '.gitignore'];
+        $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($sourceDir));
         foreach ($rii as $file) {
             if ($file->isDir()) continue;
-            $relative = substr($file->getPathname(), strlen($src) + 1);
+            $relative = substr($file->getPathname(), strlen($sourceDir) + 1);
+            $parts = explode('/', str_replace('\\', '/', $relative));
+            $topDir = $parts[0] ?? '';
+            $fileName = basename($relative);
 
-            // Never overwrite the data directory or config files
+            if (in_array($topDir, $excluded, true) || in_array($fileName, $excluded, true)) {
+                continue;
+            }
             if (strpos($relative, 'data/') === 0 || strpos($relative, 'data\\') === 0) {
                 continue;
             }
 
-            $target = $dst . '/' . $relative;
+            $target = $appRoot . '/' . $relative;
             @mkdir(dirname($target), 0755, true);
             copy($file->getPathname(), $target);
             $copied++;
@@ -309,7 +345,7 @@ if (is_dir($backupBase)) {
 
     <p style="margin-top: 15px; color: #666; font-size: 0.9rem;">
         <strong>Note:</strong> Your database (<code>data/app.db</code>) and config files will not be overwritten.<br>
-        A full backup of <code>web/</code> and <code>worker/</code> is created automatically before every update.<br>
+        A full backup of application files and <code>worker/</code> is created automatically before every update.<br>
         <?php if ($release === null): ?><strong>Diagnosis:</strong> No GitHub release found. Create one at <code>https://github.com/alex-milla/ThreatIntelligence-TDL/releases</code><?php endif; ?>
     </p>
 </div>

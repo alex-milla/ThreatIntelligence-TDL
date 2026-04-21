@@ -3,8 +3,9 @@ worker/zones/
 worker/data/
 worker/config.ini
 
-# Web
-web/data/
+# App data (keep .htaccess, ignore DB and runtime files)
+data/*
+!data/.htaccess
 
 # IDE
 .vscode/

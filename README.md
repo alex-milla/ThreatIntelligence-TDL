@@ -28,17 +28,17 @@ LXC/VPS (Python Worker)        HTTPS API        Shared Hosting (PHP + SQLite)
 ### Web UI (Shared Hosting)
 - PHP 8.0+
 - SQLite 3 extension enabled
-- Write permissions in `web/data/` directory
+- Write permissions in `data/` directory
 
 ## Quick Start
 
 ### 1. Web UI (Shared Hosting)
 
-Upload the `web/` folder contents to your hosting root.
+Upload all files and folders (except `worker/`) to your hosting root.
 
 ```bash
 # The hosting must allow writing to data/
-chmod 755 web/data
+chmod 755 data
 ```
 
 Visit `https://yourdomain.com/install.php` and create the admin account. **Save the generated API key** — you will need it for the worker.
@@ -101,12 +101,12 @@ Then schedule it via cron (daily at 06:00 UTC):
 
 The admin panel includes a **System Update** page that checks GitHub releases and updates application files automatically. Your SQLite database is never overwritten during updates.
 
-For private repositories, set a GitHub personal access token in `web/admin/update.php`.
+For private repositories, set a GitHub personal access token in `admin/update.php` or via the `GITHUB_TOKEN` environment variable.
 
 ## Security Notes
 
 - The worker API is protected by a single API key (generated during install).
-- Keep `web/data/` outside the web root if your hosting allows it; otherwise `.htaccess` blocks direct access.
+- Keep `data/` outside the web root if your hosting allows it; otherwise `data/.htaccess` blocks direct access.
 - Use HTTPS between the worker and the hosting.
 - The worker never stores user data or keywords locally (only a domain cache for deduplication).
 
