@@ -41,6 +41,15 @@ try {
             continue;
         }
 
+        // Basic domain sanitization
+        $domain = strtolower(trim($domain));
+        if (strlen($domain) > 253 || !preg_match('/^[a-z0-9\-\.]+$/', $domain)) {
+            continue; // skip invalid domain
+        }
+        if (strpos($domain, '..') !== false) {
+            continue; // skip malformed
+        }
+
         $insertMatch->execute([$keywordId, $domain, $tld, $discoveredAt]);
         if ($insertMatch->rowCount() > 0) {
             $matchId = (int)$db->lastInsertId();
