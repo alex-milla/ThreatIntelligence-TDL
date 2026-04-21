@@ -5,6 +5,7 @@ Supports daemon mode with command polling from the web panel."""
 import argparse
 import configparser
 import json
+import logging
 import os
 import sqlite3
 import sys
@@ -12,6 +13,7 @@ import time
 from datetime import datetime, timezone, timedelta
 
 import downloader
+import logger
 import parser
 import matcher
 import sync_client
@@ -186,7 +188,8 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    print(f"[*] Start: {datetime.now(timezone.utc).isoformat()}")
+    log = logging.getLogger("tdl_worker")
+    log.info(f"Start: {datetime.now(timezone.utc).isoformat()}")
 
     # 1. Retry queued items first
     retry_sync_queue(db, host_url, api_key, max_retries)
@@ -232,9 +235,9 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
     print("[*] Fetching keywords from hosting ...")
     try:
         keywords = sync_client.get_keywords(host_url, api_key)
-        print(f"[+] Keywords loaded: {len(keywords)}")
+        log.info(f"Keywords loaded: {len(keywords)}")
     except Exception as e:
-        print(f"[-] Failed to fetch keywords: {e}")
+        log.error(f"Failed to fetch keywords: {e}")
         return stats
 
     if not keywords:
@@ -273,7 +276,7 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
 
     stats["domains_processed"] = domains_processed
     set_last_run(db)
-    print(f"[*] End: {datetime.now(timezone.utc).isoformat()}")
+    log.info(f"End: {datetime.now(timezone.utc).isoformat()}")
     return stats
 
 
@@ -285,7 +288,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str) -> 
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    print("[*] Starting keyword recheck against all cached domains...")
+    log.info("Starting keyword recheck against all cached domains...")
 
     try:
         keywords = sync_client.get_keywords(host_url, api_key)
@@ -295,7 +298,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str) -> 
         return stats
 
     if not keywords:
-        print("[!] No active keywords. Nothing to recheck.")
+        log.warning("No active keywords. Nothing to recheck.")
         return stats
 
     batch_size = 50000
@@ -325,18 +328,18 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str) -> 
 
         stats["domains_checked"] += len(domains)
         offset += batch_size
-        print(f"[*] Checked {stats['domains_checked']:,} domains so far...")
+        log.info(f"Checked {stats['domains_checked']:,} domains so far...")
 
     if all_matches:
-        print(f"[*] Sending {len(all_matches)} recheck matches to hosting...")
+        log.info(f"Sending {len(all_matches)} recheck matches to hosting...")
         ok = sync_client.send_matches(host_url, api_key, all_matches)
         if not ok:
             queue_matches(db, all_matches)
         stats["matches_found"] = len(all_matches)
     else:
-        print("[*] No new matches found during recheck.")
+        log.info("No new matches found during recheck.")
 
-    print(f"[*] Recheck complete. Domains checked: {stats['domains_checked']:,}, Matches: {stats['matches_found']}")
+    log.info(f"Recheck complete. Domains checked: {stats['domains_checked']:,}, Matches: {stats['matches_found']}")
     return stats
 
 
@@ -442,8 +445,11 @@ def main() -> int:
     data_dir = cfg.get("worker", "data_dir", fallback="./data")
     version = get_version()
 
+    # Setup logging with 90-day rotation
+    log = logger.setup_logger(os.path.join(data_dir, "logs"))
+
     if api_key == "TU_API_KEY":
-        print("[-] Please edit config.ini with real credentials.")
+        log.error("Please edit config.ini with real credentials.")
         return 1
 
     db_path = os.path.join(data_dir, "worker.db")
@@ -451,16 +457,16 @@ def main() -> int:
 
     last_run = get_last_run(db)
     if last_run:
-        print(f"[*] Last run: {last_run}")
+        log.info(f"Last run: {last_run}")
     else:
-        print("[*] No previous run recorded locally.")
+        log.info("No previous run recorded locally.")
 
     if args.status:
         db.close()
         return 0
 
     if args.daemon:
-        print(f"[*] Daemon mode started. Polling every {args.interval}s. Press Ctrl+C to stop.")
+        log.info(f"Daemon mode started. Polling every {args.interval}s. Press Ctrl+C to stop.")
         while True:
             logs = []
             try:
@@ -480,7 +486,7 @@ def main() -> int:
                     sync_client.send_logs(host_url, api_key, logs)
 
             except Exception as e:
-                print(f"[-] Daemon loop error: {e}")
+                log.error(f"Daemon loop error: {e}")
 
             time.sleep(args.interval)
     else:

@@ -1,6 +1,7 @@
 # Worker
 worker/zones/
 worker/data/
+worker/logs/
 worker/config.ini
 
 # App data (keep .htaccess, ignore DB and runtime files)
