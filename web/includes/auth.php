@@ -3,7 +3,9 @@
  * Authentication helpers + CSRF protection
  */
 
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 function requireAuth(): void {
     if (empty($_SESSION['user_id'])) {
@@ -63,6 +65,9 @@ function validateCsrf(): void {
 /* ---------- Security Headers ---------- */
 
 function sendSecurityHeaders(): void {
+    if (headers_sent()) {
+        return;
+    }
     header('X-Frame-Options: DENY');
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: strict-origin-when-cross-origin');
@@ -111,7 +116,8 @@ function getSetting(PDO $db, string $key, string $default = ''): string {
 }
 
 function setSetting(PDO $db, string $key, string $value): void {
-    $stmt = $db->prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+    // Compatible con SQLite antiguo (pre-3.24) que no soporta ON CONFLICT DO UPDATE
+    $stmt = $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
     $stmt->execute([$key, $value]);
 }
 
