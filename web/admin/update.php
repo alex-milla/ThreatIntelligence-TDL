@@ -223,7 +223,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $release && empty($error)) {
 
     <p style="margin-top: 15px; color: #666; font-size: 0.9rem;">
         <strong>Note:</strong> Your database (<code>data/app.db</code>) and config files will not be overwritten.
-        <?php if ($release === null): ?><br><strong>Diagnosis:</strong> Create a release on GitHub or set a personal access token in <code>update.php</code>.<?php endif; ?>
+        <?php if ($release === null): ?><br><strong>Diagnosis:</strong> No GitHub release found. Create one at <code>https://github.com/alex-milla/ThreatIntelligence-TDL/releases</code><?php endif; ?>
     </p>
 </div>
 
