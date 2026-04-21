@@ -114,3 +114,14 @@ def get_active_tlds(host_url: str, api_key: str) -> list[str]:
     if data.get("success"):
         return [row["name"] for row in data.get("tlds", [])]
     return []
+
+
+def send_recheck_status(host_url: str, api_key: str, status: dict) -> bool:
+    """Send recheck progress to the hosting API."""
+    url = f"{host_url}/api/v1/recheck_status.php"
+    headers = {
+        "X-API-Key": api_key,
+        "Content-Type": "application/json",
+    }
+    r = requests.post(url, headers=headers, json=status, timeout=30)
+    return r.status_code == 200

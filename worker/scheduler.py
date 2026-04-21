@@ -292,18 +292,32 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str) -> 
 
     try:
         keywords = sync_client.get_keywords(host_url, api_key)
-        print(f"[+] Keywords loaded: {len(keywords)}")
+        log.info(f"Keywords loaded: {len(keywords)}")
     except Exception as e:
-        print(f"[-] Failed to fetch keywords: {e}")
+        log.error(f"Failed to fetch keywords: {e}")
         return stats
 
     if not keywords:
         log.warning("No active keywords. Nothing to recheck.")
         return stats
 
+    total_domains = db.execute("SELECT COUNT(*) FROM domains_cache").fetchone()[0]
+    log.info(f"Total cached domains to check: {total_domains:,}")
+    started_at = datetime.now(timezone.utc).isoformat()
+
+    sync_client.send_recheck_status(host_url, api_key, {
+        "is_running": 1,
+        "total_domains": total_domains,
+        "checked_domains": 0,
+        "matches_found": 0,
+        "started_at": started_at,
+        "completed_at": None,
+    })
+
     batch_size = 50000
     offset = 0
     all_matches = []
+    last_progress_report = 0
 
     while True:
         cursor = db.cursor()
@@ -328,7 +342,20 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str) -> 
 
         stats["domains_checked"] += len(domains)
         offset += batch_size
-        log.info(f"Checked {stats['domains_checked']:,} domains so far...")
+
+        progress_threshold = max(total_domains // 20, 500000)
+        if stats["domains_checked"] - last_progress_report >= progress_threshold:
+            last_progress_report = stats["domains_checked"]
+            pct = (stats["domains_checked"] / total_domains * 100) if total_domains else 0
+            log.info(f"Checked {stats['domains_checked']:,} / {total_domains:,} domains ({pct:.1f}%)")
+            sync_client.send_recheck_status(host_url, api_key, {
+                "is_running": 1,
+                "total_domains": total_domains,
+                "checked_domains": stats["domains_checked"],
+                "matches_found": len(all_matches),
+                "started_at": started_at,
+                "completed_at": None,
+            })
 
     if all_matches:
         log.info(f"Sending {len(all_matches)} recheck matches to hosting...")
@@ -338,6 +365,15 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str) -> 
         stats["matches_found"] = len(all_matches)
     else:
         log.info("No new matches found during recheck.")
+
+    sync_client.send_recheck_status(host_url, api_key, {
+        "is_running": 0,
+        "total_domains": total_domains,
+        "checked_domains": stats["domains_checked"],
+        "matches_found": stats["matches_found"],
+        "started_at": started_at,
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    })
 
     log.info(f"Recheck complete. Domains checked: {stats['domains_checked']:,}, Matches: {stats['matches_found']}")
     return stats

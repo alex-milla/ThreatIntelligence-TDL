@@ -145,6 +145,16 @@ class Database {
         $db->exec("CREATE INDEX IF NOT EXISTS idx_api_ip ON api_requests(ip_address, requested_at)");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_api_key ON api_requests(api_key, requested_at)");
 
+        $db->exec("CREATE TABLE IF NOT EXISTS recheck_status (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            is_running INTEGER DEFAULT 0,
+            total_domains INTEGER DEFAULT 0,
+            checked_domains INTEGER DEFAULT 0,
+            matches_found INTEGER DEFAULT 0,
+            started_at TEXT,
+            completed_at TEXT
+        )");
+
         // Safe migration: add max_keywords if it doesn't exist yet
         try {
             $db->exec("ALTER TABLE users ADD COLUMN max_keywords INTEGER DEFAULT 10");

@@ -71,6 +71,35 @@ require __DIR__ . '/../templates/header.php';
 <?php endif; ?>
 
 <div class="card">
+    <h2>Keyword Recheck Status</h2>
+    <?php
+    $recheckStatus = $db->query("SELECT * FROM recheck_status WHERE id = 1")->fetch();
+    $recheckRunning = !empty($recheckStatus['is_running']);
+    $recheckTotal = (int)($recheckStatus['total_domains'] ?? 0);
+    $recheckChecked = (int)($recheckStatus['checked_domains'] ?? 0);
+    $recheckMatches = (int)($recheckStatus['matches_found'] ?? 0);
+    $recheckPct = $recheckTotal > 0 ? round($recheckChecked / $recheckTotal * 100, 1) : 0;
+    ?>
+    <div id="recheck-container" data-running="<?= $recheckRunning ? '1' : '0' ?>">
+        <?php if ($recheckRunning): ?>
+            <p><strong>Status:</strong> <span style="color: #e67e22;">Running</span></p>
+            <div style="background: #f0f0f0; border-radius: 4px; height: 24px; margin: 10px 0; overflow: hidden;">
+                <div id="recheck-bar" style="background: #3498db; width: <?= $recheckPct ?>%; height: 100%; transition: width 0.5s;"></div>
+            </div>
+            <p id="recheck-text">
+                Checked <strong><?= number_format($recheckChecked) ?></strong> of <strong><?= number_format($recheckTotal) ?></strong> domains
+                (<?= $recheckPct ?>%) — <strong><?= number_format($recheckMatches) ?></strong> matches found
+            </p>
+        <?php elseif ($recheckStatus && $recheckStatus['completed_at']): ?>
+            <p><strong>Status:</strong> <span style="color: #27ae60;">Completed</span> at <?= htmlspecialchars($recheckStatus['completed_at']) ?></p>
+            <p>Checked <strong><?= number_format($recheckChecked) ?></strong> domains — <strong><?= number_format($recheckMatches) ?></strong> matches found</p>
+        <?php else: ?>
+            <p><strong>Status:</strong> <span style="color: #7f8c8d;">Idle</span></p>
+        <?php endif; ?>
+    </div>
+</div>
+
+<div class="card">
     <h2>Worker Status</h2>
     <?php if ($workerStatus): ?>
         <table>
@@ -222,5 +251,45 @@ require __DIR__ . '/../templates/header.php';
         <button type="submit" class="btn <?= $regOpen ? 'btn-danger' : '' ?>"><?= $regOpen ? 'Close Registration' : 'Open Registration' ?></button>
     </form>
 </div>
+
+<script>
+(function() {
+    const container = document.getElementById('recheck-container');
+    if (!container || container.dataset.running !== '1') return;
+
+    function updateStatus() {
+        fetch('/ajax_recheck_status.php')
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success || !data.status) return;
+                const s = data.status;
+                const running = s.is_running == 1;
+                const pct = s.progress_pct || 0;
+                const checked = parseInt(s.checked_domains || 0).toLocaleString();
+                const total = parseInt(s.total_domains || 0).toLocaleString();
+                const matches = parseInt(s.matches_found || 0).toLocaleString();
+
+                if (!running) {
+                    container.dataset.running = '0';
+                    container.innerHTML = `
+                        <p><strong>Status:</strong> <span style="color: #27ae60;">Completed</span> at ${s.completed_at || 'just now'}</p>
+                        <p>Checked <strong>${checked}</strong> domains — <strong>${matches}</strong> matches found</p>
+                    `;
+                    return;
+                }
+
+                let bar = document.getElementById('recheck-bar');
+                let text = document.getElementById('recheck-text');
+                if (bar) bar.style.width = pct + '%';
+                if (text) {
+                    text.innerHTML = `Checked <strong>${checked}</strong> of <strong>${total}</strong> domains (${pct}%) — <strong>${matches}</strong> matches found`;
+                }
+            })
+            .catch(() => {});
+    }
+
+    setInterval(updateStatus, 5000);
+})();
+</script>
 
 <?php require __DIR__ . '/../templates/footer.php'; ?>
