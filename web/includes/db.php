@@ -121,5 +121,18 @@ class Database {
             is_running INTEGER DEFAULT 0,
             version TEXT
         )");
+
+        $db->exec("CREATE TABLE IF NOT EXISTS login_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ip_address TEXT NOT NULL,
+            username TEXT,
+            attempted_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_login_ip ON login_attempts(ip_address, attempted_at)");
+        
+        $db->exec("CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )");
     }
 }

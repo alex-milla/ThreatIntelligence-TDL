@@ -7,28 +7,36 @@ if (!empty($_SESSION['user_id'])) {
     exit;
 }
 
+$db = Database::get();
+$registrationClosed = !isRegistrationOpen($db);
+
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    validateCsrf();
-    $username = trim($_POST['username'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $password = $_POST['password'] ?? '';
-    
-    if (strlen($username) < 3 || strlen($password) < 8 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = 'Username must be at least 3 characters, password at least 8, and email must be valid.';
+    if ($registrationClosed) {
+        http_response_code(403);
+        $error = 'Registration is currently closed.';
     } else {
-        $db = Database::get();
-        $hash = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $db->prepare("INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)");
-        try {
-            $stmt->execute([$username, $email, $hash]);
-            header('Location: /login.php?registered=1');
-            exit;
-        } catch (PDOException $e) {
-            if (strpos($e->getMessage(), 'UNIQUE constraint failed') !== false) {
-                $error = 'Username or email already exists.';
-            } else {
-                $error = 'Registration failed. Please try again.';
+        validateCsrf();
+        $username = trim($_POST['username'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $password = $_POST['password'] ?? '';
+        
+        if (strlen($username) < 3 || strlen($password) < 8 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $error = 'Username must be at least 3 characters, password at least 8, and email must be valid.';
+        } else {
+            $db = Database::get();
+            $hash = password_hash($password, PASSWORD_DEFAULT);
+            $stmt = $db->prepare("INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)");
+            try {
+                $stmt->execute([$username, $email, $hash]);
+                header('Location: /login.php?registered=1');
+                exit;
+            } catch (PDOException $e) {
+                if (strpos($e->getMessage(), 'UNIQUE constraint failed') !== false) {
+                    $error = 'Username or email already exists.';
+                } else {
+                    $error = 'Registration failed. Please try again.';
+                }
             }
         }
     }
@@ -43,6 +51,9 @@ require __DIR__ . '/templates/header.php';
     <?php if ($error): ?>
         <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
+    <?php if ($registrationClosed): ?>
+        <div class="alert alert-error">Registration is currently closed. Contact the administrator.</div>
+    <?php else: ?>
     <form method="POST">
         <?php csrfField(); ?>
         <div class="form-group">
@@ -60,6 +71,7 @@ require __DIR__ . '/templates/header.php';
         <button type="submit" class="btn">Register</button>
     </form>
     <p style="margin-top: 15px;"><a href="/login.php">Already have an account?</a></p>
+    <?php endif; ?>
 </div>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>

@@ -67,3 +67,54 @@ function sendSecurityHeaders(): void {
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: strict-origin-when-cross-origin');
 }
+
+/* ---------- Rate Limiting ---------- */
+
+function getClientIp(): string {
+    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+        return trim($ips[0]);
+    }
+    if (!empty($_SERVER['HTTP_X_REAL_IP'])) {
+        return $_SERVER['HTTP_X_REAL_IP'];
+    }
+    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+}
+
+function isRateLimited(PDO $db, string $ip, int $maxAttempts = 5, int $windowMinutes = 15): bool {
+    $stmt = $db->prepare("SELECT COUNT(*) FROM login_attempts WHERE ip_address = ? AND attempted_at > datetime('now', '-? minutes')");
+    $stmt->execute([$ip, $windowMinutes]);
+    // SQLite no permite parametrizar intervals directamente en algunas versiones, así que uso string interpolation controlada
+    $since = date('Y-m-d H:i:s', strtotime("-{$windowMinutes} minutes"));
+    $stmt = $db->prepare("SELECT COUNT(*) FROM login_attempts WHERE ip_address = ? AND attempted_at > ?");
+    $stmt->execute([$ip, $since]);
+    return (int)$stmt->fetchColumn() >= $maxAttempts;
+}
+
+function recordLoginAttempt(PDO $db, string $ip, string $username = ''): void {
+    $stmt = $db->prepare("INSERT INTO login_attempts (ip_address, username) VALUES (?, ?)");
+    $stmt->execute([$ip, $username]);
+}
+
+function clearLoginAttempts(PDO $db, string $ip): void {
+    $stmt = $db->prepare("DELETE FROM login_attempts WHERE ip_address = ?");
+    $stmt->execute([$ip]);
+}
+
+/* ---------- Settings ---------- */
+
+function getSetting(PDO $db, string $key, string $default = ''): string {
+    $stmt = $db->prepare("SELECT value FROM settings WHERE key = ? LIMIT 1");
+    $stmt->execute([$key]);
+    $row = $stmt->fetch();
+    return $row ? $row['value'] : $default;
+}
+
+function setSetting(PDO $db, string $key, string $value): void {
+    $stmt = $db->prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+    $stmt->execute([$key, $value]);
+}
+
+function isRegistrationOpen(PDO $db): bool {
+    return getSetting($db, 'registration_open', '1') === '1';
+}

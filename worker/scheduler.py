@@ -243,11 +243,21 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
 
     # 5. Process each TLD
     all_matches = []
+    domains_processed = 0
     for tld in tlds:
         try:
             matches = process_tld(tld, token, download_dir, db, keywords)
             all_matches.extend(matches)
             stats["tlds_processed"] += 1
+            # Count total domains seen this cycle from zone_runs
+            cursor = db.cursor()
+            cursor.execute(
+                "SELECT records_total FROM zone_runs WHERE tld = ? AND run_date = (SELECT MAX(run_date) FROM zone_runs WHERE tld = ?)",
+                (tld, tld)
+            )
+            row = cursor.fetchone()
+            if row:
+                domains_processed += row[0]
         except Exception as e:
             print(f"[-] Exception processing {tld}: {e}")
 
@@ -261,7 +271,7 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
     else:
         print("[*] No new matches to send.")
 
-    stats["domains_processed"] = sum(1 for _ in db.execute("SELECT 1 FROM domains_cache"))
+    stats["domains_processed"] = domains_processed
     print(f"[*] End: {datetime.now(timezone.utc).isoformat()}")
     return stats
 

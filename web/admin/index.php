@@ -34,6 +34,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['update_whitelist', $whitelist]);
         $message = 'Whitelist update queued for worker.';
     }
+    
+    if ($action === 'toggle_registration') {
+        $current = isRegistrationOpen($db);
+        setSetting($db, 'registration_open', $current ? '0' : '1');
+        $message = $current ? 'Registration closed.' : 'Registration opened.';
+    }
 }
 
 // Data
@@ -177,9 +183,18 @@ require __DIR__ . '/../templates/header.php';
     </table>
 </div>
 
+<?php $regOpen = isRegistrationOpen($db); ?>
 <div class="card">
     <h2>System</h2>
     <p><a href="/admin/update.php" class="btn">Check for Updates</a></p>
+    
+    <h3 style="margin-top: 20px;">Registration</h3>
+    <p>Status: <strong><?= $regOpen ? 'Open' : 'Closed' ?></strong></p>
+    <form method="POST" style="margin-top: 10px;">
+        <?php csrfField(); ?>
+        <input type="hidden" name="action" value="toggle_registration">
+        <button type="submit" class="btn <?= $regOpen ? 'btn-danger' : '' ?>"><?= $regOpen ? 'Close Registration' : 'Open Registration' ?></button>
+    </form>
 </div>
 
 <?php require __DIR__ . '/../templates/footer.php'; ?>

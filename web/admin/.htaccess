@@ -1,0 +1,16 @@
+# Additional protection for admin directory
+# PHP already enforces admin check, but this adds a server-level barrier
+
+# Optional: password protect this directory (uncomment and configure with your hosting's htpasswd tool)
+# AuthType Basic
+# AuthName "Admin Panel"
+# AuthUserFile /path/to/.htpasswd
+# Require valid-user
+
+# Deny access if PHP is disabled (defense in depth)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>

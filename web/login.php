@@ -14,19 +14,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
     
     $db = Database::get();
-    $stmt = $db->prepare("SELECT id, username, password_hash, is_admin FROM users WHERE username = ? AND is_active = 1 LIMIT 1");
-    $stmt->execute([$username]);
-    $user = $stmt->fetch();
+    $ip = getClientIp();
     
-    if ($user && password_verify($password, $user['password_hash'])) {
-        session_regenerate_id(true);
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['username'] = $user['username'];
-        $_SESSION['is_admin'] = $user['is_admin'];
-        header('Location: /');
-        exit;
+    if (isRateLimited($db, $ip)) {
+        $error = 'Too many failed attempts. Please try again in 15 minutes.';
     } else {
-        $error = 'Invalid username or password.';
+        $stmt = $db->prepare("SELECT id, username, password_hash, is_admin FROM users WHERE username = ? AND is_active = 1 LIMIT 1");
+        $stmt->execute([$username]);
+        $user = $stmt->fetch();
+        
+        if ($user && password_verify($password, $user['password_hash'])) {
+            clearLoginAttempts($db, $ip);
+            session_regenerate_id(true);
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['is_admin'] = $user['is_admin'];
+            header('Location: /');
+            exit;
+        } else {
+            recordLoginAttempt($db, $ip, $username);
+            $error = 'Invalid username or password.';
+        }
     }
 }
 
