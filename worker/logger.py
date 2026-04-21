@@ -13,11 +13,14 @@ def setup_logger(log_dir: str = "./logs") -> logging.Logger:
     os.makedirs(log_dir, exist_ok=True)
 
     log_path = os.path.join(log_dir, "worker.log")
+    print(f"[*] Log directory: {log_dir}")
+    print(f"[*] Log file: {log_path}")
 
     # Touch the file to ensure it exists and we have permissions
     try:
         with open(log_path, "a", encoding="utf-8"):
             pass
+        print(f"[+] Log file created/verified successfully.")
     except OSError as e:
         print(f"[-] Cannot create log file {log_path}: {e}", file=sys.stderr)
 
