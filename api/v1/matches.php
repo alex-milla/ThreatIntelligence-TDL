@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/mail.php';
 
 $apiKey = $_SERVER['HTTP_X_API_KEY'] ?? '';
 if (!$apiKey) {
@@ -25,13 +26,16 @@ $matches = $input['matches'];
 $discoveredAt = $input['discovered_at'] ?? date('c');
 $inserted = 0;
 
+// Track emails to send per user
+$emailQueue = []; // [user_id => [email, username, matches[]]]
+
 $db->beginTransaction();
 
 try {
     $insertMatch = $db->prepare("INSERT OR IGNORE INTO matches (keyword_id, domain, tld, discovered_at) VALUES (?, ?, ?, ?)");
     $insertNotif = $db->prepare("INSERT INTO notifications (user_id, match_id) VALUES (?, ?)");
     $updateCount = $db->prepare("UPDATE keywords SET match_count = match_count + 1 WHERE id = ?");
-    $getKeywordOwner = $db->prepare("SELECT user_id FROM keywords WHERE id = ?");
+    $getKeywordOwner = $db->prepare("SELECT k.user_id, k.keyword, u.email, u.username, u.email_notifications FROM keywords k JOIN users u ON k.user_id = u.id WHERE k.id = ? LIMIT 1");
 
     foreach ($matches as $m) {
         $keywordId = (int)($m['keyword_id'] ?? 0);
@@ -60,17 +64,39 @@ try {
             $keywordRow = $getKeywordOwner->fetch();
             if ($keywordRow) {
                 $insertNotif->execute([$keywordRow['user_id'], $matchId]);
+
+                // Queue email if user wants notifications
+                if (!empty($keywordRow['email_notifications'])) {
+                    $uid = (int)$keywordRow['user_id'];
+                    if (!isset($emailQueue[$uid])) {
+                        $emailQueue[$uid] = [
+                            'email' => $keywordRow['email'],
+                            'username' => $keywordRow['username'],
+                            'matches' => [],
+                        ];
+                    }
+                    $emailQueue[$uid]['matches'][] = [
+                        'domain' => $domain,
+                        'keyword' => $keywordRow['keyword'],
+                    ];
+                }
             }
 
             $updateCount->execute([$keywordId]);
         }
     }
 
+    $db->commit();
+
+    // Send emails after commit (so DB is not blocked)
+    foreach ($emailQueue as $queue) {
+        sendMatchEmail($queue['email'], $queue['username'], $queue['matches']);
+    }
+
     // Log sync
     $logStmt = $db->prepare("INSERT INTO sync_logs (source, records_received, records_inserted) VALUES (?, ?, ?)");
     $logStmt->execute(['worker', count($matches), $inserted]);
 
-    $db->commit();
     jsonResponse(['success' => true, 'inserted' => $inserted]);
 } catch (Exception $e) {
     $db->rollBack();
