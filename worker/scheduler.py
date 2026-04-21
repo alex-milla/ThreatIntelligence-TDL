@@ -55,6 +55,15 @@ def init_local_db(db_path: str) -> sqlite3.Connection:
             key TEXT PRIMARY KEY,
             value TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS sync_dead_letter (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            payload TEXT NOT NULL,
+            retry_count INTEGER DEFAULT 0,
+            error_reason TEXT,
+            created_at TEXT NOT NULL,
+            failed_at TEXT NOT NULL
+        );
     """)
     conn.commit()
     return conn
@@ -136,31 +145,65 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
 
 
 def retry_sync_queue(db: sqlite3.Connection, host_url: str, api_key: str, max_retries: int) -> None:
-    """Attempt to send any queued payloads."""
+    """Attempt to send any queued payloads. Move exhausted items to dead letter queue."""
     cursor = db.cursor()
     now = datetime.now(timezone.utc).isoformat()
     cursor.execute(
-        "SELECT id, payload, retry_count FROM sync_queue WHERE next_retry <= ? AND retry_count < ?",
-        (now, max_retries)
+        "SELECT id, payload, retry_count FROM sync_queue WHERE next_retry <= ?",
+        (now,)
     )
     rows = cursor.fetchall()
     if not rows:
         return
 
+    dead_letter_logs = []
     print(f"[*] Retrying {len(rows)} queued sync item(s) ...")
     for row_id, payload_json, retry_count in rows:
+        if retry_count >= max_retries:
+            # Legacy protection: move any row already at/exceeding limit to dead letter
+            cursor.execute(
+                "INSERT INTO sync_dead_letter (payload, retry_count, error_reason, created_at, failed_at) VALUES (?, ?, ?, ?, ?)",
+                (payload_json, retry_count, "Retries exhausted (legacy)", now, now)
+            )
+            cursor.execute("DELETE FROM sync_queue WHERE id = ?", (row_id,))
+            db.commit()
+            dead_letter_logs.append({
+                "level": "error",
+                "message": f"Sync queue item {row_id} moved to dead letter (retries exhausted, legacy)",
+                "timestamp": now
+            })
+            continue
+
         payload = json.loads(payload_json)
         ok = sync_client.send_matches(host_url, api_key, payload)
         if ok:
             cursor.execute("DELETE FROM sync_queue WHERE id = ?", (row_id,))
             db.commit()
         else:
-            next_retry = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
-            cursor.execute(
-                "UPDATE sync_queue SET retry_count = ?, next_retry = ? WHERE id = ?",
-                (retry_count + 1, next_retry, row_id)
-            )
-            db.commit()
+            new_retry_count = retry_count + 1
+            if new_retry_count >= max_retries:
+                cursor.execute(
+                    "INSERT INTO sync_dead_letter (payload, retry_count, error_reason, created_at, failed_at) VALUES (?, ?, ?, ?, ?)",
+                    (payload_json, new_retry_count, "Retries exhausted", now, now)
+                )
+                cursor.execute("DELETE FROM sync_queue WHERE id = ?", (row_id,))
+                db.commit()
+                dead_letter_logs.append({
+                    "level": "error",
+                    "message": f"Sync queue item {row_id} moved to dead letter after {new_retry_count} retries",
+                    "timestamp": now
+                })
+                print(f"[!] Queue item {row_id} moved to dead letter after {new_retry_count} retries.")
+            else:
+                next_retry = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+                cursor.execute(
+                    "UPDATE sync_queue SET retry_count = ?, next_retry = ? WHERE id = ?",
+                    (new_retry_count, next_retry, row_id)
+                )
+                db.commit()
+
+    if dead_letter_logs:
+        sync_client.send_logs(host_url, api_key, dead_letter_logs)
 
 
 def queue_matches(db: sqlite3.Connection, matches: list[dict]) -> None:
