@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// Delete selected notifications
+// Delete selected notifications (current page only)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_selected') {
     $selected = array_filter(array_map('intval', $_POST['selected'] ?? []));
     if (!empty($selected)) {
@@ -44,6 +44,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $db->prepare("DELETE FROM notifications WHERE id IN ($placeholders) AND user_id = ?")->execute($params);
     }
     header('Location: /notifications.php');
+    exit;
+}
+
+// Delete ALL notifications matching current filters
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_all_matching') {
+    $delWhere = "WHERE n.user_id = ?";
+    $delParams = [$userId];
+    $qFilter = trim($_POST['q'] ?? '');
+    $dateFilterPost = $_POST['date'] ?? 'all';
+    $unreadFilterPost = isset($_POST['unread_only']) && $_POST['unread_only'] === '1';
+
+    if ($qFilter !== '') {
+        $delWhere .= " AND (m.domain LIKE ? OR m.tld LIKE ? OR k.keyword LIKE ?)";
+        $like = '%' . $qFilter . '%';
+        $delParams[] = $like;
+        $delParams[] = $like;
+        $delParams[] = $like;
+    }
+    if ($unreadFilterPost) {
+        $delWhere .= " AND n.is_read = 0";
+    }
+    if (!empty($validDateFilters[$dateFilterPost])) {
+        $delWhere .= " AND m.discovered_at >= datetime('now', ?)";
+        $delParams[] = $validDateFilters[$dateFilterPost];
+    }
+
+    $db->prepare("DELETE FROM notifications WHERE id IN (SELECT n.id FROM notifications n JOIN matches m ON n.match_id = m.id JOIN keywords k ON m.keyword_id = k.id $delWhere)")->execute($delParams);
+
+    $redirect = '/notifications.php';
+    if ($qFilter !== '' || $dateFilterPost !== 'all' || $unreadFilterPost) {
+        $qs = [];
+        if ($qFilter !== '') $qs['q'] = $qFilter;
+        if ($dateFilterPost !== 'all') $qs['date'] = $dateFilterPost;
+        if ($unreadFilterPost) $qs['unread_only'] = '1';
+        $redirect .= '?' . http_build_query($qs);
+    }
+    header('Location: ' . $redirect);
     exit;
 }
 
@@ -126,7 +163,7 @@ require __DIR__ . '/templates/header.php';
         <?php endif; ?>
     </div>
 
-    <form method="GET" style="margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+    <form method="GET" id="filter-form" style="margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
         <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Search domain, TLD or keyword..." style="flex: 1; min-width: 200px; padding: 8px;">
         <select name="date" style="padding: 8px;">
             <option value="all" <?= $dateFilter === 'all' ? 'selected' : '' ?>>All time</option>
@@ -143,6 +180,17 @@ require __DIR__ . '/templates/header.php';
         <a href="/notifications.php" class="btn btn-small btn-danger">Clear</a>
         <?php endif; ?>
     </form>
+
+    <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all'): ?>
+    <form method="POST" style="margin-bottom: 15px;">
+        <?php csrfField(); ?>
+        <input type="hidden" name="action" value="delete_all_matching">
+        <input type="hidden" name="q" value="<?= htmlspecialchars($search) ?>">
+        <input type="hidden" name="date" value="<?= htmlspecialchars($dateFilter) ?>">
+        <input type="hidden" name="unread_only" value="<?= $unreadOnly ? '1' : '0' ?>">
+        <button type="submit" class="btn btn-danger" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')">Delete All Matching Results (<?= $total ?>)</button>
+    </form>
+    <?php endif; ?>
     
     <?php if (empty($notifications)): ?>
         <p>No notifications yet. Matches will appear here when the worker finds new domains.</p>
@@ -150,11 +198,14 @@ require __DIR__ . '/templates/header.php';
         <form method="POST" id="bulk-form">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="delete_selected">
-            <div style="margin-bottom: 10px;">
+            <div style="margin-bottom: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                 <label style="display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
                     <input type="checkbox" id="select-all"> <strong>Select all visible</strong>
                 </label>
-                <button type="submit" class="btn btn-small btn-danger" style="margin-left: 15px;" onclick="return confirm('Delete selected notifications?')">Delete Selected</button>
+                <button type="submit" class="btn btn-small btn-danger" onclick="return confirm('Delete selected notifications?')">Delete Selected</button>
+                <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all'): ?>
+                <button type="submit" formaction="/notifications.php" formmethod="POST" class="btn btn-small btn-danger" name="action" value="delete_all_matching" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')">Delete All Matching (<?= $total ?>)</button>
+                <?php endif; ?>
             </div>
         <table>
             <thead>
