@@ -6,6 +6,8 @@ requireAuth();
 $db = Database::get();
 $userId = (int)$_SESSION['user_id'];
 $isAdmin = !empty($_SESSION['is_admin']);
+$message = $_SESSION['flash_message'] ?? '';
+unset($_SESSION['flash_message']);
 
 // Toggle email notifications
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'toggle_email') {
@@ -21,6 +23,7 @@ if ($isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])
     validateCsrf();
     $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")
         ->execute(['recheck_keywords', '']);
+    $_SESSION['flash_message'] = 'Keyword recheck queued. The worker will process it on its next poll.';
     header('Location: /');
     exit;
 }
@@ -56,6 +59,10 @@ $recentMatches = $stmt->fetchAll();
 $pageTitle = 'Dashboard';
 require __DIR__ . '/templates/header.php';
 ?>
+
+<?php if ($message): ?>
+<div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
+<?php endif; ?>
 
 <div class="stats">
     <div class="stat-box">
@@ -122,6 +129,9 @@ require __DIR__ . '/templates/header.php';
     $recheckMatches = (int)($recheckStatus['matches_found'] ?? 0);
     $recheckPct = $recheckTotal > 0 ? round($recheckChecked / $recheckTotal * 100, 1) : 0;
     ?>
+    <?php
+    $pendingRecheck = $db->query("SELECT COUNT(*) FROM commands WHERE command = 'recheck_keywords' AND status = 'pending'")->fetchColumn();
+    ?>
     <div id="recheck-container" data-running="<?= $recheckRunning ? '1' : '0' ?>">
         <?php if ($recheckRunning): ?>
             <p><strong>Status:</strong> <span style="color: #e67e22;">Running</span></p>
@@ -138,13 +148,19 @@ require __DIR__ . '/templates/header.php';
         <?php else: ?>
             <p><strong>Status:</strong> <span style="color: #7f8c8d;">Idle</span></p>
         <?php endif; ?>
+        <?php if ((int)$pendingRecheck > 0 && !$recheckRunning): ?>
+            <p style="color: #e67e22; font-size: 0.9rem;"><strong><?= (int)$pendingRecheck ?></strong> recheck command(s) queued — waiting for worker.</p>
+        <?php endif; ?>
         <form method="POST" style="margin-top: 10px;">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="recheck_keywords">
-            <button type="submit" class="btn" <?= $recheckRunning ? 'disabled' : '' ?>>
-                <?= $recheckRunning ? 'Recheck in progress...' : 'Recheck All Cached Domains' ?>
+            <button type="submit" class="btn" <?= ($recheckRunning || (int)$pendingRecheck > 0) ? 'disabled' : '' ?>>
+                <?= $recheckRunning ? 'Recheck in progress...' : ((int)$pendingRecheck > 0 ? 'Queued — waiting for worker' : 'Recheck All Cached Domains') ?>
             </button>
         </form>
+        <p style="color: #666; font-size: 0.85rem; margin-top: 8px;">
+            The worker must be running (daemon mode) for recheck to start immediately. Otherwise it will run on the next cron schedule.
+        </p>
     </div>
 </div>
 
