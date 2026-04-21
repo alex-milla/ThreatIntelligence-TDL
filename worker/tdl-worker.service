@@ -1,0 +1,16 @@
+[Unit]
+Description=ThreatIntelligence TDL Worker Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/ThreatIntelligence-TDL/worker
+ExecStart=/usr/bin/python3 /root/ThreatIntelligence-TDL/worker/scheduler.py --daemon --interval 60
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
