@@ -35,9 +35,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// Delete all notifications
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_all') {
-    $db->prepare("DELETE FROM notifications WHERE user_id = ?")->execute([$userId]);
+// Delete selected notifications
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_selected') {
+    $selected = array_filter(array_map('intval', $_POST['selected'] ?? []));
+    if (!empty($selected)) {
+        $placeholders = implode(',', array_fill(0, count($selected), '?'));
+        $params = array_merge($selected, [$userId]);
+        $db->prepare("DELETE FROM notifications WHERE id IN ($placeholders) AND user_id = ?")->execute($params);
+    }
     header('Location: /notifications.php');
     exit;
 }
@@ -91,11 +96,6 @@ require __DIR__ . '/templates/header.php';
                 <input type="hidden" name="action" value="mark_all_read">
                 <button type="submit" class="btn btn-small">Mark All Read</button>
             </form>
-            <form method="POST" style="margin: 0;" onsubmit="return confirm('Delete ALL notifications? This cannot be undone.');">
-                <?php csrfField(); ?>
-                <input type="hidden" name="action" value="delete_all">
-                <button type="submit" class="btn btn-small btn-danger">Delete All</button>
-            </form>
         </div>
         <?php endif; ?>
     </div>
@@ -121,9 +121,19 @@ require __DIR__ . '/templates/header.php';
     <?php if (empty($notifications)): ?>
         <p>No notifications yet. Matches will appear here when the worker finds new domains.</p>
     <?php else: ?>
+        <form method="POST" id="bulk-form">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="delete_selected">
+            <div style="margin-bottom: 10px;">
+                <label style="display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" id="select-all"> <strong>Select all visible</strong>
+                </label>
+                <button type="submit" class="btn btn-small btn-danger" style="margin-left: 15px;" onclick="return confirm('Delete selected notifications?')">Delete Selected</button>
+            </div>
         <table>
             <thead>
                 <tr>
+                    <th style="width: 30px;"></th>
                     <th>Status</th>
                     <th>Domain</th>
                     <th>TLD</th>
@@ -135,6 +145,7 @@ require __DIR__ . '/templates/header.php';
             <tbody>
                 <?php foreach ($notifications as $n): ?>
                 <tr class="<?= $n['is_read'] ? '' : 'unread' ?>">
+                    <td><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check"></td>
                     <td><?= $n['is_read'] ? 'Read' : '<strong>Unread</strong>' ?></td>
                     <td><?= htmlspecialchars($n['domain']) ?></td>
                     <td><?= htmlspecialchars($n['tld']) ?></td>
@@ -160,6 +171,13 @@ require __DIR__ . '/templates/header.php';
                 <?php endforeach; ?>
             </tbody>
         </table>
+        </form>
+
+        <script>
+        document.getElementById('select-all').addEventListener('change', function(e) {
+            document.querySelectorAll('.row-check').forEach(cb => cb.checked = e.target.checked);
+        });
+        </script>
     <?php endif; ?>
 </div>
 
