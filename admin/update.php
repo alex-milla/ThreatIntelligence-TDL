@@ -252,7 +252,7 @@ if (file_exists($versionFile)) {
     $currentVersion = trim(file_get_contents($versionFile));
 }
 
-// Fetch latest release from GitHub
+// Fetch latest release from GitHub (try releases first, then tags)
 $apiResult = githubApiGet("https://api.github.com/repos/{$repoOwner}/{$repoName}/releases/latest", $githubToken);
 $release = $apiResult['success'] ? $apiResult['data'] : null;
 $remoteVersion = '';
@@ -265,6 +265,20 @@ if ($release) {
     $zipUrl = $release['zipball_url'] ?? '';
     $releaseNotes = $release['body'] ?? '';
     $publishedAt = $release['published_at'] ?? '';
+}
+
+// Fallback: if no release found, try tags API (works when only git tags exist)
+if (!$release && (empty($error) || strpos($apiResult['error'] ?? '', '404') !== false)) {
+    $tagsResult = githubApiGet("https://api.github.com/repos/{$repoOwner}/{$repoName}/tags?per_page=1", $githubToken);
+    if ($tagsResult['success'] && !empty($tagsResult['data'][0])) {
+        $tag = $tagsResult['data'][0];
+        $tagName = $tag['name'] ?? '';
+        $remoteVersion = ltrim($tagName, 'v');
+        $zipUrl = "https://github.com/{$repoOwner}/{$repoName}/archive/refs/tags/{$tagName}.zip";
+        $publishedAt = $tag['published_at'] ?? '';
+        // For tags we don't have release notes, but we can still update
+        $release = ['tag_name' => $tagName]; // mark as found so buttons work
+    }
 }
 
 if (!$release && empty($error)) {
