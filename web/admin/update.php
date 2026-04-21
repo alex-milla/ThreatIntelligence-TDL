@@ -15,8 +15,20 @@ $githubToken = ''; // Set a GitHub personal access token if repo is private
 $error = '';
 $info = '';
 
-$versionFile = __DIR__ . '/../../VERSION';
 $branch = 'main';
+
+// Find VERSION file (works in both local dev and hosting)
+$possibleVersionPaths = [
+    dirname(__DIR__) . '/VERSION',   // hosting: same dir as index.php
+    __DIR__ . '/../../VERSION',      // local dev: repo root
+];
+$versionFile = null;
+foreach ($possibleVersionPaths as $path) {
+    if (file_exists($path)) {
+        $versionFile = $path;
+        break;
+    }
+}
 
 function fetchUrl(string $url, string $token = ''): array {
     $result = ['success' => false, 'data' => '', 'error' => ''];
@@ -147,11 +159,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $remoteVersion !== null && empty($e
                     }
                 }
                 
-                // Copy VERSION file
+                // Copy VERSION file to correct location
                 $srcVersion = $sourceDir . '/VERSION';
+                $targetVersion = $versionFile ?: dirname(__DIR__) . '/VERSION';
                 if (file_exists($srcVersion)) {
-                    copy($srcVersion, $versionFile);
-                    $currentVersion = trim(file_get_contents($versionFile));
+                    copy($srcVersion, $targetVersion);
+                    $currentVersion = trim(file_get_contents($targetVersion));
                 }
                 
                 // Cleanup
