@@ -22,10 +22,12 @@ def match_domains(domains: Iterable[str], keywords: list[dict]) -> list[dict]:
         domain_lower = domain.lower()
         # Extract TLD from domain (last dot-separated part)
         parts = domain_lower.rsplit(".", 1)
+        name_part = parts[0] if len(parts) > 1 else domain_lower
         tld = parts[1] if len(parts) > 1 else ""
 
         for keyword_id, keyword_lower in keyword_list:
-            if keyword_lower in domain_lower:
+            # Match only in the name part, never in the TLD
+            if keyword_lower in name_part:
                 matches.append({
                     "keyword_id": keyword_id,
                     "domain": domain,

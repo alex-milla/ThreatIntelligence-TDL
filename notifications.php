@@ -27,15 +27,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// Fetch notifications with match details
-$stmt = $db->prepare("SELECT n.id, n.is_read, n.created_at, m.domain, m.tld, m.discovered_at, k.keyword 
+// Search / filter params
+$search = trim($_GET['q'] ?? '');
+$unreadOnly = isset($_GET['unread_only']) && $_GET['unread_only'] === '1';
+$dateFilter = $_GET['date'] ?? 'all';
+$validDateFilters = ['24h' => '-1 day', '7d' => '-7 days', '30d' => '-30 days', 'all' => ''];
+
+$sql = "SELECT n.id, n.is_read, n.created_at, m.domain, m.tld, m.discovered_at, k.keyword 
     FROM notifications n 
     JOIN matches m ON n.match_id = m.id 
     JOIN keywords k ON m.keyword_id = k.id 
-    WHERE n.user_id = ? 
-    ORDER BY n.created_at DESC 
-    LIMIT 100");
-$stmt->execute([$userId]);
+    WHERE n.user_id = ?";
+$params = [$userId];
+
+if ($search !== '') {
+    $sql .= " AND (m.domain LIKE ? OR m.tld LIKE ? OR k.keyword LIKE ?)";
+    $like = '%' . $search . '%';
+    $params[] = $like;
+    $params[] = $like;
+    $params[] = $like;
+}
+
+if ($unreadOnly) {
+    $sql .= " AND n.is_read = 0";
+}
+
+if (!empty($validDateFilters[$dateFilter])) {
+    $sql .= " AND m.discovered_at >= datetime('now', ?)";
+    $params[] = $validDateFilters[$dateFilter];
+}
+
+$sql .= " ORDER BY n.created_at DESC LIMIT 100";
+$stmt = $db->prepare($sql);
+$stmt->execute($params);
 $notifications = $stmt->fetchAll();
 
 $pageTitle = 'Notifications';
@@ -53,6 +77,24 @@ require __DIR__ . '/templates/header.php';
         </form>
         <?php endif; ?>
     </div>
+
+    <form method="GET" style="margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+        <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Search domain, TLD or keyword..." style="flex: 1; min-width: 200px; padding: 8px;">
+        <select name="date" style="padding: 8px;">
+            <option value="all" <?= $dateFilter === 'all' ? 'selected' : '' ?>>All time</option>
+            <option value="24h" <?= $dateFilter === '24h' ? 'selected' : '' ?>>Last 24h</option>
+            <option value="7d" <?= $dateFilter === '7d' ? 'selected' : '' ?>>Last 7 days</option>
+            <option value="30d" <?= $dateFilter === '30d' ? 'selected' : '' ?>>Last 30 days</option>
+        </select>
+        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+            <input type="checkbox" name="unread_only" value="1" <?= $unreadOnly ? 'checked' : '' ?>>
+            Unread only
+        </label>
+        <button type="submit" class="btn btn-small">Search</button>
+        <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all'): ?>
+        <a href="/notifications.php" class="btn btn-small btn-danger">Clear</a>
+        <?php endif; ?>
+    </form>
     
     <?php if (empty($notifications)): ?>
         <p>No notifications yet. Matches will appear here when the worker finds new domains.</p>
