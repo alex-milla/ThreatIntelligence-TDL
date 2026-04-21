@@ -27,6 +27,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
+// Delete single notification
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+    $notifId = (int)($_POST['notif_id'] ?? 0);
+    $db->prepare("DELETE FROM notifications WHERE id = ? AND user_id = ?")->execute([$notifId, $userId]);
+    header('Location: /notifications.php');
+    exit;
+}
+
+// Delete all notifications
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_all') {
+    $db->prepare("DELETE FROM notifications WHERE user_id = ?")->execute([$userId]);
+    header('Location: /notifications.php');
+    exit;
+}
+
 // Search / filter params
 $search = trim($_GET['q'] ?? '');
 $unreadOnly = isset($_GET['unread_only']) && $_GET['unread_only'] === '1';
@@ -70,11 +85,18 @@ require __DIR__ . '/templates/header.php';
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <h2>Notifications</h2>
         <?php if (!empty($notifications)): ?>
-        <form method="POST" style="margin: 0;">
-            <?php csrfField(); ?>
-            <input type="hidden" name="action" value="mark_all_read">
-            <button type="submit" class="btn btn-small">Mark All Read</button>
-        </form>
+        <div style="display: flex; gap: 10px;">
+            <form method="POST" style="margin: 0;">
+                <?php csrfField(); ?>
+                <input type="hidden" name="action" value="mark_all_read">
+                <button type="submit" class="btn btn-small">Mark All Read</button>
+            </form>
+            <form method="POST" style="margin: 0;" onsubmit="return confirm('Delete ALL notifications? This cannot be undone.');">
+                <?php csrfField(); ?>
+                <input type="hidden" name="action" value="delete_all">
+                <button type="submit" class="btn btn-small btn-danger">Delete All</button>
+            </form>
+        </div>
         <?php endif; ?>
     </div>
 
@@ -119,6 +141,12 @@ require __DIR__ . '/templates/header.php';
                     <td><?= htmlspecialchars($n['keyword']) ?></td>
                     <td><?= htmlspecialchars($n['discovered_at']) ?></td>
                     <td>
+                        <form method="POST" style="display: inline;">
+                            <?php csrfField(); ?>
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
+                            <button type="submit" class="btn btn-small btn-danger" onclick="return confirm('Delete this notification?')">Delete</button>
+                        </form>
                         <?php if (!$n['is_read']): ?>
                         <form method="POST" style="display: inline;">
                             <?php csrfField(); ?>
