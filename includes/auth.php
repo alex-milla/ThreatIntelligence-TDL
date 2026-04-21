@@ -87,9 +87,6 @@ function getClientIp(): string {
 }
 
 function isRateLimited(PDO $db, string $ip, int $maxAttempts = 5, int $windowMinutes = 15): bool {
-    $stmt = $db->prepare("SELECT COUNT(*) FROM login_attempts WHERE ip_address = ? AND attempted_at > datetime('now', '-? minutes')");
-    $stmt->execute([$ip, $windowMinutes]);
-    // SQLite no permite parametrizar intervals directamente en algunas versiones, así que uso string interpolation controlada
     $since = date('Y-m-d H:i:s', strtotime("-{$windowMinutes} minutes"));
     $stmt = $db->prepare("SELECT COUNT(*) FROM login_attempts WHERE ip_address = ? AND attempted_at > ?");
     $stmt->execute([$ip, $since]);
