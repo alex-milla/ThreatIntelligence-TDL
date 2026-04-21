@@ -33,6 +33,13 @@ require __DIR__ . '/../templates/header.php';
     <h2>Approved TLDs (<?= count($tlds) ?>)</h2>
     <p>Check the TLDs you want the worker to monitor. Unchecked TLDs will be ignored.</p>
     
+    <?php if (empty($tlds)): ?>
+    <div class="alert alert-error">
+        No TLDs found. The worker must run at least once to populate this list from ICANN CZDS.
+        <br>Go to <a href="/admin/">Admin Panel</a> and click <strong>Run Worker Now</strong>.
+    </div>
+    <?php endif; ?>
+
     <form method="POST">
         <?php csrfField(); ?>
         <div style="margin-bottom: 15px;">
