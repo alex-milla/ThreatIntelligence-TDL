@@ -142,6 +142,9 @@ require __DIR__ . '/templates/header.php';
                 Checked <strong><?= number_format($recheckChecked) ?></strong> of <strong><?= number_format($recheckTotal) ?></strong> domains
                 (<?= $recheckPct ?>%) — <strong><?= number_format($recheckMatches) ?></strong> matches found
             </p>
+        <?php elseif ($recheckStatus && $recheckStatus['completed_at'] && $recheckTotal == 0): ?>
+            <p><strong>Status:</strong> <span style="color: #c0392b;">No cached domains</span></p>
+            <p style="color: #c0392b;">The worker has not downloaded any zones yet. Run the worker first to build the domain cache.</p>
         <?php elseif ($recheckStatus && $recheckStatus['completed_at']): ?>
             <p><strong>Status:</strong> <span style="color: #27ae60;">Completed</span> at <?= htmlspecialchars($recheckStatus['completed_at']) ?></p>
             <p>Checked <strong><?= number_format($recheckChecked) ?></strong> domains — <strong><?= number_format($recheckMatches) ?></strong> matches found</p>

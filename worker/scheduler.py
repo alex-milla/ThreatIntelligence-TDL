@@ -305,6 +305,19 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str) -> 
     log.info(f"Total cached domains to check: {total_domains:,}")
     started_at = datetime.now(timezone.utc).isoformat()
 
+    if total_domains == 0:
+        log.warning("No cached domains found. Run the worker at least once to download zones before rechecking.")
+        sync_client.send_recheck_status(host_url, api_key, {
+            "is_running": 0,
+            "total_domains": 0,
+            "checked_domains": 0,
+            "matches_found": 0,
+            "started_at": started_at,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        })
+        stats["domains_checked"] = 0
+        return stats
+
     sync_client.send_recheck_status(host_url, api_key, {
         "is_running": 1,
         "total_domains": total_domains,
