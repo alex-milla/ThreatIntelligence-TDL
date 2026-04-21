@@ -332,21 +332,28 @@ if (is_dir($backupBase)) {
         <div class="alert alert-success"><?= $info ?></div>
     <?php endif; ?>
 
+    <?php if (!$githubToken && $release === null): ?>
+    <div class="alert alert-error" style="margin-bottom: 15px;">
+        <strong>Private repository detected or rate limited.</strong><br>
+        Create a file <code>data/.github_token</code> with a GitHub Personal Access Token to access releases.
+    </div>
+    <?php endif; ?>
+
     <form method="POST" style="margin-bottom: 10px;">
         <?php csrfField(); ?>
-        <button type="submit" class="btn" <?= ($release === null) ? 'disabled' : '' ?>>Check & Install Latest Release</button>
+        <button type="submit" class="btn">Check & Install Latest Release</button>
     </form>
 
     <form method="POST">
         <?php csrfField(); ?>
         <input type="hidden" name="force" value="1">
-        <button type="submit" class="btn btn-danger" <?= ($release === null) ? 'disabled' : '' ?>>Force Reinstall Latest Release</button>
+        <button type="submit" class="btn btn-danger">Force Reinstall Latest Release</button>
     </form>
 
     <p style="margin-top: 15px; color: #666; font-size: 0.9rem;">
         <strong>Note:</strong> Your database (<code>data/app.db</code>) and config files will not be overwritten.<br>
         A full backup of application files and <code>worker/</code> is created automatically before every update.<br>
-        <?php if ($release === null): ?><strong>Diagnosis:</strong> No GitHub release found. Create one at <code>https://github.com/alex-milla/ThreatIntelligence-TDL/releases</code><?php endif; ?>
+        <?php if ($release === null): ?><strong>Diagnosis:</strong> No GitHub release found. Create one at <code>https://github.com/alex-milla/ThreatIntelligence-TDL/releases</code> or check your token if the repo is private.<?php endif; ?>
     </p>
 </div>
 
