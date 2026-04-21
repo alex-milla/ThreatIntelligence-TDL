@@ -4,19 +4,71 @@ require_once __DIR__ . '/includes/auth.php';
 
 header('Content-Type: application/json');
 
-session_start();
-if (empty($_SESSION['user_id'])) {
-    echo json_encode(['success' => false, 'error' => 'Unauthorized']);
-    exit;
-}
+requireAuth();
 
 $domain = trim($_GET['domain'] ?? '');
-if (!$domain || strlen($domain) > 253 || !preg_match('/^[a-z0-9\-\.]+$/', $domain)) {
+if (!$domain || strlen($domain) > 253 || !preg_match('/^[a-z0-9\p{L}\-\.]+$/u', $domain)) {
     echo json_encode(['success' => false, 'error' => 'Invalid domain']);
     exit;
 }
 
-$rdapUrl = 'https://rdap.org/domain/' . urlencode(strtolower($domain));
+$domain = strtolower($domain);
+
+/**
+ * Get the RDAP base URL for a given TLD using IANA bootstrap.
+ * Caches the bootstrap JSON locally for 7 days.
+ */
+function getRdapServer(string $tld): ?string {
+    $cacheFile = __DIR__ . '/data/rdap_bootstrap.json';
+    $maxAge = 7 * 24 * 3600;
+
+    $bootstrap = null;
+    if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < $maxAge) {
+        $bootstrap = json_decode(file_get_contents($cacheFile), true);
+    }
+
+    if (empty($bootstrap)) {
+        $ch = curl_init('https://data.iana.org/rdap/dns.json');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_USERAGENT => 'TDL-Whois/1.0',
+            CURLOPT_SSL_VERIFYPEER => true,
+        ]);
+        $body = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($body && $httpCode === 200) {
+            $decoded = json_decode($body, true);
+            if (!empty($decoded['services'])) {
+                @mkdir(dirname($cacheFile), 0755, true);
+                file_put_contents($cacheFile, $body);
+                $bootstrap = $decoded;
+            }
+        }
+    }
+
+    if (empty($bootstrap['services'])) {
+        return null;
+    }
+
+    foreach ($bootstrap['services'] as $service) {
+        $tlds = $service[0] ?? [];
+        $endpoints = $service[1] ?? [];
+        if (in_array($tld, $tlds, true) && !empty($endpoints[0])) {
+            return rtrim($endpoints[0], '/') . '/';
+        }
+    }
+
+    return null;
+}
+
+$parts = explode('.', $domain);
+$tld = end($parts);
+$rdapServer = getRdapServer($tld);
+$rdapUrl = ($rdapServer ?: 'https://rdap.org/') . 'domain/' . urlencode($domain);
 
 function fetchRdap(string $url): array {
     $ch = curl_init($url);
@@ -51,16 +103,16 @@ function fetchRdap(string $url): array {
 
 $result = fetchRdap($rdapUrl);
 
+if (!$result['ok'] && $rdapServer) {
+    // Retry with central rdap.org if TLD-specific server failed
+    $result = fetchRdap('https://rdap.org/domain/' . urlencode($domain));
+}
+
 if (!$result['ok']) {
-    // Fallback: try TLD-specific RDAP bootstrap
-    $parts = explode('.', strtolower($domain));
-    $tld = end($parts);
-    $fallbackUrl = "https://rdap.org/domain/" . urlencode(strtolower($domain));
-    // No real fallback needed, rdap.org handles all TLDs via redirect
     echo json_encode([
         'success' => false,
         'error' => $result['error'],
-        'fallback_url' => 'https://who.is/whois/' . urlencode(strtolower($domain)),
+        'fallback_url' => 'https://who.is/whois/' . urlencode($domain),
     ]);
     exit;
 }

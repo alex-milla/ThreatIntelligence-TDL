@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.7] - 2026-04-21
+
+### RDAP Whois fix
+- `ajax_whois.php` now uses the **IANA RDAP Bootstrap** (`data.iana.org/rdap/dns.json`) to query the correct TLD-specific RDAP server instead of relying solely on `rdap.org`, which returns 404 for many new gTLDs (e.g., `.digital`, `.tech`). Bootstrap JSON is cached locally for 7 days.
+- Domain validation in whois endpoint now accepts Unicode/IDN characters (aligned with `matches.php`).
+- Removed redundant `session_start()` in `ajax_whois.php`.
+
 ## [v1.3.6] - 2026-04-21
 
 ### Fase 4 – Robustez final del diagnóstico
