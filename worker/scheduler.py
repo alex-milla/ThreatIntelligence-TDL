@@ -272,6 +272,7 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         print("[*] No new matches to send.")
 
     stats["domains_processed"] = domains_processed
+    set_last_run(db)
     print(f"[*] End: {datetime.now(timezone.utc).isoformat()}")
     return stats
 
@@ -337,11 +338,26 @@ def get_version() -> str:
     return "unknown"
 
 
+def get_last_run(db: sqlite3.Connection) -> str | None:
+    cursor = db.cursor()
+    cursor.execute("SELECT value FROM config WHERE key = 'last_run'")
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def set_last_run(db: sqlite3.Connection) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    cursor = db.cursor()
+    cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('last_run', ?)", (now,))
+    db.commit()
+
+
 def main() -> int:
     parser_args = argparse.ArgumentParser(description="ThreatIntelligence-TDL Worker")
     parser_args.add_argument("--daemon", action="store_true", help="Run in daemon mode with command polling")
     parser_args.add_argument("--interval", type=int, default=60, help="Polling interval in seconds (daemon mode)")
     parser_args.add_argument("--once", action="store_true", help="Run one worker cycle and exit (legacy)")
+    parser_args.add_argument("--status", action="store_true", help="Show last run status and exit")
     args = parser_args.parse_args()
 
     config_path = os.path.join(os.path.dirname(__file__), "config.ini")
@@ -364,6 +380,16 @@ def main() -> int:
 
     db_path = os.path.join(data_dir, "worker.db")
     db = init_local_db(db_path)
+
+    last_run = get_last_run(db)
+    if last_run:
+        print(f"[*] Last run: {last_run}")
+    else:
+        print("[*] No previous run recorded locally.")
+
+    if args.status:
+        db.close()
+        return 0
 
     if args.daemon:
         print(f"[*] Daemon mode started. Polling every {args.interval}s. Press Ctrl+C to stop.")
