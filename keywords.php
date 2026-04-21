@@ -5,6 +5,7 @@ requireAuth();
 
 $db = Database::get();
 $userId = (int)$_SESSION['user_id'];
+$isAdmin = !empty($_SESSION['is_admin']);
 
 $message = '';
 $error = '';
@@ -38,10 +39,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Delete keyword
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+    validateCsrf();
     $keywordId = (int)($_POST['keyword_id'] ?? 0);
     $stmt = $db->prepare("DELETE FROM keywords WHERE id = ? AND user_id = ?");
     $stmt->execute([$keywordId, $userId]);
     $message = 'Keyword deleted.';
+}
+
+// Admin recheck
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'recheck_keywords') {
+    validateCsrf();
+    if ($isAdmin) {
+        $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['recheck_keywords', '']);
+        $message = 'Keyword recheck queued. The worker will scan all cached domains against current keywords.';
+    } else {
+        $error = 'Only administrators can trigger a recheck.';
+    }
 }
 
 // List keywords
@@ -69,6 +82,15 @@ require __DIR__ . '/templates/header.php';
         <input type="text" name="keyword" placeholder="e.g. santander, nasa, caixabank" required style="flex: 1;">
         <button type="submit" class="btn">Add Keyword</button>
     </form>
+    
+    <?php if ($isAdmin): ?>
+    <form method="POST" style="margin-bottom: 20px;">
+        <?php csrfField(); ?>
+        <input type="hidden" name="action" value="recheck_keywords">
+        <button type="submit" class="btn btn-danger btn-small">🔍 Recheck All Cached Domains</button>
+        <span style="color: #666; font-size: 0.85rem; margin-left: 10px;">Scans all previously downloaded domains against current keywords (admin only)</span>
+    </form>
+    <?php endif; ?>
     
     <?php if (empty($keywords)): ?>
         <p>No keywords yet. Add your first keyword above.</p>
