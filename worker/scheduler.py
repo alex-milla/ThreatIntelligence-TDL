@@ -129,6 +129,8 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
     # 5. Match against keywords
     print(f"[*] Matching {len(new_domains):,} new domains against {len(keywords)} keywords ...")
     matches = matcher.match_domains(new_domains, keywords)
+    for m in matches:
+        m["first_seen"] = now
     print(f"[+] {len(matches)} matches found for .{tld}.")
     return matches
 
@@ -339,7 +341,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
     all_matches = []
     last_progress_report = 0
 
-    base_query = "SELECT domain, tld FROM domains_cache"
+    base_query = "SELECT domain, tld, first_seen FROM domains_cache"
     if max_age_days > 0:
         base_query += " WHERE first_seen >= datetime('now', '-' || ? || ' days')"
 
@@ -352,7 +354,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
             )
         else:
             cursor.execute(
-                "SELECT domain, tld FROM domains_cache ORDER BY domain LIMIT ? OFFSET ?",
+                "SELECT domain, tld, first_seen FROM domains_cache ORDER BY domain LIMIT ? OFFSET ?",
                 (batch_size, offset)
             )
         rows = cursor.fetchall()
@@ -361,13 +363,16 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
 
         domains = []
         tld_map = {}
-        for domain, tld in rows:
+        first_seen_map = {}
+        for domain, tld, first_seen in rows:
             domains.append(domain)
             tld_map[domain] = tld
+            first_seen_map[domain] = first_seen
 
         matches = matcher.match_domains(domains, keywords)
         for m in matches:
             m["tld"] = tld_map.get(m["domain"], m["tld"])
+            m["first_seen"] = first_seen_map.get(m["domain"], started_at)
             all_matches.append(m)
 
         stats["domains_checked"] += len(domains)

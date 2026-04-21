@@ -161,5 +161,12 @@ class Database {
         } catch (PDOException $e) {
             // Column already exists
         }
+
+        // Safe migration: add first_seen to matches
+        try {
+            $db->exec("ALTER TABLE matches ADD COLUMN first_seen TEXT");
+        } catch (PDOException $e) {
+            // Column already exists
+        }
     }
 }

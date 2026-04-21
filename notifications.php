@@ -125,7 +125,7 @@ $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
 // Fetch page
-$sql = "SELECT n.id, n.is_read, n.created_at, m.domain, m.tld, m.discovered_at, k.keyword 
+$sql = "SELECT n.id, n.is_read, n.created_at, m.domain, m.tld, m.discovered_at, m.first_seen, k.keyword 
     FROM notifications n 
     JOIN matches m ON n.match_id = m.id 
     JOIN keywords k ON m.keyword_id = k.id 
@@ -215,6 +215,7 @@ require __DIR__ . '/templates/header.php';
                     <th>Domain</th>
                     <th>TLD</th>
                     <th>Keyword</th>
+                    <th>First Seen</th>
                     <th>Discovered</th>
                     <th>Actions</th>
                 </tr>
@@ -227,6 +228,7 @@ require __DIR__ . '/templates/header.php';
                     <td><?= htmlspecialchars($n['domain']) ?></td>
                     <td><?= htmlspecialchars($n['tld']) ?></td>
                     <td><?= htmlspecialchars($n['keyword']) ?></td>
+                    <td><?= htmlspecialchars($n['first_seen'] ?? '-') ?></td>
                     <td><?= htmlspecialchars($n['discovered_at']) ?></td>
                     <td>
                         <form method="POST" style="display: inline;">

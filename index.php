@@ -58,7 +58,7 @@ $stmt->execute([$userId]);
 $unreadCount = (int)$stmt->fetchColumn();
 
 // Recent matches
-$stmt = $db->prepare("SELECT m.id, m.domain, m.tld, m.discovered_at, k.keyword 
+$stmt = $db->prepare("SELECT m.id, m.domain, m.tld, m.discovered_at, m.first_seen, k.keyword 
     FROM matches m 
     JOIN keywords k ON m.keyword_id = k.id 
     WHERE k.user_id = ? $periodSql
@@ -112,6 +112,7 @@ require __DIR__ . '/templates/header.php';
                     <th>Domain</th>
                     <th>TLD</th>
                     <th>Keyword</th>
+                    <th>First Seen</th>
                     <th>Discovered</th>
                 </tr>
             </thead>
@@ -121,6 +122,7 @@ require __DIR__ . '/templates/header.php';
                     <td><?= htmlspecialchars($m['domain']) ?></td>
                     <td><?= htmlspecialchars($m['tld']) ?></td>
                     <td><?= htmlspecialchars($m['keyword']) ?></td>
+                    <td><?= htmlspecialchars($m['first_seen'] ?? '-') ?></td>
                     <td><?= htmlspecialchars($m['discovered_at']) ?></td>
                 </tr>
                 <?php endforeach; ?>
