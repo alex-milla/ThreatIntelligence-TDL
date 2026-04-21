@@ -53,15 +53,16 @@ $unreadOnly = isset($_GET['unread_only']) && $_GET['unread_only'] === '1';
 $dateFilter = $_GET['date'] ?? 'all';
 $validDateFilters = ['24h' => '-1 day', '7d' => '-7 days', '30d' => '-30 days', 'all' => ''];
 
-$sql = "SELECT n.id, n.is_read, n.created_at, m.domain, m.tld, m.discovered_at, k.keyword 
-    FROM notifications n 
-    JOIN matches m ON n.match_id = m.id 
-    JOIN keywords k ON m.keyword_id = k.id 
-    WHERE n.user_id = ?";
+// Pagination
+$page = max(1, (int)($_GET['page'] ?? 1));
+$perPage = 50;
+$offset = ($page - 1) * $perPage;
+
+$where = "WHERE n.user_id = ?";
 $params = [$userId];
 
 if ($search !== '') {
-    $sql .= " AND (m.domain LIKE ? OR m.tld LIKE ? OR k.keyword LIKE ?)";
+    $where .= " AND (m.domain LIKE ? OR m.tld LIKE ? OR k.keyword LIKE ?)";
     $like = '%' . $search . '%';
     $params[] = $like;
     $params[] = $like;
@@ -69,18 +70,43 @@ if ($search !== '') {
 }
 
 if ($unreadOnly) {
-    $sql .= " AND n.is_read = 0";
+    $where .= " AND n.is_read = 0";
 }
 
 if (!empty($validDateFilters[$dateFilter])) {
-    $sql .= " AND m.discovered_at >= datetime('now', ?)";
+    $where .= " AND m.discovered_at >= datetime('now', ?)";
     $params[] = $validDateFilters[$dateFilter];
 }
 
-$sql .= " ORDER BY n.created_at DESC LIMIT 100";
+// Count total
+$countSql = "SELECT COUNT(*) FROM notifications n JOIN matches m ON n.match_id = m.id JOIN keywords k ON m.keyword_id = k.id $where";
+$totalStmt = $db->prepare($countSql);
+$totalStmt->execute($params);
+$total = (int)$totalStmt->fetchColumn();
+$totalPages = max(1, (int)ceil($total / $perPage));
+$page = min($page, $totalPages);
+$offset = ($page - 1) * $perPage;
+
+// Fetch page
+$sql = "SELECT n.id, n.is_read, n.created_at, m.domain, m.tld, m.discovered_at, k.keyword 
+    FROM notifications n 
+    JOIN matches m ON n.match_id = m.id 
+    JOIN keywords k ON m.keyword_id = k.id 
+    $where 
+    ORDER BY n.created_at DESC 
+    LIMIT $perPage OFFSET $offset";
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $notifications = $stmt->fetchAll();
+
+// Helper to build pagination URLs preserving filters
+function notifUrl(int $p, string $search, string $date, bool $unread): string {
+    $q = ['page' => $p];
+    if ($search !== '') $q['q'] = $search;
+    if ($date !== 'all') $q['date'] = $date;
+    if ($unread) $q['unread_only'] = '1';
+    return '/notifications.php?' . http_build_query($q);
+}
 
 $pageTitle = 'Notifications';
 require __DIR__ . '/templates/header.php';
@@ -172,6 +198,31 @@ require __DIR__ . '/templates/header.php';
             </tbody>
         </table>
         </form>
+
+        <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <span style="color: #666; font-size: 0.9rem;">
+                Showing <?= (($page - 1) * $perPage + 1) ?> - <?= min($page * $perPage, $total) ?> of <?= $total ?> notifications
+            </span>
+            <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                <?php if ($page > 1): ?>
+                    <a href="<?= htmlspecialchars(notifUrl($page - 1, $search, $dateFilter, $unreadOnly)) ?>" class="btn btn-small">« Previous</a>
+                <?php endif; ?>
+
+                <?php for ($p = 1; $p <= $totalPages; $p++): ?>
+                    <?php if ($p === $page): ?>
+                        <span class="btn btn-small" style="background: #3498db; color: white; cursor: default;"><?= $p ?></span>
+                    <?php elseif ($p === 1 || $p === $totalPages || abs($p - $page) <= 2): ?>
+                        <a href="<?= htmlspecialchars(notifUrl($p, $search, $dateFilter, $unreadOnly)) ?>" class="btn btn-small"><?= $p ?></a>
+                    <?php elseif (abs($p - $page) === 3): ?>
+                        <span style="padding: 5px;">…</span>
+                    <?php endif; ?>
+                <?php endfor; ?>
+
+                <?php if ($page < $totalPages): ?>
+                    <a href="<?= htmlspecialchars(notifUrl($page + 1, $search, $dateFilter, $unreadOnly)) ?>" class="btn btn-small">Next »</a>
+                <?php endif; ?>
+            </div>
+        </div>
 
         <script>
         document.getElementById('select-all').addEventListener('change', function(e) {
