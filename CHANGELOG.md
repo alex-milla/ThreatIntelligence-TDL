@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.8] - 2026-04-21
+
+### Parser fix: extract only real SLD registrations
+- `parser.py` now yields **only** second-level domains (SLDs) directly under the TLD.
+- **Before**: the parser extracted every NS record in the zone file, including the TLD apex (`digital.`), infrastructure subdomains (`nic.digital.`, `whois.digital.`, `ns1.nic.digital.`), and wildcard records (`*.digital.`).
+- **After**: only owners with exactly `N+1` labels are kept (where `N` = labels of the TLD). For `.digital` only `example.digital` passes; `digital`, `nic.digital`, and `ns1.nic.digital` are discarded.
+- Wildcard records (`*`) are also explicitly skipped.
+
 ## [v1.3.7] - 2026-04-21
 
 ### RDAP Whois fix

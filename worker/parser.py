@@ -13,6 +13,11 @@ def parse_zone_gz(filepath: str, tld: str):
     if not origin.endswith("."):
         origin = origin + "."
 
+    # We only want Second-Level Domains (SLDs) directly under this TLD.
+    # For a TLD like "digital" we expect 2 labels (example.digital).
+    # For a TLD like "co.uk" we expect 3 labels (example.co.uk).
+    expected_labels = len(tld.lower().strip().rstrip(".").split(".")) + 1
+
     seen = set()
     current_owner = origin
 
@@ -68,6 +73,15 @@ def parse_zone_gz(filepath: str, tld: str):
                 current_owner = owner
 
             owner = owner.rstrip(".")
+
+            # Filter: only keep SLDs directly under the TLD.
+            # Exclude wildcards, TLD apex, and infrastructure subdomains.
+            actual_labels = len(owner.split("."))
+            if actual_labels != expected_labels:
+                continue
+            if '*' in owner:
+                continue
+
             if owner not in seen:
                 seen.add(owner)
                 yield owner
