@@ -8,6 +8,9 @@ if (!$apiKey) {
 }
 
 $db = Database::get();
+if (checkApiRateLimit($db, getClientIp(), $apiKey, basename(__FILE__))) {
+    jsonResponse(['success' => false, 'error' => 'Rate limit exceeded. Try again later.'], 429);
+}
 $user = verifyApiKey($db, $apiKey);
 if (!$user || empty($user['is_admin'])) {
     jsonResponse(['success' => false, 'error' => 'Invalid API key'], 401);

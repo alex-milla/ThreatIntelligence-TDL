@@ -134,5 +134,15 @@ class Database {
             key TEXT PRIMARY KEY,
             value TEXT
         )");
+
+        $db->exec("CREATE TABLE IF NOT EXISTS api_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ip_address TEXT NOT NULL,
+            api_key TEXT,
+            endpoint TEXT,
+            requested_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_api_ip ON api_requests(ip_address, requested_at)");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_api_key ON api_requests(api_key, requested_at)");
     }
 }

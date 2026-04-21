@@ -121,3 +121,34 @@ function setSetting(PDO $db, string $key, string $value): void {
 function isRegistrationOpen(PDO $db): bool {
     return getSetting($db, 'registration_open', '1') === '1';
 }
+
+/* ---------- API Rate Limiting ---------- */
+
+function checkApiRateLimit(PDO $db, string $ip, string $apiKey = '', string $endpoint = ''): bool {
+    $windowSeconds = 60;
+    $maxRequests = $apiKey ? 120 : 10; // 120/min for valid keys, 10/min for anonymous
+
+    $since = date('Y-m-d H:i:s', strtotime("-{$windowSeconds} seconds"));
+
+    // Occasional cleanup (1 in 50 chance) to prevent table bloat
+    if (mt_rand(1, 50) === 1) {
+        try {
+            $db->prepare("DELETE FROM api_requests WHERE requested_at < ?")->execute([$since]);
+        } catch (Throwable $e) {
+            // ignore cleanup errors
+        }
+    }
+
+    // Check IP-based limit
+    $stmt = $db->prepare("SELECT COUNT(*) FROM api_requests WHERE ip_address = ? AND requested_at > ?");
+    $stmt->execute([$ip, $since]);
+    if ((int)$stmt->fetchColumn() >= $maxRequests) {
+        return true;
+    }
+
+    // Log this request
+    $stmt = $db->prepare("INSERT INTO api_requests (ip_address, api_key, endpoint, requested_at) VALUES (?, ?, ?, datetime('now'))");
+    $stmt->execute([$ip, $apiKey, $endpoint]);
+
+    return false;
+}
