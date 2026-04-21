@@ -131,6 +131,7 @@ require __DIR__ . '/../templates/header.php';
             <button type="submit" class="btn btn-danger">Recheck Keywords</button>
         </form>
         <a href="/admin/tlds.php" class="btn">Manage TLDs</a>
+        <a href="/admin/cleanup.php" class="btn btn-danger">Cleanup False Matches</a>
         <a href="/admin/update.php" class="btn">Check for Updates</a>
     </div>
 </div>
