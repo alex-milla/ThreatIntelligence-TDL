@@ -19,18 +19,26 @@ if (!$user || empty($user['is_admin'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true) ?: [];
 
-    $stmt = $db->prepare("INSERT OR REPLACE INTO worker_status 
-        (id, last_heartbeat, last_run, tlds_processed, domains_processed, matches_found, is_running, version) 
-        VALUES (1, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->execute([
-        date('c'),
-        $input['last_run'] ?? null,
-        (int)($input['tlds_processed'] ?? 0),
-        (int)($input['domains_processed'] ?? 0),
-        (int)($input['matches_found'] ?? 0),
-        (int)($input['is_running'] ?? 0),
-        $input['version'] ?? null
-    ]);
+    // Ensure row 1 exists
+    $db->exec("INSERT OR IGNORE INTO worker_status (id) VALUES (1)");
+
+    $fields = [];
+    $params = [];
+    foreach (['last_run','tlds_processed','domains_processed','matches_found','is_running','version'] as $col) {
+        if (array_key_exists($col, $input)) {
+            $fields[] = "$col = ?";
+            $params[] = in_array($col, ['tlds_processed','domains_processed','matches_found','is_running'], true)
+                      ? (int)$input[$col]
+                      : $input[$col];
+        }
+    }
+    // Always update last_heartbeat
+    $fields[] = "last_heartbeat = ?";
+    $params[] = date('c');
+    $params[] = 1; // WHERE id = 1
+
+    $sql = "UPDATE worker_status SET " . implode(', ', $fields) . " WHERE id = ?";
+    $db->prepare($sql)->execute($params);
     jsonResponse(['success' => true]);
 }
 

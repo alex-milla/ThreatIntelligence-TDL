@@ -18,6 +18,8 @@ import parser
 import matcher
 import sync_client
 
+log = logging.getLogger("tdl_worker")
+
 
 def init_local_db(db_path: str) -> sqlite3.Connection:
     """Create local worker SQLite database if not exists."""
@@ -188,7 +190,6 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    log = logging.getLogger("tdl_worker")
     log.info(f"Start: {datetime.now(timezone.utc).isoformat()}")
 
     # 1. Retry queued items first
@@ -540,17 +541,27 @@ def main() -> int:
             time.sleep(args.interval)
     else:
         # One-shot mode: process commands first, then run worker cycle
+        pending = sync_client.get_commands(host_url, api_key)
+        had_run_worker = any(cmd.get("command") == "run_worker" for cmd in pending)
         logs = handle_commands(db, cfg, host_url, api_key)
-        if not any(cmd.get("command") == "run_worker" for cmd in sync_client.get_commands(host_url, api_key)):
-            # No explicit run_worker command, execute cycle directly
+
+        stats = None
+        if not had_run_worker and not pending:
+            # No commands pending at all → legacy cron behavior: run full cycle
             stats = run_worker_cycle(db, cfg, host_url, api_key)
             logs.append({"level": "info", "message": f"Worker cycle completed: {stats['tlds_processed']} TLDs, {stats['matches_found']} matches"})
 
-        sync_client.send_heartbeat(host_url, api_key, {
+        heartbeat_payload = {
             "last_run": datetime.now(timezone.utc).isoformat(),
             "is_running": 0,
             "version": version,
-        })
+        }
+        if stats:
+            heartbeat_payload["tlds_processed"] = stats["tlds_processed"]
+            heartbeat_payload["domains_processed"] = stats["domains_processed"]
+            heartbeat_payload["matches_found"] = stats["matches_found"]
+
+        sync_client.send_heartbeat(host_url, api_key, heartbeat_payload)
         if logs:
             sync_client.send_logs(host_url, api_key, logs)
 
