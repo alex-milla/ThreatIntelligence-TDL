@@ -122,6 +122,24 @@ function isRegistrationOpen(PDO $db): bool {
     return getSetting($db, 'registration_open', '1') === '1';
 }
 
+function getMaxKeywords(PDO $db, int $userId): int {
+    $stmt = $db->prepare("SELECT max_keywords FROM users WHERE id = ? LIMIT 1");
+    $stmt->execute([$userId]);
+    $val = $stmt->fetchColumn();
+    return $val !== false ? (int)$val : 10;
+}
+
+function canAddKeyword(PDO $db, int $userId): bool {
+    $limit = getMaxKeywords($db, $userId);
+    if ($limit === 0) {
+        return true; // 0 means unlimited
+    }
+    $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE user_id = ? AND is_active = 1");
+    $stmt->execute([$userId]);
+    $current = (int)$stmt->fetchColumn();
+    return $current < $limit;
+}
+
 /* ---------- API Rate Limiting ---------- */
 
 function checkApiRateLimit(PDO $db, string $ip, string $apiKey = '', string $endpoint = ''): bool {

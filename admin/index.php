@@ -40,10 +40,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         setSetting($db, 'registration_open', $current ? '0' : '1');
         $message = $current ? 'Registration closed.' : 'Registration opened.';
     }
+    
+    if ($action === 'set_max_keywords') {
+        $uid = (int)($_POST['user_id'] ?? 0);
+        $max = (int)($_POST['max_keywords'] ?? 10);
+        if ($max < 0) $max = 0;
+        $db->prepare("UPDATE users SET max_keywords = ? WHERE id = ?")->execute([$max, $uid]);
+        $message = 'Keyword limit updated.';
+    }
 }
 
 // Data
-$users = $db->query("SELECT id, username, email, is_active, is_admin, api_key, created_at FROM users ORDER BY created_at DESC")->fetchAll();
+$users = $db->query("SELECT id, username, email, is_active, is_admin, api_key, max_keywords, created_at FROM users ORDER BY created_at DESC")->fetchAll();
 $syncLogs = $db->query("SELECT * FROM sync_logs ORDER BY created_at DESC LIMIT 20")->fetchAll();
 $workerStatus = $db->query("SELECT * FROM worker_status WHERE id = 1")->fetch();
 $workerLogs = $db->query("SELECT * FROM worker_logs ORDER BY created_at DESC LIMIT 20")->fetchAll();
@@ -128,7 +136,7 @@ require __DIR__ . '/../templates/header.php';
                 <th>Email</th>
                 <th>Active</th>
                 <th>Admin</th>
-
+                <th>Max Keywords</th>
                 <th>API Key</th>
                 <th>Actions</th>
             </tr>
@@ -141,7 +149,15 @@ require __DIR__ . '/../templates/header.php';
                 <td><?= htmlspecialchars($u['email']) ?></td>
                 <td><?= $u['is_active'] ? 'Yes' : 'No' ?></td>
                 <td><?= $u['is_admin'] ? 'Yes' : 'No' ?></td>
-
+                <td>
+                    <form method="POST" style="display: inline; white-space: nowrap;">
+                        <?php csrfField(); ?>
+                        <input type="hidden" name="action" value="set_max_keywords">
+                        <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
+                        <input type="number" name="max_keywords" value="<?= (int)$u['max_keywords'] ?>" min="0" style="width: 55px; padding: 4px;">
+                        <button type="submit" class="btn btn-small" title="0 = unlimited">Set</button>
+                    </form>
+                </td>
                 <td style="font-family: monospace; font-size: 0.8rem;"><?= substr(htmlspecialchars($u['api_key']), 0, 16) ?>...</td>
                 <td>
                     <form method="POST" style="display: inline;">

@@ -144,5 +144,12 @@ class Database {
         )");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_api_ip ON api_requests(ip_address, requested_at)");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_api_key ON api_requests(api_key, requested_at)");
+
+        // Safe migration: add max_keywords if it doesn't exist yet
+        try {
+            $db->exec("ALTER TABLE users ADD COLUMN max_keywords INTEGER DEFAULT 10");
+        } catch (PDOException $e) {
+            // Column already exists
+        }
     }
 }

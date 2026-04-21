@@ -48,7 +48,7 @@ if ($step === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $hash = password_hash($password, PASSWORD_DEFAULT);
         $apiKey = bin2hex(random_bytes(32));
         
-        $stmt = $db->prepare("INSERT INTO users (username, email, password_hash, api_key, is_admin) VALUES (?, ?, ?, ?, 1)");
+        $stmt = $db->prepare("INSERT INTO users (username, email, password_hash, api_key, is_admin, max_keywords) VALUES (?, ?, ?, ?, 1, 0)");
         try {
             $stmt->execute([$username, $email, $hash, $apiKey]);
             touch($lockFile);

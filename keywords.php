@@ -18,6 +18,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $keyword = strtolower(trim($_POST['keyword'] ?? ''));
     if (strlen($keyword) < 2) {
         $error = 'Keyword must be at least 2 characters.';
+    } elseif (!canAddKeyword($db, $userId)) {
+        $limit = getMaxKeywords($db, $userId);
+        $error = "You have reached your keyword limit ({$limit}). Contact the administrator.";
     } else {
         $stmt = $db->prepare("INSERT INTO keywords (user_id, keyword) VALUES (?, ?)");
         try {
