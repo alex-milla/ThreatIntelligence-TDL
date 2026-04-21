@@ -46,6 +46,9 @@ require_once __DIR__ . '/../includes/auth.php';
                 <a href="/">Dashboard</a>
                 <a href="/keywords.php">Keywords</a>
                 <a href="/notifications.php">Notifications</a>
+                <?php if (!empty($_SESSION['is_admin'])): ?>
+                    <a href="/admin/">Admin</a>
+                <?php endif; ?>
             <?php endif; ?>
         </div>
         <div>
