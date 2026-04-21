@@ -94,6 +94,68 @@ function rrmdir(string $dir): void {
     @rmdir($dir);
 }
 
+function doUpdate(string $repoOwner, string $repoName, string $branch, string $githubToken, string $versionFile): array {
+    $zipUrl = "https://github.com/{$repoOwner}/{$repoName}/archive/{$branch}.zip";
+    $tempZip = sys_get_temp_dir() . '/tdl_update_' . time() . '.zip';
+    $extractDir = sys_get_temp_dir() . '/tdl_extract_' . time();
+    
+    $zipResult = fetchUrl($zipUrl, $githubToken);
+    if (!$zipResult['success']) {
+        return ['success' => false, 'error' => 'Failed to download ZIP: ' . $zipResult['error']];
+    }
+    
+    file_put_contents($tempZip, $zipResult['data']);
+    
+    $zip = new ZipArchive();
+    if ($zip->open($tempZip) !== true) {
+        return ['success' => false, 'error' => 'Failed to open downloaded ZIP.'];
+    }
+    
+    $zip->extractTo($extractDir);
+    $zip->close();
+    
+    // Find extracted root
+    $entries = array_diff(scandir($extractDir), ['.', '..']);
+    $sourceDir = $extractDir;
+    foreach ($entries as $entry) {
+        if (is_dir($extractDir . '/' . $entry)) {
+            $sourceDir = $extractDir . '/' . $entry;
+            break;
+        }
+    }
+    
+    // Copy web/ and worker/
+    $copied = 0;
+    foreach (['web', 'worker'] as $dir) {
+        $src = $sourceDir . '/' . $dir;
+        $dst = dirname(__DIR__) . '/' . $dir;
+        if (is_dir($src)) {
+            $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($src));
+            foreach ($rii as $file) {
+                if ($file->isDir()) continue;
+                $relative = substr($file->getPathname(), strlen($src) + 1);
+                $target = $dst . '/' . $relative;
+                @mkdir(dirname($target), 0755, true);
+                copy($file->getPathname(), $target);
+                $copied++;
+            }
+        }
+    }
+    
+    // Copy VERSION file
+    $srcVersion = $sourceDir . '/VERSION';
+    $targetVersion = $versionFile ?: dirname(__DIR__) . '/VERSION';
+    if (file_exists($srcVersion)) {
+        copy($srcVersion, $targetVersion);
+    }
+    
+    // Cleanup
+    @unlink($tempZip);
+    rrmdir($extractDir);
+    
+    return ['success' => true, 'copied' => $copied];
+}
+
 // Get current installed version
 if (!file_exists($versionFile)) {
     $error = 'Local VERSION file not found. Please upload the VERSION file to the hosting root.';
@@ -102,79 +164,28 @@ if (!file_exists($versionFile)) {
     $currentVersion = trim(file_get_contents($versionFile));
 }
 
-// Fetch latest version from GitHub
-$remoteResult = fetchUrl("https://raw.githubusercontent.com/{$repoOwner}/{$repoName}/{$branch}/VERSION", $githubToken);
+// Fetch latest version from GitHub (with cache-buster)
+$cacheBuster = time();
+$remoteResult = fetchUrl("https://raw.githubusercontent.com/{$repoOwner}/{$repoName}/{$branch}/VERSION?v={$cacheBuster}", $githubToken);
 $remoteVersion = $remoteResult['success'] ? $remoteResult['data'] : null;
 
 if ($remoteVersion === null && empty($error)) {
     $error = 'Could not fetch VERSION from GitHub. ' . $remoteResult['error'];
 }
 
+$forceUpdate = isset($_POST['force']) && $_POST['force'] === '1';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $remoteVersion !== null && empty($error)) {
-    if (version_compare($currentVersion, $remoteVersion, '>=')) {
+    if (!$forceUpdate && version_compare($currentVersion, $remoteVersion, '>=')) {
         $info = "You are already on the latest version ({$currentVersion}). No update needed.";
     } else {
-        $zipUrl = "https://github.com/{$repoOwner}/{$repoName}/archive/{$branch}.zip";
-        $tempZip = sys_get_temp_dir() . '/tdl_update_' . time() . '.zip';
-        $extractDir = sys_get_temp_dir() . '/tdl_extract_' . time();
-        
-        // Download ZIP
-        $zipResult = fetchUrl($zipUrl, $githubToken);
-        if (!$zipResult['success']) {
-            $error = 'Failed to download ZIP: ' . $zipResult['error'];
+        $result = doUpdate($repoOwner, $repoName, $branch, $githubToken, $versionFile);
+        if ($result['success']) {
+            $newVersion = file_exists($versionFile) ? trim(file_get_contents($versionFile)) : $remoteVersion;
+            $action = $forceUpdate ? 'Force updated' : 'Updated';
+            $info = "{$action} successfully to {$newVersion}. Files copied: {$result['copied']}.";
         } else {
-            file_put_contents($tempZip, $zipResult['data']);
-            
-            // Extract
-            $zip = new ZipArchive();
-            if ($zip->open($tempZip) === true) {
-                $zip->extractTo($extractDir);
-                $zip->close();
-                
-                // Find extracted root
-                $entries = array_diff(scandir($extractDir), ['.', '..']);
-                $sourceDir = $extractDir;
-                foreach ($entries as $entry) {
-                    if (is_dir($extractDir . '/' . $entry)) {
-                        $sourceDir = $extractDir . '/' . $entry;
-                        break;
-                    }
-                }
-                
-                // Copy web/ and worker/
-                $copied = 0;
-                foreach (['web', 'worker'] as $dir) {
-                    $src = $sourceDir . '/' . $dir;
-                    $dst = __DIR__ . '/../../' . $dir;
-                    if (is_dir($src)) {
-                        $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($src));
-                        foreach ($rii as $file) {
-                            if ($file->isDir()) continue;
-                            $relative = substr($file->getPathname(), strlen($src) + 1);
-                            $target = $dst . '/' . $relative;
-                            @mkdir(dirname($target), 0755, true);
-                            copy($file->getPathname(), $target);
-                            $copied++;
-                        }
-                    }
-                }
-                
-                // Copy VERSION file to correct location
-                $srcVersion = $sourceDir . '/VERSION';
-                $targetVersion = $versionFile ?: dirname(__DIR__) . '/VERSION';
-                if (file_exists($srcVersion)) {
-                    copy($srcVersion, $targetVersion);
-                    $currentVersion = trim(file_get_contents($targetVersion));
-                }
-                
-                // Cleanup
-                @unlink($tempZip);
-                rrmdir($extractDir);
-                
-                $info = "Updated successfully to {$currentVersion}. Files copied: {$copied}.";
-            } else {
-                $error = 'Failed to open downloaded ZIP.';
-            }
+            $error = $result['error'];
         }
     }
 }
@@ -197,8 +208,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $remoteVersion !== null && empty($e
         <div class="alert alert-success"><?= htmlspecialchars($info) ?></div>
     <?php endif; ?>
     
-    <form method="POST">
+    <form method="POST" style="margin-bottom: 10px;">
         <button type="submit" class="btn" <?= ($remoteVersion === null) ? 'disabled' : '' ?>>Check & Install Latest Version</button>
+    </form>
+    
+    <form method="POST">
+        <input type="hidden" name="force" value="1">
+        <button type="submit" class="btn btn-danger" <?= ($remoteVersion === null) ? 'disabled' : '' ?>>Force Reinstall Latest Version</button>
     </form>
     
     <p style="margin-top: 15px; color: #666; font-size: 0.9rem;">
