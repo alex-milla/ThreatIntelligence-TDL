@@ -141,23 +141,50 @@ function doUpdate(string $zipUrl, string $versionFile, string $backupBase): arra
     }
     $backupDir = backupApp($backupBase);
 
-    // 2. Download ZIP to temp
+    // 2. Download ZIP to temp (prefer cURL for proper redirect handling)
     $tempZip = sys_get_temp_dir() . '/tdl_update_' . time() . '.zip';
     $extractDir = sys_get_temp_dir() . '/tdl_extract_' . time();
 
-    $zipData = @file_get_contents($zipUrl, false, stream_context_create([
-        'http' => [
-            'header' => ['User-Agent: ThreatIntelligence-TDL-Updater'],
-            'timeout' => 120,
-            'follow_location' => 1,
-            'max_redirects' => 3,
-        ]
-    ]));
-    if (!$zipData) {
-        return ['success' => false, 'error' => 'Failed to download release ZIP from GitHub.', 'backup' => $backupDir];
+    $downloadError = '';
+    if (function_exists('curl_init')) {
+        $ch = curl_init($zipUrl);
+        $fp = fopen($tempZip, 'wb');
+        curl_setopt($ch, CURLOPT_FILE, $fp);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_MAXREDIRS, 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 120);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'ThreatIntelligence-TDL-Updater');
+        curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+        fclose($fp);
+
+        if ($httpCode < 200 || $httpCode >= 300) {
+            $downloadError = "GitHub download failed: HTTP {$httpCode}. {$curlError}";
+            @unlink($tempZip);
+        }
+    } else {
+        $zipData = @file_get_contents($zipUrl, false, stream_context_create([
+            'http' => [
+                'header' => ['User-Agent: ThreatIntelligence-TDL-Updater'],
+                'timeout' => 120,
+                'follow_location' => 1,
+                'max_redirects' => 3,
+            ]
+        ]));
+        if ($zipData) {
+            file_put_contents($tempZip, $zipData);
+        } else {
+            $downloadError = 'Failed to download release ZIP from GitHub (file_get_contents). allow_url_fopen may be disabled.';
+        }
     }
 
-    file_put_contents($tempZip, $zipData);
+    if ($downloadError || !file_exists($tempZip) || filesize($tempZip) < 1024) {
+        @unlink($tempZip);
+        return ['success' => false, 'error' => $downloadError ?: 'Downloaded ZIP is empty or corrupt.', 'backup' => $backupDir];
+    }
 
     // 3. Verify ZIP integrity
     $zip = new ZipArchive();
