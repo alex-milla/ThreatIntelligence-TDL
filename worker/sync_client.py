@@ -2,6 +2,7 @@
 """Client to sync with the shared hosting API."""
 
 import json
+import time
 import requests
 from datetime import datetime, timezone
 
@@ -64,7 +65,7 @@ def get_commands(host_url: str, api_key: str) -> list[dict]:
 
 
 def mark_command_done(host_url: str, api_key: str, command_id: int, status: str = "completed", result: str = "") -> bool:
-    """Mark a command as completed on the hosting API."""
+    """Mark a command as completed on the hosting API. Raises on failure so callers can retry."""
     url = f"{host_url}/api/v1/commands.php"
     headers = {
         "X-API-Key": api_key,
@@ -75,8 +76,13 @@ def mark_command_done(host_url: str, api_key: str, command_id: int, status: str 
         "status": status,
         "result": result,
     }
-    r = requests.post(url, headers=headers, json=payload, timeout=30)
-    return r.status_code == 200
+    for attempt in range(1, 4):
+        r = requests.post(url, headers=headers, json=payload, timeout=30)
+        if r.status_code == 200:
+            return True
+        if attempt < 3:
+            time.sleep(2 ** attempt)
+    raise RuntimeError(f"Failed to mark command {command_id} as {status}: HTTP {r.status_code} - {r.text}")
 
 
 def send_logs(host_url: str, api_key: str, logs: list[dict]) -> bool:

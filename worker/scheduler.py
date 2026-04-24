@@ -571,6 +571,7 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 logs.append({"level": "warning", "message": result})
 
             sync_client.mark_command_done(host_url, api_key, cmd_id, status, result)
+            logs.append({"level": "info", "message": f"Command {cmd_id} marked as {status}"})
 
         except Exception as e:
             error_msg = str(e)
