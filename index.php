@@ -67,6 +67,18 @@ $stmt = $db->prepare("SELECT m.id, m.domain, m.tld, m.discovered_at, m.first_see
 $stmt->execute(array_merge([$userId], $periodParams));
 $recentMatches = $stmt->fetchAll();
 
+// Load domain tags for recent matches
+$domainTags = [];
+if (!empty($recentMatches)) {
+    $domains = array_column($recentMatches, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domains), '?'));
+    $tagStmt = $db->prepare("SELECT domain, tag FROM domain_tags WHERE domain IN ($placeholders)");
+    $tagStmt->execute($domains);
+    foreach ($tagStmt->fetchAll() as $t) {
+        $domainTags[$t['domain']] = $t['tag'];
+    }
+}
+
 $pageTitle = 'Dashboard';
 require __DIR__ . '/templates/header.php';
 ?>
@@ -117,9 +129,17 @@ require __DIR__ . '/templates/header.php';
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($recentMatches as $m): ?>
+                <?php foreach ($recentMatches as $m): 
+                    $dtag = $domainTags[$m['domain']] ?? null;
+                    $tagBadge = '';
+                    if ($dtag) {
+                        $color = $dtag === 'good' ? '#27ae60' : '#c0392b';
+                        $label = $dtag === 'good' ? 'GOOD' : 'BAD';
+                        $tagBadge = ' <span style="display:inline-block;background:'.$color.';color:#fff;font-size:0.7rem;padding:1px 5px;border-radius:3px;margin-left:4px;">'.$label.'</span>';
+                    }
+                ?>
                 <tr>
-                    <td><a href="javascript:void(0)" onclick="openDomainModal('<?= htmlspecialchars(addslashes($m['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($m['domain']) ?></a></td>
+                    <td><a href="javascript:void(0)" onclick="openDomainModal('<?= htmlspecialchars(addslashes($m['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($m['domain']) ?></a><?= $tagBadge ?></td>
                     <td><?= htmlspecialchars($m['tld']) ?></td>
                     <td><?= htmlspecialchars($m['keyword']) ?></td>
                     <td><?= htmlspecialchars($m['first_seen'] ?? '-') ?></td>
@@ -178,13 +198,22 @@ require __DIR__ . '/templates/header.php';
         <?php if ((int)$pendingRecheck > 0 && !$recheckRunning): ?>
             <p style="color: #e67e22; font-size: 0.9rem;"><strong><?= (int)$pendingRecheck ?></strong> recheck command(s) queued — waiting for worker.</p>
         <?php endif; ?>
-        <form method="POST" style="margin-top: 10px;">
-            <?php csrfField(); ?>
-            <input type="hidden" name="action" value="recheck_keywords">
-            <button type="submit" class="btn" <?= ($recheckRunning || (int)$pendingRecheck > 0) ? 'disabled' : '' ?>>
-                <?= $recheckRunning ? 'Recheck in progress...' : ((int)$pendingRecheck > 0 ? 'Queued — waiting for worker' : 'Recheck All Cached Domains') ?>
-            </button>
-        </form>
+        <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+            <form method="POST">
+                <?php csrfField(); ?>
+                <input type="hidden" name="action" value="recheck_keywords">
+                <button type="submit" class="btn" <?= ($recheckRunning || (int)$pendingRecheck > 0) ? 'disabled' : '' ?>>
+                    <?= $recheckRunning ? 'Recheck in progress...' : ((int)$pendingRecheck > 0 ? 'Queued — waiting for worker' : 'Recheck All Cached Domains') ?>
+                </button>
+            </form>
+            <?php if ($recheckRunning): ?>
+            <form method="POST">
+                <?php csrfField(); ?>
+                <input type="hidden" name="action" value="stop_recheck">
+                <button type="submit" class="btn btn-danger">⏹ Stop Recheck</button>
+            </form>
+            <?php endif; ?>
+        </div>
         <p style="color: #666; font-size: 0.85rem; margin-top: 8px;">
             The worker must be running (daemon mode) for recheck to start immediately. Otherwise it will run on the next cron schedule.
         </p>
@@ -301,6 +330,15 @@ require __DIR__ . '/templates/header.php';
             </div>
             <div id="modal-whois-error" style="display: none; color: #c0392b; font-size: 0.9rem; margin-top: 10px;"></div>
         </div>
+        <div id="modal-tag-box" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; display: none;">
+            <div style="font-size: 0.85rem; color: #666; margin-bottom: 6px;">Domain classification</div>
+            <div id="modal-tag-current" style="font-weight: 600; margin-bottom: 8px;"></div>
+            <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn btn-small" style="background:#27ae60; flex:1;" onclick="tagDomain(_modalDomain, 'good')">Mark Good</button>
+                <button type="button" class="btn btn-small" style="background:#c0392b; flex:1;" onclick="tagDomain(_modalDomain, 'bad')">Mark Bad</button>
+                <button type="button" class="btn btn-small btn-danger" style="flex:1;" onclick="tagDomain(_modalDomain, '')">Remove</button>
+            </div>
+        </div>
         <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
             <a id="modal-vt" href="#" target="_blank" class="btn" style="text-align: center; background: #3949ab;">🛡️ Open in VirusTotal</a>
         </div>
@@ -318,7 +356,49 @@ function openDomainModal(domain) {
     document.getElementById('modal-whois-loading').style.display = 'none';
     document.getElementById('modal-whois-content').style.display = 'none';
     document.getElementById('modal-whois-error').style.display = 'none';
+    document.getElementById('modal-tag-box').style.display = 'block';
+    document.getElementById('modal-tag-current').textContent = 'Loading...';
     document.getElementById('domain-modal').style.display = 'flex';
+    loadDomainTag(domain);
+}
+function loadDomainTag(domain) {
+    fetch('/ajax_tag_domain.php?domain=' + encodeURIComponent(domain))
+        .then(r => r.json())
+        .then(data => {
+            const box = document.getElementById('modal-tag-current');
+            if (data.success && data.tag) {
+                const color = data.tag.tag === 'good' ? '#27ae60' : '#c0392b';
+                box.innerHTML = '<span style="color:' + color + '; font-weight:700;">' + data.tag.tag.toUpperCase() + '</span>';
+                if (data.tag.note) box.innerHTML += ' — ' + htmlspecialchars(data.tag.note);
+            } else {
+                box.textContent = 'Not classified';
+            }
+        })
+        .catch(() => {
+            document.getElementById('modal-tag-current').textContent = 'Unable to load tag';
+        });
+}
+function tagDomain(domain, tag) {
+    fetch('/ajax_tag_domain.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({domain: domain, tag: tag})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            loadDomainTag(domain);
+            window.location.reload();
+        } else {
+            alert(data.error || 'Failed to tag domain');
+        }
+    })
+    .catch(() => alert('Failed to tag domain'));
+}
+function htmlspecialchars(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
 }
 function fetchWhois() {
     if (!_modalDomain) return;

@@ -136,6 +136,18 @@ $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $notifications = $stmt->fetchAll();
 
+// Load domain tags for visible rows
+$domainTags = [];
+if (!empty($notifications)) {
+    $domainsOnPage = array_column($notifications, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domainsOnPage), '?'));
+    $tagStmt = $db->prepare("SELECT domain, tag, note FROM domain_tags WHERE domain IN ($placeholders)");
+    $tagStmt->execute($domainsOnPage);
+    foreach ($tagStmt->fetchAll() as $t) {
+        $domainTags[$t['domain']] = $t;
+    }
+}
+
 // Helper to build pagination URLs preserving filters
 function notifUrl(int $p, string $search, string $date, bool $unread): string {
     $q = ['page' => $p];
@@ -221,11 +233,19 @@ require __DIR__ . '/templates/header.php';
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($notifications as $n): ?>
+                <?php foreach ($notifications as $n): 
+                    $dtag = $domainTags[$n['domain']] ?? null;
+                    $tagBadge = '';
+                    if ($dtag) {
+                        $color = $dtag['tag'] === 'good' ? '#27ae60' : '#c0392b';
+                        $label = $dtag['tag'] === 'good' ? 'GOOD' : 'BAD';
+                        $tagBadge = ' <span style="display:inline-block;background:'.$color.';color:#fff;font-size:0.7rem;padding:1px 5px;border-radius:3px;margin-left:4px;">'.$label.'</span>';
+                    }
+                ?>
                 <tr class="<?= $n['is_read'] ? '' : 'unread' ?>">
                     <td><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check"></td>
                     <td><?= $n['is_read'] ? 'Read' : '<strong>Unread</strong>' ?></td>
-                    <td><a href="javascript:void(0)" onclick="openDomainModal('<?= htmlspecialchars(addslashes($n['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($n['domain']) ?></a></td>
+                    <td><a href="javascript:void(0)" onclick="openDomainModal('<?= htmlspecialchars(addslashes($n['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($n['domain']) ?></a><?= $tagBadge ?></td>
                     <td><?= htmlspecialchars($n['tld']) ?></td>
                     <td><?= htmlspecialchars($n['keyword']) ?></td>
                     <td><?= htmlspecialchars($n['first_seen'] ?? '-') ?></td>
@@ -245,6 +265,8 @@ require __DIR__ . '/templates/header.php';
                             <button type="submit" class="btn btn-small">Mark Read</button>
                         </form>
                         <?php endif; ?>
+                        <button type="button" class="btn btn-small" style="background:#27ae60;" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','good')">Good</button>
+                        <button type="button" class="btn btn-small" style="background:#c0392b;" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','bad')">Bad</button>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -302,6 +324,15 @@ require __DIR__ . '/templates/header.php';
             </div>
             <div id="modal-whois-error" style="display: none; color: #c0392b; font-size: 0.9rem; margin-top: 10px;"></div>
         </div>
+        <div id="modal-tag-box" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; display: none;">
+            <div style="font-size: 0.85rem; color: #666; margin-bottom: 6px;">Domain classification</div>
+            <div id="modal-tag-current" style="font-weight: 600; margin-bottom: 8px;"></div>
+            <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn btn-small" style="background:#27ae60; flex:1;" onclick="tagDomain(_modalDomain, 'good')">Mark Good</button>
+                <button type="button" class="btn btn-small" style="background:#c0392b; flex:1;" onclick="tagDomain(_modalDomain, 'bad')">Mark Bad</button>
+                <button type="button" class="btn btn-small btn-danger" style="flex:1;" onclick="tagDomain(_modalDomain, '')">Remove</button>
+            </div>
+        </div>
         <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
             <a id="modal-vt" href="#" target="_blank" class="btn" style="text-align: center; background: #3949ab;">🛡️ Open in VirusTotal</a>
         </div>
@@ -319,7 +350,50 @@ function openDomainModal(domain) {
     document.getElementById('modal-whois-loading').style.display = 'none';
     document.getElementById('modal-whois-content').style.display = 'none';
     document.getElementById('modal-whois-error').style.display = 'none';
+    document.getElementById('modal-tag-box').style.display = 'block';
+    document.getElementById('modal-tag-current').textContent = 'Loading...';
     document.getElementById('domain-modal').style.display = 'flex';
+    loadDomainTag(domain);
+}
+function loadDomainTag(domain) {
+    fetch('/ajax_tag_domain.php?domain=' + encodeURIComponent(domain))
+        .then(r => r.json())
+        .then(data => {
+            const box = document.getElementById('modal-tag-current');
+            if (data.success && data.tag) {
+                const color = data.tag.tag === 'good' ? '#27ae60' : '#c0392b';
+                box.innerHTML = '<span style="color:' + color + '; font-weight:700;">' + data.tag.tag.toUpperCase() + '</span>';
+                if (data.tag.note) box.innerHTML += ' — ' + htmlspecialchars(data.tag.note);
+            } else {
+                box.textContent = 'Not classified';
+            }
+        })
+        .catch(() => {
+            document.getElementById('modal-tag-current').textContent = 'Unable to load tag';
+        });
+}
+function tagDomain(domain, tag) {
+    fetch('/ajax_tag_domain.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({domain: domain, tag: tag})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            loadDomainTag(domain);
+            // Reload page to update badges in table
+            window.location.reload();
+        } else {
+            alert(data.error || 'Failed to tag domain');
+        }
+    })
+    .catch(() => alert('Failed to tag domain'));
+}
+function htmlspecialchars(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
 }
 function fetchWhois() {
     if (!_modalDomain) return;

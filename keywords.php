@@ -108,7 +108,7 @@ require __DIR__ . '/templates/header.php';
                 <?php foreach ($keywords as $k): ?>
                 <tr>
                     <td><?= htmlspecialchars($k['keyword']) ?></td>
-                    <td><?= (int)$k['match_count'] ?></td>
+                    <td><a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>"><?= (int)$k['match_count'] ?></a></td>
                     <td><?= htmlspecialchars($k['created_at']) ?></td>
                     <td>
                         <form method="POST" style="display: inline;">

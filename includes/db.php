@@ -155,6 +155,14 @@ class Database {
             completed_at TEXT
         )");
 
+        $db->exec("CREATE TABLE IF NOT EXISTS domain_tags (
+            domain TEXT PRIMARY KEY,
+            tag TEXT CHECK(tag IN ('good','bad')),
+            note TEXT,
+            created_by INTEGER NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )");
+
         // Safe migration: add max_keywords if it doesn't exist yet
         try {
             $db->exec("ALTER TABLE users ADD COLUMN max_keywords INTEGER DEFAULT 10");

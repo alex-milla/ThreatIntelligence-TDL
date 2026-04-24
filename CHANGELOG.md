@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.9] - 2026-04-21
+
+### New features
+- **Stop Recheck**: Admin can now queue a `stop_recheck` command from the dashboard. The worker checks for pending stop commands every 3 batches (~150k domains) and gracefully exits the recheck loop, sending partial results.
+- **Clickable match counts**: In `keywords.php`, the match count for each keyword is now a link that filters notifications by that keyword.
+- **Domain tags (Good/Bad)**: New `domain_tags` table allows marking domains as good or bad. Tags are shown as colored badges in Recent Matches and Notifications. The domain detail modal includes buttons to mark, change, or remove a tag. Previously classified domains are instantly identified when they reappear.
+
 ## [v1.3.8] - 2026-04-21
 
 ### Parser fix: extract only real SLD registrations

@@ -392,6 +392,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
     offset = 0
     all_matches = []
     last_progress_report = 0
+    batches_since_stop_check = 0
 
     base_query = "SELECT domain, tld, first_seen FROM domains_cache"
     if max_age_days > 0:
@@ -429,6 +430,34 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
 
         stats["domains_checked"] += len(domains)
         offset += batch_size
+        batches_since_stop_check += 1
+
+        # Check for stop request every 3 batches (~150k domains)
+        if batches_since_stop_check >= 3:
+            batches_since_stop_check = 0
+            try:
+                pending = sync_client.get_commands(host_url, api_key)
+                for cmd in pending:
+                    if cmd.get("command") == "stop_recheck":
+                        sync_client.mark_command_done(host_url, api_key, cmd["id"], "completed", "Recheck stopped by user request")
+                        log.warning("Recheck stopped by user request.")
+                        sync_client.send_recheck_status(host_url, api_key, {
+                            "is_running": 0,
+                            "total_domains": total_domains,
+                            "checked_domains": stats["domains_checked"],
+                            "matches_found": len(all_matches),
+                            "started_at": started_at,
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                        })
+                        if all_matches:
+                            log.info(f"Sending {len(all_matches)} partial recheck matches to hosting...")
+                            ok = sync_client.send_matches(host_url, api_key, all_matches)
+                            if not ok:
+                                queue_matches(db, all_matches)
+                            stats["matches_found"] = len(all_matches)
+                        return stats
+            except Exception as e:
+                log.debug(f"Could not poll stop_recheck commands: {e}")
 
         progress_threshold = max(total_domains // 20, 500000)
         if stats["domains_checked"] - last_progress_report >= progress_threshold:
@@ -515,6 +544,13 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 result = "Manual update not implemented. Use git pull."
                 logs.append({"level": "warning", "message": result})
                 status = "failed"
+
+            elif command == "stop_recheck":
+                flag_path = os.path.join(data_dir, ".stop_recheck")
+                with open(flag_path, "w") as f:
+                    f.write("1")
+                result = "Stop flag created. If a recheck is running it will stop at the next batch boundary."
+                logs.append({"level": "info", "message": result})
 
             else:
                 result = f"Unknown command: {command}"
