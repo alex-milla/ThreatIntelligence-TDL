@@ -62,6 +62,14 @@ $stmt = $db->prepare("SELECT id, keyword, match_count, created_at FROM keywords 
 $stmt->execute([$userId]);
 $keywords = $stmt->fetchAll();
 
+// Recheck status for admin stop button
+$recheckStatus = null;
+$recheckRunning = false;
+if ($isAdmin) {
+    $recheckStatus = $db->query("SELECT * FROM recheck_status WHERE id = 1")->fetch();
+    $recheckRunning = !empty($recheckStatus['is_running']);
+}
+
 $pageTitle = 'My Keywords';
 require __DIR__ . '/templates/header.php';
 ?>
@@ -84,12 +92,23 @@ require __DIR__ . '/templates/header.php';
     </form>
     
     <?php if ($isAdmin): ?>
-    <form method="POST" style="margin-bottom: 20px;">
-        <?php csrfField(); ?>
-        <input type="hidden" name="action" value="recheck_keywords">
-        <button type="submit" class="btn btn-danger btn-small">🔍 Recheck All Cached Domains</button>
-        <span style="color: #666; font-size: 0.85rem; margin-left: 10px;">Scans all previously downloaded domains against current keywords (admin only)</span>
-    </form>
+    <div style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+        <form method="POST" style="margin: 0;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="recheck_keywords">
+            <button type="submit" class="btn btn-danger btn-small" <?= $recheckRunning ? 'disabled' : '' ?>>
+                <?= $recheckRunning ? '🔍 Recheck in progress...' : '🔍 Recheck All Cached Domains' ?>
+            </button>
+        </form>
+        <?php if ($recheckRunning): ?>
+        <form method="POST" style="margin: 0;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="stop_recheck">
+            <button type="submit" class="btn btn-danger btn-small">⏹ Stop Recheck</button>
+        </form>
+        <?php endif; ?>
+        <span style="color: #666; font-size: 0.85rem;">Scans all previously downloaded domains against current keywords (admin only)</span>
+    </div>
     <?php endif; ?>
     
     <?php if (empty($keywords)): ?>
