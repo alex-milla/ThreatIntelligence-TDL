@@ -1,33 +1,44 @@
 <?php
-require_once __DIR__ . '/includes/db.php';
-require_once __DIR__ . '/includes/auth.php';
-require_once __DIR__ . '/includes/whois.php';
+try {
+    require_once __DIR__ . '/includes/db.php';
+    require_once __DIR__ . '/includes/auth.php';
+    require_once __DIR__ . '/includes/whois.php';
 
-header('Content-Type: application/json');
+    header('Content-Type: application/json');
 
-requireAuth();
+    requireAuth();
 
-$domain = trim($_GET['domain'] ?? '');
-if (!$domain || strlen($domain) > 253 || !preg_match('/^[a-z0-9\p{L}\-\.]+$/u', $domain)) {
-    echo json_encode(['success' => false, 'error' => 'Invalid domain']);
-    exit;
-}
+    $domain = trim($_GET['domain'] ?? '');
+    if (!$domain || strlen($domain) > 253 || !preg_match('/^[a-z0-9\p{L}\-\.]+$/u', $domain)) {
+        echo json_encode(['success' => false, 'error' => 'Invalid domain']);
+        exit;
+    }
 
-$whois = getDomainWhois($domain, 20);
+    $whois = getDomainWhois($domain, 20);
 
-if ($whois === null) {
+    if ($whois === null) {
+        echo json_encode([
+            'success' => false,
+            'error' => 'RDAP query failed',
+            'fallback_url' => 'https://who.is/whois/' . urlencode($domain),
+        ]);
+        exit;
+    }
+
+    echo json_encode([
+        'success' => true,
+        'domain' => strtolower($domain),
+        'creationDate' => $whois['creation_date'],
+        'expirationDate' => $whois['expiration_date'],
+        'registrar' => $whois['registrar'],
+    ]);
+} catch (Throwable $e) {
+    header('Content-Type: application/json');
+    http_response_code(500);
     echo json_encode([
         'success' => false,
-        'error' => 'RDAP query failed',
-        'fallback_url' => 'https://who.is/whois/' . urlencode($domain),
+        'error' => 'Server error: ' . $e->getMessage(),
+        'file' => basename($e->getFile()),
+        'line' => $e->getLine(),
     ]);
-    exit;
 }
-
-echo json_encode([
-    'success' => true,
-    'domain' => strtolower($domain),
-    'creationDate' => $whois['creation_date'],
-    'expirationDate' => $whois['expiration_date'],
-    'registrar' => $whois['registrar'],
-]);
