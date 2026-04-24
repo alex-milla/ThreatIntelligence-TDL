@@ -148,6 +148,33 @@ if (!empty($notifications)) {
     }
 }
 
+// Load / prefetch domain whois for visible rows
+require_once __DIR__ . '/includes/whois.php';
+$domainWhois = [];
+if (!empty($notifications)) {
+    $domainsOnPage = array_column($notifications, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domainsOnPage), '?'));
+    $whoisStmt = $db->prepare("SELECT domain, creation_date FROM domain_whois WHERE domain IN ($placeholders)");
+    $whoisStmt->execute($domainsOnPage);
+    foreach ($whoisStmt->fetchAll() as $w) {
+        $domainWhois[$w['domain']] = $w;
+    }
+
+    // Fetch missing whois entries with short timeout (bulk context)
+    $missingDomains = array_filter($domainsOnPage, function($d) use ($domainWhois) {
+        return !isset($domainWhois[$d]);
+    });
+    foreach ($missingDomains as $md) {
+        $whoisData = getDomainWhois($md, 3);
+        $creationDate = $whoisData['creation_date'] ?? null;
+        $expirationDate = $whoisData['expiration_date'] ?? null;
+        $registrar = $whoisData['registrar'] ?? null;
+        $db->prepare("INSERT OR REPLACE INTO domain_whois (domain, creation_date, expiration_date, registrar, cached_at) VALUES (?, ?, ?, ?, datetime('now'))")
+            ->execute([$md, $creationDate, $expirationDate, $registrar]);
+        $domainWhois[$md] = ['domain' => $md, 'creation_date' => $creationDate];
+    }
+}
+
 // Helper to build pagination URLs preserving filters
 function notifUrl(int $p, string $search, string $date, bool $unread): string {
     $q = ['page' => $p];
@@ -228,6 +255,7 @@ require __DIR__ . '/templates/header.php';
                     <th>TLD</th>
                     <th>Keyword</th>
                     <th>First Seen</th>
+                    <th>Created</th>
                     <th>Discovered</th>
                     <th>Actions</th>
                 </tr>
@@ -241,6 +269,16 @@ require __DIR__ . '/templates/header.php';
                         $label = $dtag['tag'] === 'good' ? 'GOOD' : 'BAD';
                         $tagBadge = ' <span style="display:inline-block;background:'.$color.';color:#fff;font-size:0.7rem;padding:1px 5px;border-radius:3px;margin-left:4px;">'.$label.'</span>';
                     }
+                    $whoisRow = $domainWhois[$n['domain']] ?? null;
+                    $creationDate = $whoisRow['creation_date'] ?? null;
+                    $isNew = false;
+                    if ($creationDate) {
+                        try {
+                            $createdTs = strtotime($creationDate);
+                            $isNew = $createdTs && $createdTs > strtotime('-30 days');
+                        } catch (Exception $e) { $isNew = false; }
+                    }
+                    $creationDisplay = $creationDate ? date('Y-m-d', strtotime($creationDate)) : '—';
                 ?>
                 <tr class="<?= $n['is_read'] ? '' : 'unread' ?>">
                     <td><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check"></td>
@@ -249,6 +287,7 @@ require __DIR__ . '/templates/header.php';
                     <td><?= htmlspecialchars($n['tld']) ?></td>
                     <td><?= htmlspecialchars($n['keyword']) ?></td>
                     <td><?= htmlspecialchars($n['first_seen'] ?? '-') ?></td>
+                    <td><?= htmlspecialchars($creationDisplay) ?><?php if ($isNew): ?> <span class="badge-new">🆕 New</span><?php endif; ?></td>
                     <td><?= htmlspecialchars($n['discovered_at']) ?></td>
                     <td>
                         <div class="action-menu">

@@ -155,6 +155,14 @@ class Database {
             completed_at TEXT
         )");
 
+        $db->exec("CREATE TABLE IF NOT EXISTS domain_whois (
+            domain TEXT PRIMARY KEY,
+            creation_date TEXT,
+            expiration_date TEXT,
+            registrar TEXT,
+            cached_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )");
+
         $db->exec("CREATE TABLE IF NOT EXISTS domain_tags (
             domain TEXT PRIMARY KEY,
             tag TEXT CHECK(tag IN ('good','bad')),

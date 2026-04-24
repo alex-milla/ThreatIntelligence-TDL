@@ -50,6 +50,7 @@ sendSecurityHeaders();
         .stat-box .number { font-size: 2rem; font-weight: bold; color: #007bff; }
         .stat-box .label { color: #666; margin-top: 5px; }
         .unread { background: #fff3cd; }
+        .badge-new { display: inline-block; background: #e74c3c; color: #fff; font-size: 0.7rem; padding: 1px 5px; border-radius: 3px; margin-left: 4px; white-space: nowrap; }
     </style>
 </head>
 <body>
