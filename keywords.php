@@ -7,8 +7,9 @@ $db = Database::get();
 $userId = (int)$_SESSION['user_id'];
 $isAdmin = !empty($_SESSION['is_admin']);
 
-$message = '';
-$error = '';
+$message = $_SESSION['flash_message'] ?? '';
+$error = $_SESSION['flash_error'] ?? '';
+unset($_SESSION['flash_message'], $_SESSION['flash_error']);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
@@ -62,10 +63,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     validateCsrf();
     if ($isAdmin) {
         $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['stop_recheck', '']);
-        $message = 'Stop recheck queued. The worker will stop at the next batch boundary.';
+        $_SESSION['flash_message'] = 'Stop recheck queued. The worker will stop at the next batch boundary.';
     } else {
-        $error = 'Only administrators can stop a recheck.';
+        $_SESSION['flash_error'] = 'Only administrators can stop a recheck.';
     }
+    header('Location: /keywords.php');
+    exit;
 }
 
 // List keywords

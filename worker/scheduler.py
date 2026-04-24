@@ -509,6 +509,23 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
     if not commands:
         return logs, worker_stats, commands_processed
 
+    # If a stop_recheck is present in this batch, cancel any recheck_keywords
+    # in the same batch to prevent a relaunch after stopping.
+    has_stop = any(cmd.get("command") == "stop_recheck" for cmd in commands)
+    if has_stop:
+        filtered = []
+        for cmd in commands:
+            if cmd.get("command") == "recheck_keywords":
+                try:
+                    sync_client.mark_command_done(host_url, api_key, cmd["id"], "cancelled", "Cancelled by stop_recheck in same batch")
+                    logs.append({"level": "warning", "message": f"Cancelled recheck command {cmd['id']} because stop_recheck was received in the same batch"})
+                    commands_processed = True
+                except Exception as e:
+                    logs.append({"level": "error", "message": f"Failed to cancel recheck command {cmd['id']}: {e}"})
+            else:
+                filtered.append(cmd)
+        commands = filtered
+
     config_path = os.path.join(os.path.dirname(__file__), "config.ini")
 
     for cmd in commands:
