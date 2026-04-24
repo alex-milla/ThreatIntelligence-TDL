@@ -26,6 +26,8 @@ sendSecurityHeaders();
         .btn-danger { background: #dc3545; }
         .btn-danger:hover { background: #a71d2a; }
         .btn-small { padding: 4px 10px; font-size: 0.85rem; }
+        .btn-tiny { padding: 3px 6px; font-size: 0.75rem; line-height: 1; }
+        .action-group { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
         .form-group { margin-bottom: 15px; }
         label { display: block; font-weight: 600; margin-bottom: 5px; }
         input[type="text"], input[type="email"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }

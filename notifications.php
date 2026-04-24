@@ -251,22 +251,24 @@ require __DIR__ . '/templates/header.php';
                     <td><?= htmlspecialchars($n['first_seen'] ?? '-') ?></td>
                     <td><?= htmlspecialchars($n['discovered_at']) ?></td>
                     <td>
-                        <form method="POST" style="display: inline;">
-                            <?php csrfField(); ?>
-                            <input type="hidden" name="action" value="delete">
-                            <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
-                            <button type="submit" class="btn btn-small btn-danger" onclick="return confirm('Delete this notification?')">Delete</button>
-                        </form>
-                        <?php if (!$n['is_read']): ?>
-                        <form method="POST" style="display: inline;">
-                            <?php csrfField(); ?>
-                            <input type="hidden" name="action" value="mark_read">
-                            <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
-                            <button type="submit" class="btn btn-small">Mark Read</button>
-                        </form>
-                        <?php endif; ?>
-                        <button type="button" class="btn btn-small" style="background:#27ae60;" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','good')">Good</button>
-                        <button type="button" class="btn btn-small" style="background:#c0392b;" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','bad')">Bad</button>
+                        <div class="action-group">
+                            <form method="POST" style="display: inline; margin: 0;">
+                                <?php csrfField(); ?>
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
+                                <button type="submit" class="btn btn-tiny btn-danger" title="Delete" onclick="return confirm('Delete this notification?')">🗑️</button>
+                            </form>
+                            <?php if (!$n['is_read']): ?>
+                            <form method="POST" style="display: inline; margin: 0;">
+                                <?php csrfField(); ?>
+                                <input type="hidden" name="action" value="mark_read">
+                                <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
+                                <button type="submit" class="btn btn-tiny" title="Mark read">✉️</button>
+                            </form>
+                            <?php endif; ?>
+                            <button type="button" class="btn btn-tiny" style="background:#27ae60;" title="Mark Good" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','good')">✅</button>
+                            <button type="button" class="btn btn-tiny" style="background:#c0392b;" title="Mark Bad" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','bad')">❌</button>
+                        </div>
                     </td>
                 </tr>
                 <?php endforeach; ?>
