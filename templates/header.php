@@ -28,6 +28,17 @@ sendSecurityHeaders();
         .btn-small { padding: 4px 10px; font-size: 0.85rem; }
         .btn-tiny { padding: 3px 6px; font-size: 0.75rem; line-height: 1; }
         .action-group { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+        .action-menu { position: relative; display: inline-block; }
+        .action-menu-btn { background: none; border: none; cursor: pointer; font-size: 1.1rem; padding: 2px 6px; color: #666; border-radius: 4px; }
+        .action-menu-btn:hover { background: #eee; color: #333; }
+        .action-menu-dropdown { display: none; position: absolute; right: 0; top: 100%; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; min-width: 160px; padding: 4px 0; }
+        .action-menu-dropdown.active { display: block; }
+        .action-menu-dropdown form, .action-menu-dropdown button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 8px 14px; cursor: pointer; font-size: 0.9rem; color: #333; }
+        .action-menu-dropdown form:hover, .action-menu-dropdown button:hover { background: #f5f5f5; }
+        .action-menu-dropdown .menu-danger { color: #dc3545; }
+        .action-menu-dropdown .menu-good { color: #27ae60; }
+        .action-menu-dropdown .menu-bad { color: #c0392b; }
+        .action-menu-dropdown hr { border: none; border-top: 1px solid #eee; margin: 4px 0; }
         .form-group { margin-bottom: 15px; }
         label { display: block; font-weight: 600; margin-bottom: 5px; }
         input[type="text"], input[type="email"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }

@@ -251,23 +251,27 @@ require __DIR__ . '/templates/header.php';
                     <td><?= htmlspecialchars($n['first_seen'] ?? '-') ?></td>
                     <td><?= htmlspecialchars($n['discovered_at']) ?></td>
                     <td>
-                        <div class="action-group">
-                            <form method="POST" style="display: inline; margin: 0;">
-                                <?php csrfField(); ?>
-                                <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
-                                <button type="submit" class="btn btn-tiny btn-danger" title="Delete" onclick="return confirm('Delete this notification?')">🗑️</button>
-                            </form>
-                            <?php if (!$n['is_read']): ?>
-                            <form method="POST" style="display: inline; margin: 0;">
-                                <?php csrfField(); ?>
-                                <input type="hidden" name="action" value="mark_read">
-                                <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
-                                <button type="submit" class="btn btn-tiny" title="Mark read">✉️</button>
-                            </form>
-                            <?php endif; ?>
-                            <button type="button" class="btn btn-tiny" style="background:#27ae60;" title="Mark Good" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','good')">✅</button>
-                            <button type="button" class="btn btn-tiny" style="background:#c0392b;" title="Mark Bad" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','bad')">❌</button>
+                        <div class="action-menu">
+                            <button type="button" class="action-menu-btn" onclick="toggleMenu(this)">⋮</button>
+                            <div class="action-menu-dropdown">
+                                <?php if (!$n['is_read']): ?>
+                                <form method="POST" style="margin: 0;">
+                                    <?php csrfField(); ?>
+                                    <input type="hidden" name="action" value="mark_read">
+                                    <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
+                                    <button type="submit">✉️ Mark as read</button>
+                                </form>
+                                <?php endif; ?>
+                                <button type="button" class="menu-good" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','good')">✅ Mark Good</button>
+                                <button type="button" class="menu-bad" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','bad')">❌ Mark Bad</button>
+                                <hr>
+                                <form method="POST" style="margin: 0;" onsubmit="return confirm('Delete this notification?')">
+                                    <?php csrfField(); ?>
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
+                                    <button type="submit" class="menu-danger">🗑️ Delete</button>
+                                </form>
+                            </div>
                         </div>
                     </td>
                 </tr>
@@ -304,6 +308,18 @@ require __DIR__ . '/templates/header.php';
         <script>
         document.getElementById('select-all').addEventListener('change', function(e) {
             document.querySelectorAll('.row-check').forEach(cb => cb.checked = e.target.checked);
+        });
+
+        function toggleMenu(btn) {
+            const dropdown = btn.nextElementSibling;
+            const isOpen = dropdown.classList.contains('active');
+            document.querySelectorAll('.action-menu-dropdown').forEach(d => d.classList.remove('active'));
+            if (!isOpen) dropdown.classList.add('active');
+        }
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.action-menu')) {
+                document.querySelectorAll('.action-menu-dropdown').forEach(d => d.classList.remove('active'));
+            }
         });
         </script>
     <?php endif; ?>
