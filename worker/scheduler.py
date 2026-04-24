@@ -546,10 +546,7 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 status = "failed"
 
             elif command == "stop_recheck":
-                flag_path = os.path.join(data_dir, ".stop_recheck")
-                with open(flag_path, "w") as f:
-                    f.write("1")
-                result = "Stop flag created. If a recheck is running it will stop at the next batch boundary."
+                result = "Stop recheck command acknowledged. If a recheck is running it will stop at the next batch boundary."
                 logs.append({"level": "info", "message": result})
 
             else:

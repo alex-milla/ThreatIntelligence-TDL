@@ -28,6 +28,16 @@ if ($isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])
     exit;
 }
 
+// Admin stop recheck
+if ($isAdmin && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'stop_recheck') {
+    validateCsrf();
+    $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")
+        ->execute(['stop_recheck', '']);
+    $_SESSION['flash_message'] = 'Stop recheck queued. The worker will stop at the next batch boundary.';
+    header('Location: /');
+    exit;
+}
+
 // Get current preference
 $stmt = $db->prepare("SELECT email_notifications FROM users WHERE id = ? LIMIT 1");
 $stmt->execute([$userId]);

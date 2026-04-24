@@ -57,6 +57,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// Admin stop recheck
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'stop_recheck') {
+    validateCsrf();
+    if ($isAdmin) {
+        $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['stop_recheck', '']);
+        $message = 'Stop recheck queued. The worker will stop at the next batch boundary.';
+    } else {
+        $error = 'Only administrators can stop a recheck.';
+    }
+}
+
 // List keywords
 $stmt = $db->prepare("SELECT id, keyword, match_count, created_at FROM keywords WHERE user_id = ? ORDER BY created_at DESC");
 $stmt->execute([$userId]);
