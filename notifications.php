@@ -87,12 +87,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 // Search / filter params
 $search = trim($_GET['q'] ?? '');
 $unreadOnly = isset($_GET['unread_only']) && $_GET['unread_only'] === '1';
-$newOnly = isset($_GET['new_only']) && $_GET['new_only'] === '1';
 $dateFilter = $_GET['date'] ?? 'all';
 $validDateFilters = ['24h' => '-1 day', '7d' => '-7 days', '30d' => '-30 days', 'all' => ''];
 
-// Configurable threshold for "new" badge/filter (default 1 day)
-$newDomainDays = max(1, (int)(getSetting($db, 'new_domain_days', '1')));
+// Configurable threshold for "new" badge/filter (default from admin setting)
+$defaultNewDays = max(1, (int)(getSetting($db, 'new_domain_days', '1')));
+$newDays = isset($_GET['new_days']) ? max(1, min(365, (int)$_GET['new_days'])) : null;
+$newOnly = $newDays !== null;
 
 // Pagination
 $page = max(1, (int)($_GET['page'] ?? 1));
@@ -116,7 +117,7 @@ if ($unreadOnly) {
 
 if ($newOnly) {
     $where .= " AND EXISTS (SELECT 1 FROM domain_whois dw WHERE dw.domain = m.domain AND dw.creation_date >= datetime('now', '-' || ? || ' days'))";
-    $params[] = $newDomainDays;
+    $params[] = $newDays;
 }
 
 if (!empty($validDateFilters[$dateFilter])) {
@@ -185,12 +186,12 @@ if (!empty($notifications)) {
 }
 
 // Helper to build pagination URLs preserving filters
-function notifUrl(int $p, string $search, string $date, bool $unread, bool $newOnly): string {
+function notifUrl(int $p, string $search, string $date, bool $unread, ?int $newDays): string {
     $q = ['page' => $p];
     if ($search !== '') $q['q'] = $search;
     if ($date !== 'all') $q['date'] = $date;
     if ($unread) $q['unread_only'] = '1';
-    if ($newOnly) $q['new_only'] = '1';
+    if ($newDays !== null) $q['new_days'] = (string)$newDays;
     return '/notifications.php?' . http_build_query($q);
 }
 
@@ -224,12 +225,13 @@ require __DIR__ . '/templates/header.php';
             <input type="checkbox" name="unread_only" value="1" <?= $unreadOnly ? 'checked' : '' ?>>
             Unread only
         </label>
-        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;" title="Domains created within last <?= $newDomainDays ?> day(s)">
-            <input type="checkbox" name="new_only" value="1" <?= $newOnly ? 'checked' : '' ?>>
-            New only (≤<?= $newDomainDays ?>d)
+        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+            <span style="color: #666; font-size: 0.9rem;">Created ≤</span>
+            <input type="number" name="new_days" value="<?= $newDays ?? $defaultNewDays ?>" min="1" max="365" style="width: 50px; padding: 4px;">
+            <span style="color: #666; font-size: 0.9rem;">day(s)</span>
         </label>
         <button type="submit" class="btn btn-small">Search</button>
-        <?php if ($search !== '' || $unreadOnly || $newOnly || $dateFilter !== 'all'): ?>
+        <?php if ($search !== '' || $unreadOnly || $newDays !== null || $dateFilter !== 'all'): ?>
         <a href="/notifications.php" class="btn btn-small btn-danger">Clear</a>
         <?php endif; ?>
     </form>
@@ -289,7 +291,7 @@ require __DIR__ . '/templates/header.php';
                     if ($creationDate) {
                         try {
                             $createdTs = strtotime($creationDate);
-                            $isNew = $createdTs && $createdTs > strtotime("-{$newDomainDays} days");
+                            $isNew = $createdTs && $createdTs > strtotime("-{$defaultNewDays} days");
                         } catch (Exception $e) { $isNew = false; }
                     }
                     $creationDisplay = $creationDate ? date('Y-m-d', strtotime($creationDate)) : '—';
@@ -339,21 +341,21 @@ require __DIR__ . '/templates/header.php';
             </span>
             <div style="display: flex; gap: 5px; flex-wrap: wrap;">
                 <?php if ($page > 1): ?>
-                    <a href="<?= htmlspecialchars(notifUrl($page - 1, $search, $dateFilter, $unreadOnly, $newOnly)) ?>" class="btn btn-small">« Previous</a>
+                    <a href="<?= htmlspecialchars(notifUrl($page - 1, $search, $dateFilter, $unreadOnly, $newDays)) ?>" class="btn btn-small">« Previous</a>
                 <?php endif; ?>
 
                 <?php for ($p = 1; $p <= $totalPages; $p++): ?>
                     <?php if ($p === $page): ?>
                         <span class="btn btn-small" style="background: #3498db; color: white; cursor: default;"><?= $p ?></span>
                     <?php elseif ($p === 1 || $p === $totalPages || abs($p - $page) <= 2): ?>
-                        <a href="<?= htmlspecialchars(notifUrl($p, $search, $dateFilter, $unreadOnly, $newOnly)) ?>" class="btn btn-small"><?= $p ?></a>
+                        <a href="<?= htmlspecialchars(notifUrl($p, $search, $dateFilter, $unreadOnly, $newDays)) ?>" class="btn btn-small"><?= $p ?></a>
                     <?php elseif (abs($p - $page) === 3): ?>
                         <span style="padding: 5px;">…</span>
                     <?php endif; ?>
                 <?php endfor; ?>
 
                 <?php if ($page < $totalPages): ?>
-                    <a href="<?= htmlspecialchars(notifUrl($page + 1, $search, $dateFilter, $unreadOnly, $newOnly)) ?>" class="btn btn-small">Next »</a>
+                    <a href="<?= htmlspecialchars(notifUrl($page + 1, $search, $dateFilter, $unreadOnly, $newDays)) ?>" class="btn btn-small">Next »</a>
                 <?php endif; ?>
             </div>
         </div>
