@@ -538,11 +538,21 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
         try:
             status = "completed"
             if command == "run_worker":
+                sync_client.send_heartbeat(host_url, api_key, {
+                    "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+                    "is_running": 1,
+                    "version": version,
+                })
                 worker_stats = run_worker_cycle(db, cfg, host_url, api_key)
                 result = json.dumps(worker_stats)
                 logs.append({"level": "info", "message": f"Worker cycle completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
 
             elif command == "recheck_keywords":
+                sync_client.send_heartbeat(host_url, api_key, {
+                    "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+                    "is_running": 1,
+                    "version": version,
+                })
                 max_age = cfg.getint("worker", "max_domain_age_days", fallback=30)
                 stats = recheck_all_domains(db, host_url, api_key, max_age)
                 result = json.dumps(stats)
@@ -656,7 +666,7 @@ def main() -> int:
 
                 heartbeat_payload = {
                     "last_heartbeat": datetime.now(timezone.utc).isoformat(),
-                    "is_running": 1,
+                    "is_running": 0,
                     "version": version,
                 }
                 if worker_stats:
