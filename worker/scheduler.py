@@ -220,7 +220,7 @@ def queue_matches(db: sqlite3.Connection, matches: list[dict]) -> None:
     print(f"[!] Queued {len(matches)} matches for retry.")
 
 
-def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str) -> dict:
+def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str) -> dict:
     """Run one full worker cycle. Returns stats dict."""
     download_dir = cfg.get("worker", "download_dir", fallback="./zones")
     data_dir = cfg.get("worker", "data_dir", fallback="./data")
@@ -539,7 +539,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
     return stats
 
 
-def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str) -> tuple[list[dict], dict | None, bool]:
+def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str) -> tuple[list[dict], dict | None, bool]:
     """Poll and execute pending commands from the hosting. Returns (log entries, worker_stats, commands_processed)."""
     logs = []
     worker_stats = None
@@ -587,7 +587,7 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                     "is_running": 1,
                     "version": version,
                 })
-                worker_stats = run_worker_cycle(db, cfg, host_url, api_key)
+                worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version)
                 result = json.dumps(worker_stats)
                 logs.append({"level": "info", "message": f"Worker cycle completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
 
@@ -705,7 +705,7 @@ def main() -> int:
             logs = []
             worker_stats = None
             try:
-                cmd_logs, worker_stats, _ = handle_commands(db, cfg, host_url, api_key)
+                cmd_logs, worker_stats, _ = handle_commands(db, cfg, host_url, api_key, version)
                 logs.extend(cmd_logs)
 
                 heartbeat_payload = {
@@ -730,11 +730,11 @@ def main() -> int:
             time.sleep(args.interval)
     else:
         # One-shot mode: process commands first, then run worker cycle if nothing was processed
-        logs, worker_stats, commands_processed = handle_commands(db, cfg, host_url, api_key)
+        logs, worker_stats, commands_processed = handle_commands(db, cfg, host_url, api_key, version)
 
         if not commands_processed and not worker_stats:
             # No commands pending → legacy cron behavior: run full cycle
-            worker_stats = run_worker_cycle(db, cfg, host_url, api_key)
+            worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version)
             logs.append({"level": "info", "message": f"Worker cycle completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
 
         heartbeat_payload = {
