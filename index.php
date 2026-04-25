@@ -63,8 +63,8 @@ $stmt = $db->prepare($matchSql);
 $stmt->execute(array_merge([$userId], $periodParams));
 $matchCount = (int)$stmt->fetchColumn();
 
-$stmt = $db->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0");
-$stmt->execute([$userId]);
+$stmt = $db->prepare("SELECT COUNT(*) FROM notifications n JOIN matches m ON n.match_id = m.id WHERE n.user_id = ? AND n.is_read = 0 AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)");
+$stmt->execute([$userId, $userId]);
 $unreadCount = (int)$stmt->fetchColumn();
 
 // Recent matches

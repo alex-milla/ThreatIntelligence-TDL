@@ -100,8 +100,8 @@ $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 50;
 $offset = ($page - 1) * $perPage;
 
-$where = "WHERE n.user_id = ?";
-$params = [$userId];
+$where = "WHERE n.user_id = ? AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)";
+$params = [$userId, $userId];
 
 if ($search !== '') {
     $where .= " AND (m.domain LIKE ? OR m.tld LIKE ? OR k.keyword LIKE ?)";
@@ -131,6 +131,11 @@ $totalStmt = $db->prepare($countSql);
 $totalStmt->execute($params);
 $total = (int)$totalStmt->fetchColumn();
 $totalPages = max(1, (int)ceil($total / $perPage));
+
+// Count how many are hidden because they are in watchlist
+$hiddenCountStmt = $db->prepare("SELECT COUNT(*) FROM notifications n JOIN matches m ON n.match_id = m.id WHERE n.user_id = ? AND EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)");
+$hiddenCountStmt->execute([$userId, $userId]);
+$hiddenCount = (int)$hiddenCountStmt->fetchColumn();
 $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
@@ -202,8 +207,8 @@ require __DIR__ . '/templates/header.php';
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <h2>Notifications</h2>
-        <?php if (!empty($notifications)): ?>
-        <div style="display: flex; gap: 10px;">
+        <?php if (!empty($notifications) || $hiddenCount > 0): ?>
+        <div style="display: flex; gap: 10px; align-items: center;">
             <form method="POST" style="margin: 0;">
                 <?php csrfField(); ?>
                 <input type="hidden" name="action" value="mark_all_read">
@@ -247,8 +252,13 @@ require __DIR__ . '/templates/header.php';
     </form>
     <?php endif; ?>
     
+    <?php if ($hiddenCount > 0): ?>
+        <div style="margin-bottom: 12px; padding: 8px 12px; background: #fff3cd; border-radius: 4px; font-size: 0.9rem; color: #856404;">
+            ⭐ <?= $hiddenCount ?> notification(s) hidden because the domain(s) are in your <a href="/watchlist.php" style="color: #856404; text-decoration: underline;">Watchlist</a>.
+        </div>
+    <?php endif; ?>
     <?php if (empty($notifications)): ?>
-        <p>No notifications yet. Matches will appear here when the worker finds new domains.</p>
+        <p>No notifications to display.<?php if ($hiddenCount > 0): ?> The remaining <?= $hiddenCount ?> are in your <a href="/watchlist.php">Watchlist</a>.<?php endif; ?></p>
     <?php else: ?>
         <form method="POST" id="bulk-form">
             <?php csrfField(); ?>
