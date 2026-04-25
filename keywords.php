@@ -71,15 +71,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// List keywords with visible match count (excluding watchlisted domains)
+// List keywords with visible match count:
+// only matches that still have an active notification for this user
+// and are not in the user's watchlist
 $stmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.created_at,
     (SELECT COUNT(*) FROM matches m WHERE m.keyword_id = k.id
+     AND EXISTS (SELECT 1 FROM notifications n WHERE n.match_id = m.id AND n.user_id = ?)
      AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)
     ) AS visible_count
 FROM keywords k
 WHERE k.user_id = ?
 ORDER BY k.created_at DESC");
-$stmt->execute([$userId, $userId]);
+$stmt->execute([$userId, $userId, $userId]);
 $keywords = $stmt->fetchAll();
 
 // Recheck status for admin stop button
