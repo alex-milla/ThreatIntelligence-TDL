@@ -65,6 +65,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         setSetting($db, 'new_domain_days', (string)$days);
         $message = "New domain threshold updated to {$days} day(s).";
     }
+    
+    if ($action === 'cancel_command') {
+        $cmdId = (int)($_POST['command_id'] ?? 0);
+        $db->prepare("UPDATE commands SET status = 'cancelled', executed_at = datetime('now') WHERE id = ? AND status = 'pending'") ->execute([$cmdId]);
+        $message = 'Command cancelled.';
+    }
+    
+    if ($action === 'clear_pending_commands') {
+        $db->prepare("UPDATE commands SET status = 'cancelled', executed_at = datetime('now') WHERE status = 'pending'") ->execute();
+        $message = 'All pending commands cleared.';
+    }
 }
 
 // Data
@@ -73,6 +84,7 @@ $syncLogs = $db->query("SELECT * FROM sync_logs ORDER BY created_at DESC LIMIT 2
 $workerStatus = $db->query("SELECT * FROM worker_status WHERE id = 1")->fetch();
 $workerLogs = $db->query("SELECT * FROM worker_logs ORDER BY created_at DESC LIMIT 20")->fetchAll();
 $pendingCommands = $db->query("SELECT COUNT(*) FROM commands WHERE status = 'pending'")->fetchColumn();
+$pendingCommandsList = $db->query("SELECT id, command, payload, created_at FROM commands WHERE status = 'pending' ORDER BY created_at ASC")->fetchAll();
 
 $pageTitle = 'Admin Panel';
 require __DIR__ . '/../templates/header.php';
@@ -114,9 +126,35 @@ require __DIR__ . '/../templates/header.php';
     </div>
 </div>
 
+<?php
+// Worker health calculation
+$heartbeatStale = false;
+$secondsSinceHb = null;
+if (!empty($workerStatus['last_heartbeat'])) {
+    $hbTime = strtotime($workerStatus['last_heartbeat']);
+    if ($hbTime) {
+        $secondsSinceHb = time() - $hbTime;
+        $heartbeatStale = $secondsSinceHb > 300; // 5 minutes
+    }
+}
+?>
 <div class="card">
     <h2>Worker Status</h2>
     <?php if ($workerStatus): ?>
+        <?php if (($workerStatus['is_running'] ?? 0)): ?>
+            <div style="margin-bottom: 12px; padding: 10px 14px; background: #fff3cd; border-radius: 4px; font-size: 0.9rem; color: #856404;">
+                🔧 <strong>Worker is busy.</strong> It is currently processing a command (downloading zones or rechecking keywords). New commands will execute once it finishes and returns to the polling loop. This may take several minutes or even hours depending on the workload.
+            </div>
+        <?php elseif ($heartbeatStale): ?>
+            <div style="margin-bottom: 12px; padding: 10px 14px; background: #f8d7da; border-radius: 4px; font-size: 0.9rem; color: #721c24;">
+                ⚠️ <strong>Worker heartbeat is stale.</strong> Last seen <?= $secondsSinceHb !== null ? floor($secondsSinceHb / 60) . ' min ago' : 'a while ago' ?>. The worker may have crashed or lost connectivity. Check the LXC and run <code>systemctl status tdl-worker</code>.
+            </div>
+        <?php else: ?>
+            <div style="margin-bottom: 12px; padding: 10px 14px; background: #d4edda; border-radius: 4px; font-size: 0.9rem; color: #155724;">
+                ✅ <strong>Worker is online.</strong> Polling normally. Last heartbeat <?= $secondsSinceHb !== null ? floor($secondsSinceHb / 60) . ' min ago' : 'recently' ?>.
+            </div>
+        <?php endif; ?>
+
         <table>
             <tr><td>Last Heartbeat</td><td><?= htmlspecialchars($workerStatus['last_heartbeat'] ?? 'Never') ?></td></tr>
             <tr><td>Last Run</td><td><?= htmlspecialchars($workerStatus['last_run'] ?? 'Never') ?></td></tr>
@@ -130,7 +168,7 @@ require __DIR__ . '/../templates/header.php';
     <?php else: ?>
         <p>No worker status received yet. Is the worker running?</p>
     <?php endif; ?>
-    
+
     <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
         <form method="POST" style="display: inline;">
             <?php csrfField(); ?>
@@ -146,6 +184,47 @@ require __DIR__ . '/../templates/header.php';
         <a href="/admin/cleanup.php" class="btn btn-danger">Cleanup False Matches</a>
         <a href="/admin/update.php" class="btn">Check for Updates</a>
     </div>
+</div>
+
+<div class="card">
+    <h2>Pending Commands</h2>
+    <?php if (empty($pendingCommandsList)): ?>
+        <p style="color: #666;">No pending commands. The queue is clear.</p>
+    <?php else: ?>
+        <form method="POST" style="margin-bottom: 12px;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="clear_pending_commands">
+            <button type="submit" class="btn btn-danger btn-small" onclick="return confirm('Cancel ALL <?= count($pendingCommandsList) ?> pending command(s)? This cannot be undone.')">Clear All Pending</button>
+        </form>
+        <table>
+            <thead>
+                <tr><th>ID</th><th>Command</th><th>Payload</th><th>Queued At</th><th>In Queue</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+                <?php foreach ($pendingCommandsList as $cmd):
+                    $queuedSeconds = time() - strtotime($cmd['created_at']);
+                    $queuedMins = floor($queuedSeconds / 60);
+                    $queuedStr = $queuedMins < 1 ? 'Just now' : ($queuedMins < 60 ? $queuedMins . ' min' : floor($queuedMins / 60) . ' h ' . ($queuedMins % 60) . ' min');
+                ?>
+                <tr>
+                    <td><?= (int)$cmd['id'] ?></td>
+                    <td><?= htmlspecialchars($cmd['command']) ?></td>
+                    <td><?= htmlspecialchars($cmd['payload'] ?? '—') ?></td>
+                    <td><?= htmlspecialchars($cmd['created_at']) ?></td>
+                    <td><?= $queuedStr ?></td>
+                    <td>
+                        <form method="POST" style="display: inline; margin: 0;">
+                            <?php csrfField(); ?>
+                            <input type="hidden" name="action" value="cancel_command">
+                            <input type="hidden" name="command_id" value="<?= (int)$cmd['id'] ?>">
+                            <button type="submit" class="btn btn-small btn-danger" onclick="return confirm('Cancel command #<?= (int)$cmd['id'] ?>?')">Cancel</button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php endif; ?>
 </div>
 
 <div class="card">
