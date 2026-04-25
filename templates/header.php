@@ -64,6 +64,7 @@ sendSecurityHeaders();
                 <a href="/watchlist.php">Watchlist</a>
                 <?php if (!empty($_SESSION['is_admin'])): ?>
                     <a href="/admin/">Admin</a>
+                    <a href="/admin/tlds.php">TLDs</a>
                 <?php endif; ?>
             <?php endif; ?>
         </div>

@@ -76,22 +76,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = 'All pending commands cleared.';
     }
     
-    if ($action === 'save_tlds') {
-        validateCsrf();
-        $active = $_POST['active'] ?? [];
-        $db->beginTransaction();
-        $db->exec("UPDATE tlds SET is_active = 0");
-        $stmt = $db->prepare("UPDATE tlds SET is_active = 1 WHERE name = ?");
-        foreach ($active as $tld) {
-            $stmt->execute([$tld]);
-        }
-        $db->commit();
-        $message = 'TLD selection saved. The worker will use these on next run.';
-    }
 }
 
 // Data
-$tlds = $db->query("SELECT id, name, is_active, last_sync, status FROM tlds ORDER BY name")->fetchAll();
 $users = $db->query("SELECT id, username, email, is_active, is_admin, api_key, max_keywords, created_at FROM users ORDER BY created_at DESC")->fetchAll();
 $syncLogs = $db->query("SELECT * FROM sync_logs ORDER BY created_at DESC LIMIT 20")->fetchAll();
 $workerStatus = $db->query("SELECT * FROM worker_status WHERE id = 1")->fetch();
@@ -106,27 +93,6 @@ require __DIR__ . '/../templates/header.php';
 <?php if ($message): ?>
 <div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
 <?php endif; ?>
-
-<style>
-.admin-tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; padding-bottom: 0; }
-.admin-tabs .tab-btn { background: #f5f5f5; border: none; padding: 10px 20px; cursor: pointer; border-radius: 4px 4px 0 0; font-size: 0.95rem; color: #555; transition: background 0.2s; }
-.admin-tabs .tab-btn:hover { background: #e8e8e8; }
-.admin-tabs .tab-btn.active { background: #3498db; color: white; font-weight: 600; }
-.tab-content { display: none; }
-.tab-content.active { display: block; }
-#tld-search { width: 100%; padding: 10px 14px; font-size: 1rem; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 15px; box-sizing: border-box; }
-#tld-search:focus { outline: none; border-color: #3498db; }
-.tld-table-container { max-height: 600px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px; }
-.tld-row.hidden { display: none; }
-#tld-count { font-size: 0.9rem; color: #666; margin-bottom: 10px; }
-</style>
-
-<div class="admin-tabs">
-    <button type="button" class="tab-btn active" onclick="showTab('dashboard', this)">Dashboard</button>
-    <button type="button" class="tab-btn" onclick="showTab('tlds', this)">Manage TLDs (<?= count($tlds) ?>)</button>
-</div>
-
-<div id="tab-dashboard" class="tab-content active">
 
 <div class="card">
     <h2>Keyword Recheck Status</h2>
@@ -478,97 +444,6 @@ if (!empty($workerStatus['last_heartbeat'])) {
 })();
 </script>
 
-</div><!-- /tab-dashboard -->
 
-<div id="tab-tlds" class="tab-content">
-    <div class="card">
-        <h2>Approved TLDs (<?= count($tlds) ?>)</h2>
-        <p>Check the TLDs you want the worker to monitor. Unchecked TLDs will be ignored.</p>
-        
-        <?php if (empty($tlds)): ?>
-        <div class="alert alert-error">
-            No TLDs found. The worker must run at least once to populate this list from ICANN CZDS.
-            <br>Click <strong>Run Worker Now</strong> in the Dashboard tab to populate the list.
-        </div>
-        <?php else: ?>
-        <input type="text" id="tld-search" placeholder="Search TLDs..." onkeyup="filterTlds()">
-        <form method="POST">
-            <?php csrfField(); ?>
-            <input type="hidden" name="action" value="save_tlds">
-            <div style="margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-                <button type="button" class="btn btn-small" onclick="selectAllTlds(true)">Select All</button>
-                <button type="button" class="btn btn-small" onclick="selectAllTlds(false)">Deselect All</button>
-                <button type="submit" class="btn">Save Selection</button>
-                <span id="tld-count"></span>
-            </div>
-            
-            <div class="tld-table-container">
-                <table style="margin: 0;">
-                    <thead style="position: sticky; top: 0; background: white; z-index: 1;">
-                        <tr>
-                            <th style="width: 40px;">Active</th>
-                            <th>TLD</th>
-                            <th>Last Sync</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tld-tbody">
-                        <?php foreach ($tlds as $t): ?>
-                        <tr class="tld-row" data-name="<?= htmlspecialchars($t['name']) ?>">
-                            <td style="text-align: center;">
-                                <input type="checkbox" name="active[]" value="<?= htmlspecialchars($t['name']) ?>" <?= $t['is_active'] ? 'checked' : '' ?> onchange="updateTldCount()">
-                            </td>
-                            <td><?= htmlspecialchars($t['name']) ?></td>
-                            <td><?= htmlspecialchars($t['last_sync'] ?? '-') ?></td>
-                            <td><?= htmlspecialchars($t['status'] ?? '-') ?></td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-            
-            <div style="margin-top: 15px;">
-                <button type="submit" class="btn">Save Selection</button>
-            </div>
-        </form>
-        <?php endif; ?>
-    </div>
-</div><!-- /tab-tlds -->
-
-<script>
-function showTab(tabId, btn) {
-    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.admin-tabs .tab-btn').forEach(el => el.classList.remove('active'));
-    document.getElementById('tab-' + tabId).classList.add('active');
-    if (btn) btn.classList.add('active');
-    if (tabId === 'tlds') updateTldCount();
-}
-
-function filterTlds() {
-    const query = document.getElementById('tld-search').value.toLowerCase().trim();
-    document.querySelectorAll('.tld-row').forEach(row => {
-        const name = row.dataset.name.toLowerCase();
-        row.classList.toggle('hidden', query && !name.includes(query));
-    });
-    updateTldCount();
-}
-
-function selectAllTlds(checked) {
-    document.querySelectorAll('.tld-row:not(.hidden) input[name="active[]"]').forEach(cb => cb.checked = checked);
-    updateTldCount();
-}
-
-function updateTldCount() {
-    const visible = document.querySelectorAll('.tld-row:not(.hidden)').length;
-    const checked = document.querySelectorAll('.tld-row:not(.hidden) input[name="active[]"]:checked').length;
-    document.getElementById('tld-count').textContent = checked + ' of ' + visible + ' visible TLDs selected';
-}
-
-// Auto-activate TLDs tab if URL hash is #tlds
-if (window.location.hash === '#tlds') {
-    const tldsBtn = document.querySelector('.admin-tabs .tab-btn:nth-child(2)');
-    showTab('tlds', tldsBtn);
-}
-</script>
 
 <?php require __DIR__ . '/../templates/footer.php'; ?>
