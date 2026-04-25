@@ -57,6 +57,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $db->prepare("UPDATE users SET max_keywords = ? WHERE id = ?")->execute([$max, $uid]);
         $message = 'Keyword limit updated.';
     }
+    
+    if ($action === 'set_new_domain_days') {
+        $days = (int)($_POST['new_domain_days'] ?? 1);
+        if ($days < 1) $days = 1;
+        if ($days > 365) $days = 365;
+        setSetting($db, 'new_domain_days', (string)$days);
+        $message = "New domain threshold updated to {$days} day(s).";
+    }
 }
 
 // Data
@@ -258,6 +266,18 @@ require __DIR__ . '/../templates/header.php';
         <input type="hidden" name="action" value="toggle_registration">
         <button type="submit" class="btn <?= $regOpen ? 'btn-danger' : '' ?>"><?= $regOpen ? 'Close Registration' : 'Open Registration' ?></button>
     </form>
+    
+    <hr style="margin: 15px 0; border: none; border-top: 1px solid #eee;">
+    
+    <form method="POST" style="display: flex; gap: 10px; align-items: center;">
+        <?php csrfField(); ?>
+        <input type="hidden" name="action" value="set_new_domain_days">
+        <label style="white-space: nowrap;">New domain threshold:</label>
+        <input type="number" name="new_domain_days" value="<?= (int)getSetting($db, 'new_domain_days', '1') ?>" min="1" max="365" style="width: 70px; padding: 6px;">
+        <span style="color: #666; font-size: 0.9rem;">day(s)</span>
+        <button type="submit" class="btn btn-small">Save</button>
+    </form>
+    <p style="color: #666; font-size: 0.85rem; margin-top: 5px;">Domains created within this window will show the 🆕 badge and appear in the "New only" filter.</p>
 </div>
 
 <script>
