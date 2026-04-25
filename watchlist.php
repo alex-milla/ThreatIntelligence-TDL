@@ -58,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// Group filter
+// Group filter: empty means ungrouped (group_id IS NULL)
 $groupFilter = $_GET['group'] ?? '';
 
 // Load groups
@@ -74,13 +74,13 @@ foreach ($groups as $g) {
 $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 50;
 
-// Build WHERE
+// Build WHERE: default view shows only ungrouped domains
 $where = "WHERE w.user_id = ?";
 $params = [$userId];
 
-if ($groupFilter === '0') {
+if ($groupFilter === '' || $groupFilter === '0') {
     $where .= " AND w.group_id IS NULL";
-} elseif ($groupFilter !== '' && ctype_digit($groupFilter)) {
+} elseif (ctype_digit($groupFilter)) {
     $where .= " AND w.group_id = ?";
     $params[] = (int)$groupFilter;
 }
@@ -146,8 +146,7 @@ require __DIR__ . '/templates/header.php';
 
         <!-- Group tabs -->
         <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 15px 0;">
-            <a href="/watchlist.php" class="btn btn-small" style="<?= $groupFilter === '' ? 'background:#3498db;color:#fff;' : 'background:#e9ecef;color:#333;' ?>">All (<?= $totalAll ?>)</a>
-            <a href="/watchlist.php?group=0" class="btn btn-small" style="<?= $groupFilter === '0' ? 'background:#3498db;color:#fff;' : 'background:#e9ecef;color:#333;' ?>">Ungrouped (<?= $ungroupedCount ?>)</a>
+            <a href="/watchlist.php" class="btn btn-small" style="<?= $groupFilter === '' || $groupFilter === '0' ? 'background:#3498db;color:#fff;' : 'background:#e9ecef;color:#333;' ?>">Ungrouped (<?= $ungroupedCount ?>)</a>
             <?php foreach ($groups as $g): 
                 $gCount = $groupCounts[(string)$g['id']] ?? 0;
                 $isActive = $groupFilter === (string)$g['id'];
