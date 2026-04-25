@@ -405,7 +405,10 @@ function loadWatchlistStatus(domain) {
             const box = document.getElementById('modal-watchlist-current');
             const btn = document.getElementById('modal-watchlist-btn');
             if (data.in_watchlist) {
-                box.innerHTML = '<span style="color: #f39c12;">⭐ In watchlist</span>' + (data.note ? ' — ' + htmlspecialchars(data.note) : '');
+                let html = '<span style="color: #f39c12;">⭐ In watchlist</span>';
+                if (data.group_name) html += ' <span style="color:#666;font-size:0.85rem;">(' + htmlspecialchars(data.group_name) + ')</span>';
+                if (data.note) html += ' — ' + htmlspecialchars(data.note);
+                box.innerHTML = html;
                 btn.textContent = 'Remove from Watchlist';
                 btn.style.background = '#e74c3c';
             } else {

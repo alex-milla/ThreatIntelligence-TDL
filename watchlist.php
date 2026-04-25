@@ -27,21 +27,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
+// Set group
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'set_group') {
+    $id = (int)($_POST['watch_id'] ?? 0);
+    $groupId = $_POST['group_id'] === '' ? null : (int)$_POST['group_id'];
+    $db->prepare("UPDATE watchlist SET group_id = ? WHERE id = ? AND user_id = ?")->execute([$groupId, $id, $userId]);
+    $redirect = '/watchlist.php';
+    if (!empty($_GET['group'])) $redirect .= '?group=' . urlencode($_GET['group']);
+    header('Location: ' . $redirect);
+    exit;
+}
+
+// Create group
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'create_group') {
+    $name = trim($_POST['group_name'] ?? '');
+    if ($name !== '') {
+        $db->prepare("INSERT INTO watchlist_groups (user_id, name) VALUES (?, ?)") ->execute([$userId, $name]);
+    }
+    header('Location: /watchlist.php');
+    exit;
+}
+
+// Delete group
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_group') {
+    $groupId = (int)($_POST['group_id'] ?? 0);
+    // Move domains to ungrouped first
+    $db->prepare("UPDATE watchlist SET group_id = NULL WHERE group_id = ? AND user_id = ?") ->execute([$groupId, $userId]);
+    $db->prepare("DELETE FROM watchlist_groups WHERE id = ? AND user_id = ?") ->execute([$groupId, $userId]);
+    header('Location: /watchlist.php');
+    exit;
+}
+
+// Group filter
+$groupFilter = $_GET['group'] ?? '';
+
+// Load groups
+$groupStmt = $db->prepare("SELECT id, name FROM watchlist_groups WHERE user_id = ? ORDER BY name ASC");
+$groupStmt->execute([$userId]);
+$groups = $groupStmt->fetchAll();
+$groupsById = [];
+foreach ($groups as $g) {
+    $groupsById[(int)$g['id']] = $g['name'];
+}
+
 // Pagination
 $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 50;
 
-// Count
-$totalStmt = $db->prepare("SELECT COUNT(*) FROM watchlist WHERE user_id = ?");
-$totalStmt->execute([$userId]);
+// Build WHERE
+$where = "WHERE w.user_id = ?";
+$params = [$userId];
+
+if ($groupFilter === '0') {
+    $where .= " AND w.group_id IS NULL";
+} elseif ($groupFilter !== '' && ctype_digit($groupFilter)) {
+    $where .= " AND w.group_id = ?";
+    $params[] = (int)$groupFilter;
+}
+
+// Count total
+$totalStmt = $db->prepare("SELECT COUNT(*) FROM watchlist w $where");
+$totalStmt->execute($params);
 $total = (int)$totalStmt->fetchColumn();
 $totalPages = max(1, (int)ceil($total / $perPage));
 $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
 // Fetch
-$stmt = $db->prepare("SELECT id, domain, note, created_at FROM watchlist WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?");
-$stmt->execute([$userId, $perPage, $offset]);
+$stmt = $db->prepare("SELECT w.id, w.domain, w.note, w.group_id, w.created_at FROM watchlist w $where ORDER BY w.created_at DESC LIMIT ? OFFSET ?");
+$stmt->execute(array_merge($params, [$perPage, $offset]));
 $items = $stmt->fetchAll();
 
 // Load whois for visible rows
@@ -68,6 +122,16 @@ if (!empty($items)) {
     }
 }
 
+// Count per group for badges
+$groupCounts = [];
+$countStmt = $db->prepare("SELECT group_id, COUNT(*) as cnt FROM watchlist WHERE user_id = ? GROUP BY group_id");
+$countStmt->execute([$userId]);
+foreach ($countStmt->fetchAll() as $c) {
+    $groupCounts[$c['group_id'] ?? 'ungrouped'] = (int)$c['cnt'];
+}
+$ungroupedCount = $groupCounts['ungrouped'] ?? 0;
+$totalAll = array_sum($groupCounts);
+
 $pageTitle = 'Watchlist';
 require __DIR__ . '/templates/header.php';
 ?>
@@ -76,14 +140,47 @@ require __DIR__ . '/templates/header.php';
     <h2>⭐ Watchlist</h2>
     <p style="color: #666; font-size: 0.9rem;">Private list of domains you are tracking for monitoring over time. Notes are personal and not shared with other users.</p>
 
-    <?php if (empty($items)): ?>
+    <?php if (empty($items) && empty($groups)): ?>
         <p>Your watchlist is empty. Add domains from the <a href="/notifications.php">Notifications</a> page or from any domain modal.</p>
     <?php else: ?>
+
+        <!-- Group tabs -->
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 15px 0;">
+            <a href="/watchlist.php" class="btn btn-small" style="<?= $groupFilter === '' ? 'background:#3498db;color:#fff;' : 'background:#e9ecef;color:#333;' ?>">All (<?= $totalAll ?>)</a>
+            <a href="/watchlist.php?group=0" class="btn btn-small" style="<?= $groupFilter === '0' ? 'background:#3498db;color:#fff;' : 'background:#e9ecef;color:#333;' ?>">Ungrouped (<?= $ungroupedCount ?>)</a>
+            <?php foreach ($groups as $g): 
+                $gCount = $groupCounts[(string)$g['id']] ?? 0;
+                $isActive = $groupFilter === (string)$g['id'];
+            ?>
+                <div style="display: flex; align-items: center;">
+                    <a href="/watchlist.php?group=<?= (int)$g['id'] ?>" class="btn btn-small" style="<?= $isActive ? 'background:#3498db;color:#fff;' : 'background:#e9ecef;color:#333;' ?> border-radius: 4px 0 0 4px;"><?= htmlspecialchars($g['name']) ?> (<?= $gCount ?>)</a>
+                    <form method="POST" style="margin: 0; display: inline;" onsubmit="return confirm('Delete group &quot;<?= htmlspecialchars(addslashes($g['name'])) ?>&quot;? Domains will become ungrouped.')">
+                        <?php csrfField(); ?>
+                        <input type="hidden" name="action" value="delete_group">
+                        <input type="hidden" name="group_id" value="<?= (int)$g['id'] ?>">
+                        <button type="submit" class="btn btn-small" style="background:#e9ecef;color:#c0392b;border-radius: 0 4px 4px 0;padding: 4px 8px;line-height:1;" title="Delete group">×</button>
+                    </form>
+                </div>
+            <?php endforeach; ?>
+        </div>
+
+        <!-- Create group form -->
+        <form method="POST" style="margin-bottom: 15px; display: flex; gap: 8px; align-items: center;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="create_group">
+            <input type="text" name="group_name" placeholder="New group name..." required style="padding: 6px 10px; min-width: 160px; font-size: 0.9rem;">
+            <button type="submit" class="btn btn-small">Add Group</button>
+        </form>
+
+        <?php if (empty($items)): ?>
+            <p>No domains in this group.</p>
+        <?php else: ?>
         <table>
             <thead>
                 <tr>
                     <th>Domain</th>
                     <th>Created</th>
+                    <th>Group</th>
                     <th>Note</th>
                     <th>Added</th>
                     <th>Actions</th>
@@ -107,6 +204,19 @@ require __DIR__ . '/templates/header.php';
                         <a href="javascript:void(0)" onclick="openDomainModal('<?= htmlspecialchars(addslashes($item['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($item['domain']) ?></a><?= $tagBadge ?>
                     </td>
                     <td><?= htmlspecialchars($creationDisplay) ?></td>
+                    <td>
+                        <form method="POST" style="margin: 0;">
+                            <?php csrfField(); ?>
+                            <input type="hidden" name="action" value="set_group">
+                            <input type="hidden" name="watch_id" value="<?= (int)$item['id'] ?>">
+                            <select name="group_id" onchange="this.form.submit()" style="padding: 4px 6px; font-size: 0.85rem; min-width: 100px;">
+                                <option value="" <?= $item['group_id'] === null ? 'selected' : '' ?>>— Ungrouped</option>
+                                <?php foreach ($groups as $g): ?>
+                                <option value="<?= (int)$g['id'] ?>" <?= $item['group_id'] == $g['id'] ? 'selected' : '' ?>><?= htmlspecialchars($g['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </form>
+                    </td>
                     <td>
                         <form method="POST" style="margin: 0; display: flex; gap: 6px; align-items: center;">
                             <?php csrfField(); ?>
@@ -136,24 +246,25 @@ require __DIR__ . '/templates/header.php';
             </span>
             <div style="display: flex; gap: 5px; flex-wrap: wrap;">
                 <?php if ($page > 1): ?>
-                    <a href="/watchlist.php?page=<?= $page - 1 ?>" class="btn btn-small">« Previous</a>
+                    <a href="/watchlist.php?page=<?= $page - 1 ?><?= $groupFilter !== '' ? '&group=' . urlencode($groupFilter) : '' ?>" class="btn btn-small">« Previous</a>
                 <?php endif; ?>
 
                 <?php for ($p = 1; $p <= $totalPages; $p++): ?>
                     <?php if ($p === $page): ?>
                         <span class="btn btn-small" style="background: #3498db; color: white; cursor: default;"><?= $p ?></span>
                     <?php elseif ($p === 1 || $p === $totalPages || abs($p - $page) <= 2): ?>
-                        <a href="/watchlist.php?page=<?= $p ?>" class="btn btn-small"><?= $p ?></a>
+                        <a href="/watchlist.php?page=<?= $p ?><?= $groupFilter !== '' ? '&group=' . urlencode($groupFilter) : '' ?>" class="btn btn-small"><?= $p ?></a>
                     <?php elseif (abs($p - $page) === 3): ?>
                         <span style="padding: 5px;">…</span>
                     <?php endif; ?>
                 <?php endfor; ?>
 
                 <?php if ($page < $totalPages): ?>
-                    <a href="/watchlist.php?page=<?= $page + 1 ?>" class="btn btn-small">Next »</a>
+                    <a href="/watchlist.php?page=<?= $page + 1 ?><?= $groupFilter !== '' ? '&group=' . urlencode($groupFilter) : '' ?>" class="btn btn-small">Next »</a>
                 <?php endif; ?>
             </div>
         </div>
+        <?php endif; ?>
     <?php endif; ?>
 </div>
 
@@ -262,7 +373,6 @@ function toggleWatchlist(domain) {
     .then(data => {
         if (data.success) {
             loadWatchlistStatus(domain);
-            // If we're on the watchlist page, reload to reflect changes
             if (window.location.pathname === '/watchlist.php') {
                 window.location.reload();
             }

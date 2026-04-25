@@ -174,6 +174,15 @@ class Database {
         )");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id)");
 
+        $db->exec("CREATE TABLE IF NOT EXISTS watchlist_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_watchlist_groups_user ON watchlist_groups(user_id)");
+
         $db->exec("CREATE TABLE IF NOT EXISTS domain_tags (
             domain TEXT PRIMARY KEY,
             tag TEXT CHECK(tag IN ('good','bad')),
@@ -192,6 +201,13 @@ class Database {
         // Safe migration: add first_seen to matches
         try {
             $db->exec("ALTER TABLE matches ADD COLUMN first_seen TEXT");
+        } catch (PDOException $e) {
+            // Column already exists
+        }
+
+        // Safe migration: add group_id to watchlist
+        try {
+            $db->exec("ALTER TABLE watchlist ADD COLUMN group_id INTEGER DEFAULT NULL");
         } catch (PDOException $e) {
             // Column already exists
         }
