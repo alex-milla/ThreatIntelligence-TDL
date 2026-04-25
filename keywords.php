@@ -71,9 +71,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// List keywords
-$stmt = $db->prepare("SELECT id, keyword, match_count, created_at FROM keywords WHERE user_id = ? ORDER BY created_at DESC");
-$stmt->execute([$userId]);
+// List keywords with visible match count (excluding watchlisted domains)
+$stmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.created_at,
+    (SELECT COUNT(*) FROM matches m WHERE m.keyword_id = k.id
+     AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)
+    ) AS visible_count
+FROM keywords k
+WHERE k.user_id = ?
+ORDER BY k.created_at DESC");
+$stmt->execute([$userId, $userId]);
 $keywords = $stmt->fetchAll();
 
 // Recheck status for admin stop button
@@ -141,7 +147,7 @@ require __DIR__ . '/templates/header.php';
                 <?php foreach ($keywords as $k): ?>
                 <tr>
                     <td><?= htmlspecialchars($k['keyword']) ?></td>
-                    <td><a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>"><?= (int)$k['match_count'] ?></a></td>
+                    <td><a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <span style="color: #999; font-size: 0.8rem;">(<?= (int)$k['match_count'] ?> total)</span><?php endif; ?></td>
                     <td><?= htmlspecialchars($k['created_at']) ?></td>
                     <td>
                         <form method="POST" style="display: inline;">
