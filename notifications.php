@@ -49,8 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Delete ALL notifications matching current filters
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_all_matching') {
-    $delWhere = "WHERE n.user_id = ?";
-    $delParams = [$userId];
+    $delWhere = "WHERE n.user_id = ? AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)";
+    $delParams = [$userId, $userId];
     $qFilter = trim($_POST['q'] ?? '');
     $dateFilterPost = $_POST['date'] ?? 'all';
     $unreadFilterPost = isset($_POST['unread_only']) && $_POST['unread_only'] === '1';
@@ -70,7 +70,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $delParams[] = $validDateFilters[$dateFilterPost];
     }
 
-    $db->prepare("DELETE FROM notifications WHERE id IN (SELECT n.id FROM notifications n JOIN matches m ON n.match_id = m.id JOIN keywords k ON m.keyword_id = k.id $delWhere)")->execute($delParams);
+    // SQLite does not allow DELETE FROM table WHERE id IN (SELECT FROM same_table)
+    // so we fetch the IDs first, then delete them in a separate query.
+    $idsStmt = $db->prepare("SELECT n.id FROM notifications n JOIN matches m ON n.match_id = m.id JOIN keywords k ON m.keyword_id = k.id $delWhere");
+    $idsStmt->execute($delParams);
+    $ids = $idsStmt->fetchAll(PDO::FETCH_COLUMN);
+    if (!empty($ids)) {
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $db->prepare("DELETE FROM notifications WHERE id IN ($placeholders) AND user_id = ?")
+            ->execute(array_merge($ids, [$userId]));
+    }
 
     $redirect = '/notifications.php';
     if ($qFilter !== '' || $dateFilterPost !== 'all' || $unreadFilterPost) {
@@ -272,6 +281,12 @@ require __DIR__ . '/templates/header.php';
                 <button type="submit" formaction="/notifications.php" formmethod="POST" class="btn btn-small btn-danger" name="action" value="delete_all_matching" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')">Delete All Matching (<?= $total ?>)</button>
                 <?php endif; ?>
             </div>
+            <!-- Hidden filter params for delete_all_matching -->
+            <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all'): ?>
+            <input type="hidden" name="q" value="<?= htmlspecialchars($search) ?>">
+            <input type="hidden" name="date" value="<?= htmlspecialchars($dateFilter) ?>">
+            <input type="hidden" name="unread_only" value="<?= $unreadOnly ? '1' : '0' ?>">
+            <?php endif; ?>
         <table>
             <thead>
                 <tr>
