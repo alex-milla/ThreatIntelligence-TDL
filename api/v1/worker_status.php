@@ -34,9 +34,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
-    // Always update last_heartbeat
+    // Always update last_heartbeat in UTC for consistency
     $fields[] = "last_heartbeat = ?";
-    $params[] = date('c');
+    $params[] = gmdate('c');
     $params[] = 1; // WHERE id = 1
 
     $sql = "UPDATE worker_status SET " . implode(', ', $fields) . " WHERE id = ?";
