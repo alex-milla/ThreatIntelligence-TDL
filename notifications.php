@@ -287,6 +287,7 @@ require __DIR__ . '/templates/header.php';
             <input type="hidden" name="date" value="<?= htmlspecialchars($dateFilter) ?>">
             <input type="hidden" name="unread_only" value="<?= $unreadOnly ? '1' : '0' ?>">
             <?php endif; ?>
+        </form>
         <table>
             <thead>
                 <tr>
@@ -322,7 +323,7 @@ require __DIR__ . '/templates/header.php';
                     $creationDisplay = $creationDate ? date('Y-m-d', strtotime($creationDate)) : '—';
                 ?>
                 <tr class="<?= $n['is_read'] ? '' : 'unread' ?>">
-                    <td><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check"></td>
+                    <td><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form"></td>
                     <td><?= $n['is_read'] ? 'Read' : '<strong>Unread</strong>' ?></td>
                     <td><a href="javascript:void(0)" onclick="openDomainModal('<?= htmlspecialchars(addslashes($n['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($n['domain']) ?></a><?= $tagBadge ?></td>
                     <td><?= htmlspecialchars($n['tld']) ?></td>
@@ -359,7 +360,6 @@ require __DIR__ . '/templates/header.php';
                 <?php endforeach; ?>
             </tbody>
         </table>
-        </form>
 
         <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
             <span style="color: #666; font-size: 0.9rem;">
