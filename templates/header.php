@@ -61,6 +61,7 @@ sendSecurityHeaders();
                 <a href="/">Dashboard</a>
                 <a href="/keywords.php">Keywords</a>
                 <a href="/notifications.php">Notifications</a>
+                <a href="/watchlist.php">Watchlist</a>
                 <?php if (!empty($_SESSION['is_admin'])): ?>
                     <a href="/admin/">Admin</a>
                 <?php endif; ?>

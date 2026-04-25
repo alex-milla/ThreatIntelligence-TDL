@@ -340,6 +340,13 @@ require __DIR__ . '/templates/header.php';
             </div>
             <div id="modal-whois-error" style="display: none; color: #c0392b; font-size: 0.9rem; margin-top: 10px;"></div>
         </div>
+        <div id="modal-watchlist-box" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; display: none;">
+            <div style="font-size: 0.85rem; color: #666; margin-bottom: 6px;">Watchlist</div>
+            <div id="modal-watchlist-current" style="font-weight: 600; margin-bottom: 8px;"></div>
+            <div id="modal-watchlist-actions" style="display: flex; gap: 8px;">
+                <button type="button" id="modal-watchlist-btn" class="btn btn-small" style="flex:1;" onclick="toggleWatchlist(_modalDomain)">⭐ Add to Watchlist</button>
+            </div>
+        </div>
         <div id="modal-tag-box" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; display: none;">
             <div style="font-size: 0.85rem; color: #666; margin-bottom: 6px;">Domain classification</div>
             <div id="modal-tag-current" style="font-weight: 600; margin-bottom: 8px;"></div>
@@ -368,8 +375,11 @@ function openDomainModal(domain) {
     document.getElementById('modal-whois-error').style.display = 'none';
     document.getElementById('modal-tag-box').style.display = 'block';
     document.getElementById('modal-tag-current').textContent = 'Loading...';
+    document.getElementById('modal-watchlist-box').style.display = 'block';
+    document.getElementById('modal-watchlist-current').textContent = 'Loading...';
     document.getElementById('domain-modal').style.display = 'flex';
     loadDomainTag(domain);
+    loadWatchlistStatus(domain);
 }
 function loadDomainTag(domain) {
     fetch('/ajax_tag_domain.php?domain=' + encodeURIComponent(domain))
@@ -387,6 +397,42 @@ function loadDomainTag(domain) {
         .catch(() => {
             document.getElementById('modal-tag-current').textContent = 'Unable to load tag';
         });
+}
+function loadWatchlistStatus(domain) {
+    fetch('/ajax_watchlist.php?check=' + encodeURIComponent(domain))
+        .then(r => r.json())
+        .then(data => {
+            const box = document.getElementById('modal-watchlist-current');
+            const btn = document.getElementById('modal-watchlist-btn');
+            if (data.in_watchlist) {
+                box.innerHTML = '<span style="color: #f39c12;">⭐ In watchlist</span>' + (data.note ? ' — ' + htmlspecialchars(data.note) : '');
+                btn.textContent = 'Remove from Watchlist';
+                btn.style.background = '#e74c3c';
+            } else {
+                box.textContent = 'Not in watchlist';
+                btn.textContent = '⭐ Add to Watchlist';
+                btn.style.background = '';
+            }
+        })
+        .catch(() => {
+            document.getElementById('modal-watchlist-current').textContent = 'Unable to load watchlist status';
+        });
+}
+function toggleWatchlist(domain) {
+    fetch('/ajax_watchlist.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({domain: domain})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            loadWatchlistStatus(domain);
+        } else {
+            alert(data.error || 'Failed to update watchlist');
+        }
+    })
+    .catch(() => alert('Failed to update watchlist'));
 }
 function tagDomain(domain, tag) {
     fetch('/ajax_tag_domain.php', {

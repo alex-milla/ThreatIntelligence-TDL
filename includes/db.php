@@ -163,6 +163,17 @@ class Database {
             cached_at TEXT DEFAULT CURRENT_TIMESTAMP
         )");
 
+        $db->exec("CREATE TABLE IF NOT EXISTS watchlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            domain TEXT NOT NULL,
+            note TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            UNIQUE(user_id, domain)
+        )");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id)");
+
         $db->exec("CREATE TABLE IF NOT EXISTS domain_tags (
             domain TEXT PRIMARY KEY,
             tag TEXT CHECK(tag IN ('good','bad')),
