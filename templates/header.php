@@ -60,11 +60,13 @@ sendSecurityHeaders();
             <?php if (!empty($_SESSION['user_id'])): ?>
                 <a href="/">Dashboard</a>
                 <a href="/keywords.php">Keywords</a>
+                <?php if (!empty($_SESSION['is_admin'])): ?>
+                    <a href="/admin/tlds.php">TLDs</a>
+                <?php endif; ?>
                 <a href="/notifications.php">Notifications</a>
                 <a href="/watchlist.php">Watchlist</a>
                 <?php if (!empty($_SESSION['is_admin'])): ?>
                     <a href="/admin/">Admin</a>
-                    <a href="/admin/tlds.php">TLDs</a>
                 <?php endif; ?>
             <?php endif; ?>
         </div>
