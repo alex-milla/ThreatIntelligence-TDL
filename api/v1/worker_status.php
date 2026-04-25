@@ -24,12 +24,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $fields = [];
     $params = [];
-    foreach (['last_run','tlds_processed','domains_processed','matches_found','is_running','version'] as $col) {
+    foreach (['last_run','tlds_processed','domains_processed','matches_found','is_running','version','current_tld','total_tlds','current_action'] as $col) {
         if (array_key_exists($col, $input)) {
             $fields[] = "$col = ?";
-            $params[] = in_array($col, ['tlds_processed','domains_processed','matches_found','is_running'], true)
-                      ? (int)$input[$col]
-                      : $input[$col];
+            if (in_array($col, ['tlds_processed','domains_processed','matches_found','is_running','total_tlds'], true)) {
+                $params[] = (int)$input[$col];
+            } else {
+                $params[] = $input[$col];
+            }
         }
     }
     // Always update last_heartbeat

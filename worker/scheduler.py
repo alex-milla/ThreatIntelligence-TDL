@@ -299,6 +299,19 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         print("[!] No active keywords on hosting. Nothing to match.")
         return stats
 
+    total_tlds = len(tlds)
+    # Send initial heartbeat before TLD loop
+    sync_client.send_heartbeat(host_url, api_key, {
+        "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+        "is_running": 1,
+        "version": version,
+        "current_action": f"Processing {total_tlds} TLDs",
+        "total_tlds": total_tlds,
+        "tlds_processed": 0,
+        "domains_processed": 0,
+        "current_tld": None,
+    })
+
     # 5. Process each TLD
     all_matches = []
     domains_processed = 0
@@ -316,8 +329,27 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
             row = cursor.fetchone()
             if row:
                 domains_processed += row[0]
+            # Send incremental heartbeat + log after each TLD
+            sync_client.send_heartbeat(host_url, api_key, {
+                "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+                "is_running": 1,
+                "version": version,
+                "current_action": f"Processing .{tld}",
+                "current_tld": tld,
+                "total_tlds": total_tlds,
+                "tlds_processed": stats["tlds_processed"],
+                "domains_processed": domains_processed,
+            })
+            sync_client.send_logs(host_url, api_key, [{
+                "level": "info",
+                "message": f"TLD {stats['tlds_processed']}/{total_tlds}: .{tld} done ({row[0] if row else 0} domains)"
+            }])
         except Exception as e:
             print(f"[-] Exception processing {tld}: {e}")
+            sync_client.send_logs(host_url, api_key, [{
+                "level": "error",
+                "message": f"Exception processing .{tld}: {e}"
+            }])
 
     # 6. Send all matches to hosting
     if all_matches:
@@ -331,6 +363,18 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
 
     stats["domains_processed"] = domains_processed
     set_last_run(db)
+    # Send final heartbeat clearing progress
+    sync_client.send_heartbeat(host_url, api_key, {
+        "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+        "is_running": 0,
+        "version": version,
+        "current_action": "Idle",
+        "current_tld": None,
+        "total_tlds": 0,
+        "tlds_processed": stats["tlds_processed"],
+        "domains_processed": domains_processed,
+        "matches_found": stats["matches_found"],
+    })
     log.info(f"End: {datetime.now(timezone.utc).isoformat()}")
     return stats
 

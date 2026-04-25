@@ -138,6 +138,26 @@ if (!empty($workerStatus['last_heartbeat'])) {
     }
 }
 ?>
+<div class="card" id="live-worker-card" style="display: <?= (($workerStatus['is_running'] ?? 0) && ($workerStatus['total_tlds'] ?? 0) > 0) ? 'block' : 'none' ?>">
+    <h2>Live Worker Progress</h2>
+    <div id="live-worker-container">
+        <?php
+        $lwTotal = (int)($workerStatus['total_tlds'] ?? 0);
+        $lwDone = (int)($workerStatus['tlds_processed'] ?? 0);
+        $lwPct = $lwTotal > 0 ? round($lwDone / $lwTotal * 100, 1) : 0;
+        ?>
+        <p><strong>Action:</strong> <span id="live-action"><?= htmlspecialchars($workerStatus['current_action'] ?? '—') ?></span></p>
+        <p><strong>Current TLD:</strong> <span id="live-tld"><?= htmlspecialchars($workerStatus['current_tld'] ?? '—') ?></span></p>
+        <div style="background: #f0f0f0; border-radius: 4px; height: 24px; margin: 10px 0; overflow: hidden;">
+            <div id="live-bar" style="background: #3498db; width: <?= $lwPct ?>%; height: 100%; transition: width 0.5s;"></div>
+        </div>
+        <p id="live-text">
+            Processed <strong id="live-done"><?= number_format($lwDone) ?></strong> of <strong id="live-total"><?= number_format($lwTotal) ?></strong> TLDs
+            (<?= $lwPct ?>%) — <strong id="live-domains"><?= number_format((int)($workerStatus['domains_processed'] ?? 0)) ?></strong> domains
+        </p>
+    </div>
+</div>
+
 <div class="card">
     <h2>Worker Status</h2>
     <?php if ($workerStatus): ?>
@@ -396,6 +416,43 @@ if (!empty($workerStatus['last_heartbeat'])) {
     }
 
     setInterval(updateStatus, 5000);
+})();
+
+// Live Worker Progress polling
+(function() {
+    const card = document.getElementById('live-worker-card');
+    if (!card) return;
+
+    function updateLiveWorker() {
+        fetch('/api/v1/worker_status.php')
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success || !data.status) return;
+                const s = data.status;
+                const running = s.is_running == 1;
+                const total = parseInt(s.total_tlds || 0);
+
+                if (!running || total === 0) {
+                    card.style.display = 'none';
+                    return;
+                }
+
+                card.style.display = 'block';
+                const done = parseInt(s.tlds_processed || 0);
+                const domains = parseInt(s.domains_processed || 0);
+                const pct = total > 0 ? Math.round(done / total * 100) : 0;
+
+                document.getElementById('live-action').textContent = s.current_action || '—';
+                document.getElementById('live-tld').textContent = s.current_tld || '—';
+                document.getElementById('live-bar').style.width = pct + '%';
+                document.getElementById('live-done').textContent = done.toLocaleString();
+                document.getElementById('live-total').textContent = total.toLocaleString();
+                document.getElementById('live-domains').textContent = domains.toLocaleString();
+            })
+            .catch(() => {});
+    }
+
+    setInterval(updateLiveWorker, 5000);
 })();
 </script>
 

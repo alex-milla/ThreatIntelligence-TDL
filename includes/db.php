@@ -211,5 +211,16 @@ class Database {
         } catch (PDOException $e) {
             // Column already exists
         }
+
+        // Safe migration: add live progress columns to worker_status
+        try {
+            $db->exec("ALTER TABLE worker_status ADD COLUMN current_tld TEXT");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE worker_status ADD COLUMN total_tlds INTEGER DEFAULT 0");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE worker_status ADD COLUMN current_action TEXT");
+        } catch (PDOException $e) { }
     }
 }
