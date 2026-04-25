@@ -4,7 +4,8 @@ require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
 
 $db = Database::get();
-$message = '';
+$message = $_SESSION['flash_message'] ?? '';
+unset($_SESSION['flash_message']);
 
 // Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -30,18 +31,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if ($action === 'run_worker') {
         $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['run_worker', '']);
-        $message = 'Worker execution queued. It will run on next poll.';
+        $_SESSION['flash_message'] = 'Worker execution queued. It will run on next poll.';
+        header('Location: /admin/');
+        exit;
     }
     
     if ($action === 'recheck_keywords') {
         $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['recheck_keywords', '']);
-        $message = 'Keyword recheck queued. The worker will scan all cached domains against current keywords.';
+        $_SESSION['flash_message'] = 'Keyword recheck queued. The worker will scan all cached domains against current keywords.';
+        header('Location: /admin/');
+        exit;
     }
     
     if ($action === 'update_whitelist') {
         $whitelist = trim($_POST['whitelist'] ?? '');
         $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['update_whitelist', $whitelist]);
-        $message = 'Whitelist update queued for worker.';
+        $_SESSION['flash_message'] = 'Whitelist update queued for worker.';
+        header('Location: /admin/');
+        exit;
     }
     
     if ($action === 'toggle_registration') {
