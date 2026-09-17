@@ -81,6 +81,16 @@ Then schedule it via cron (daily at 06:00 UTC):
 0 6 * * * cd /path/to/ThreatIntelligence-TDL/worker && /usr/bin/python3 scheduler.py >> /var/log/tdl_worker.log 2>&1
 ```
 
+### Updating the worker
+
+```bash
+cd /path/to/ThreatIntelligence-TDL/worker
+bash update.sh            # git pull --ff-only + pip install -r requirements.txt
+bash update.sh --restart  # also restart the tdl-worker systemd service (daemon mode)
+```
+
+Untracked files (`config.ini`, `data/`, `zones/`) are never touched. In cron mode the next run picks up the new code automatically; in daemon mode use `--restart`.
+
 ## How It Works
 
 1. The worker authenticates with ICANN CZDS and downloads your approved TLD zone files automatically.

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.40] - 2026-09-17
+
+### Worker maintenance
+- **`worker/update.sh`**: helper script to update the worker in one command (`git pull --ff-only` + `pip install -r requirements.txt`). `--restart` also restarts the `tdl-worker` systemd service for daemon mode. Untracked `config.ini`, `data/` and `zones/` are never touched. Cron mode picks up the new code on its next run without restarting.
+
 ## [v1.3.39] - 2026-09-17
 
 ### Worker performance / ICANN CZDS load reduction
