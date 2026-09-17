@@ -8,6 +8,10 @@ def parse_zone_gz(filepath: str, tld: str):
     """
     Yield unique domain names found in a gzip-compressed zone file.
     Only NS records are considered because they indicate delegation.
+
+    The file is read as bytes and lines that cannot contain an NS record are
+    skipped before decoding/tokenising, which speeds up large zone files
+    considerably (the NS type is always preceded by whitespace).
     """
     origin = tld.lower().strip()
     if not origin.endswith("."):
@@ -21,20 +25,24 @@ def parse_zone_gz(filepath: str, tld: str):
     seen = set()
     current_owner = origin
 
-    with gzip.open(filepath, "rt", encoding="utf-8", errors="ignore") as fh:
-        for raw_line in fh:
-            line = raw_line.rstrip("\n\r")
-            if not line:
-                continue
-            if line.startswith(";"):
-                continue
-            if line.startswith("$"):
-                parts = line.split(None, 1)
+    with gzip.open(filepath, "rb") as fh:
+        for raw in fh:
+            # Directives ($ORIGIN, $TTL...) must be tracked before the filter.
+            if raw[:1] == b"$":
+                parts = raw.decode("utf-8", "ignore").strip().split(None, 1)
                 if len(parts) >= 2 and parts[0].upper() == "$ORIGIN":
                     origin = parts[1].strip().lower()
                     if not origin.endswith("."):
                         origin += "."
                     current_owner = origin
+                continue
+
+            # Cheap byte-level pre-filter: skip lines with no NS-type token.
+            if b" NS" not in raw and b"\tNS" not in raw:
+                continue
+
+            line = raw.decode("utf-8", "ignore").rstrip("\n\r")
+            if not line or line.startswith(";"):
                 continue
 
             # Remove inline comments
@@ -44,7 +52,7 @@ def parse_zone_gz(filepath: str, tld: str):
                 continue
 
             # Determine if this line starts with whitespace (owner inherited)
-            starts_with_space = raw_line[0] in " \t"
+            starts_with_space = raw[0] in (0x20, 0x09)
 
             tokens = line.split()
             # Determine record type by skipping owner (if present), TTL (numeric), and class (IN/CH/HS)

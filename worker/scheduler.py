@@ -12,6 +12,11 @@ import sys
 import time
 from datetime import datetime, timezone, timedelta
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - planned for Linux workers only
+    fcntl = None
+
 import downloader
 import logger
 import parser
@@ -26,6 +31,10 @@ def init_local_db(db_path: str) -> sqlite3.Connection:
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA temp_store=MEMORY")
+    conn.execute("PRAGMA cache_size=-65536")
+    conn.execute("PRAGMA mmap_size=268435456")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS domains_cache (
             domain TEXT PRIMARY KEY,
@@ -64,80 +73,152 @@ def init_local_db(db_path: str) -> sqlite3.Connection:
             created_at TEXT NOT NULL,
             failed_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS tld_meta (
+            tld TEXT PRIMARY KEY,
+            etag TEXT,
+            last_modified TEXT,
+            last_run_date TEXT,
+            last_run_status TEXT
+        );
     """)
     conn.commit()
     return conn
 
 
-def load_existing_domains(db: sqlite3.Connection, tld: str) -> set:
-    """Load all known domains for a TLD into a set (RAM)."""
-    cursor = db.cursor()
-    cursor.execute("SELECT domain FROM domains_cache WHERE tld = ?", (tld,))
-    return {row[0] for row in cursor}
+def _stage_and_diff_batch(cursor: sqlite3.Cursor, tld: str, now: str, batch: list[str],
+                          keyword_matcher, matches: list[dict]) -> int:
+    """Stage a parsed batch, insert genuinely new domains and match them.
 
-
-def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection, keywords: list[dict]) -> list[dict]:
-    """Download, parse, deduplicate and match a single TLD. Returns match dicts."""
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
-    filepath = os.path.join(download_dir, f"{tld}_{today}.txt.gz")
-    os.makedirs(download_dir, exist_ok=True)
-
-    # 1. Download
-    if not downloader.download_zone(tld, token, filepath):
-        return []
-
-    # 2. Load existing domains for this TLD into memory
-    print(f"[*] Loading known domains for .{tld} ...")
-    existing = load_existing_domains(db, tld)
-    print(f"[+] {len(existing)} domains already known for .{tld}.")
-
-    # 3. Parse and find new domains
-    print(f"[*] Parsing {tld}.zone ...")
-    new_domains = []
-    total = 0
-    now = datetime.now(timezone.utc).isoformat()
-    cursor = db.cursor()
-    batch = []
-    batch_size = 10000
-
-    for domain in parser.parse_zone_gz(filepath, tld):
-        total += 1
-        if domain not in existing:
-            new_domains.append(domain)
-            existing.add(domain)
-            batch.append((domain, tld, now))
-            if len(batch) >= batch_size:
-                cursor.executemany(
-                    "INSERT INTO domains_cache (domain, tld, first_seen) VALUES (?, ?, ?)",
-                    batch
-                )
-                db.commit()
-                batch = []
-
-    if batch:
-        cursor.executemany(
-            "INSERT INTO domains_cache (domain, tld, first_seen) VALUES (?, ?, ?)",
-            batch
-        )
-        db.commit()
-
-    # 4. Cleanup downloaded file
-    os.remove(filepath)
-
-    print(f"[+] {tld}: {total:,} total, {len(new_domains):,} new.")
-
+    Uses a TEMP table plus a SQL anti-join so the full known-domain set is never
+    loaded into Python, keeping peak memory bounded on very large TLDs.
+    Returns the number of new domains found.
+    """
+    cursor.execute("DELETE FROM zone_batch")
+    cursor.executemany(
+        "INSERT OR IGNORE INTO zone_batch (domain) VALUES (?)",
+        ((domain,) for domain in batch)
+    )
     cursor.execute(
-        "INSERT INTO zone_runs (tld, run_date, records_total, records_new, status) VALUES (?, ?, ?, ?, ?)",
-        (tld, now, total, len(new_domains), "ok")
+        "SELECT z.domain FROM zone_batch z "
+        "LEFT JOIN domains_cache c ON c.domain = z.domain "
+        "WHERE c.domain IS NULL"
+    )
+    new_domains = [row[0] for row in cursor.fetchall()]
+    if not new_domains:
+        return 0
+    cursor.executemany(
+        "INSERT OR IGNORE INTO domains_cache (domain, tld, first_seen) VALUES (?, ?, ?)",
+        ((domain, tld, now) for domain in new_domains)
+    )
+    if keyword_matcher is not None:
+        matches.extend(keyword_matcher.match(new_domains))
+    return len(new_domains)
+
+
+def get_tld_meta(db: sqlite3.Connection, tld: str) -> dict:
+    """Return the stored download/run metadata for a TLD."""
+    cursor = db.cursor()
+    cursor.execute(
+        "SELECT etag, last_modified, last_run_date, last_run_status FROM tld_meta WHERE tld = ?",
+        (tld,)
+    )
+    row = cursor.fetchone()
+    if not row:
+        return {"etag": None, "last_modified": None, "last_run_date": None, "last_run_status": None}
+    return {"etag": row[0], "last_modified": row[1], "last_run_date": row[2], "last_run_status": row[3]}
+
+
+def update_tld_meta(db: sqlite3.Connection, tld: str, etag: str | None,
+                    last_modified: str | None, run_date: str | None, status: str) -> None:
+    """Persist download validators and the last successful run date for a TLD."""
+    cursor = db.cursor()
+    cursor.execute(
+        "INSERT OR REPLACE INTO tld_meta (tld, etag, last_modified, last_run_date, last_run_status) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (tld, etag, last_modified, run_date, status)
     )
     db.commit()
 
-    if not new_domains or not keywords:
+
+def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
+                keywords: list[dict], force: bool = False) -> list[dict]:
+    """Download, parse, deduplicate and match a single TLD. Returns match dicts.
+
+    To minimise load on the ICANN CZDS API this function:
+      - skips a TLD already successfully processed today (unless force is set),
+      - performs a conditional request (ETag / Last-Modified) so an unchanged
+        zone is not transferred again,
+      - keeps the last downloaded zone file on disk instead of deleting it.
+    """
+    today_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    now = datetime.now(timezone.utc).isoformat()
+    meta = get_tld_meta(db, tld)
+
+    # 1. Daily idempotency guard: never re-scan a TLD already done today.
+    if not force and meta["last_run_date"] == today_date and meta["last_run_status"] == "ok":
+        print(f"[=] .{tld} already processed today ({today_date}). Skipping to avoid re-scanning.")
         return []
 
-    # 5. Match against keywords
-    print(f"[*] Matching {len(new_domains):,} new domains against {len(keywords)} keywords ...")
-    matches = matcher.match_domains(new_domains, keywords)
+    # 2. Conditional download (only transfers the zone if it changed).
+    os.makedirs(download_dir, exist_ok=True)
+    filepath = os.path.join(download_dir, f"{tld}.zone.gz")
+    prev_etag = None if force else meta["etag"]
+    prev_last_modified = None if force else meta["last_modified"]
+    status, etag, last_modified = downloader.download_zone(
+        tld, token, filepath, etag=prev_etag, last_modified=prev_last_modified
+    )
+    if status == "failed":
+        return []
+    if status == "not_modified":
+        print(f"[=] .{tld} zone unchanged since last run. Skipping parse.")
+        update_tld_meta(db, tld, meta["etag"], meta["last_modified"], today_date, "ok")
+        return []
+
+    # 3. Parse and find new domains. The comparison against the cache is done
+    #    entirely in SQLite (batched + anti-join) so the full known-domain set
+    #    is never loaded into Python: peak memory stays bounded on huge TLDs.
+    print(f"[*] Parsing {tld}.zone ...")
+    keyword_matcher = matcher.Matcher(keywords) if keywords else None
+    total = 0
+    new_count = 0
+    matches: list[dict] = []
+    cursor = db.cursor()
+    batch = []
+    batch_size = 50000
+
+    try:
+        cursor.execute("CREATE TEMP TABLE IF NOT EXISTS zone_batch (domain TEXT PRIMARY KEY)")
+        for domain in parser.parse_zone_gz(filepath, tld):
+            total += 1
+            batch.append(domain)
+            if len(batch) >= batch_size:
+                new_count += _stage_and_diff_batch(cursor, tld, now, batch, keyword_matcher, matches)
+                batch = []
+        if batch:
+            new_count += _stage_and_diff_batch(cursor, tld, now, batch, keyword_matcher, matches)
+        # Single commit per TLD: with WAL + synchronous=NORMAL this is much
+        # cheaper than committing every batch.
+        db.commit()
+        cursor.execute("DROP TABLE IF EXISTS zone_batch")
+    except Exception:
+        db.rollback()
+        raise
+
+    print(f"[+] {tld}: {total:,} total, {new_count:,} new.")
+
+    cursor.execute(
+        "INSERT INTO zone_runs (tld, run_date, records_total, records_new, status) VALUES (?, ?, ?, ?, ?)",
+        (tld, now, total, new_count, "ok")
+    )
+    db.commit()
+
+    # Zone parsed and cached successfully: persist validators + today's date so
+    # subsequent runs can skip this TLD via a conditional request / daily guard.
+    update_tld_meta(db, tld, etag, last_modified, today_date, "ok")
+
+    if not matches:
+        return []
     for m in matches:
         m["first_seen"] = now
     print(f"[+] {len(matches)} matches found for .{tld}.")
@@ -220,7 +301,7 @@ def queue_matches(db: sqlite3.Connection, matches: list[dict]) -> None:
     print(f"[!] Queued {len(matches)} matches for retry.")
 
 
-def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str) -> dict:
+def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False) -> dict:
     """Run one full worker cycle. Returns stats dict."""
     download_dir = cfg.get("worker", "download_dir", fallback="./zones")
     data_dir = cfg.get("worker", "data_dir", fallback="./data")
@@ -317,7 +398,7 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
     domains_processed = 0
     for tld in tlds:
         try:
-            matches = process_tld(tld, token, download_dir, db, keywords)
+            matches = process_tld(tld, token, download_dir, db, keywords, force=force)
             all_matches.extend(matches)
             stats["tlds_processed"] += 1
             # Count total domains seen this cycle from zone_runs
@@ -346,6 +427,12 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
             }])
         except Exception as e:
             print(f"[-] Exception processing {tld}: {e}")
+            # Roll back any partially inserted cache rows so the TLD is retried
+            # cleanly on the next run instead of silently losing its matches.
+            try:
+                db.rollback()
+            except Exception:
+                pass
             sync_client.send_logs(host_url, api_key, [{
                 "level": "error",
                 "message": f"Exception processing .{tld}: {e}"
@@ -433,30 +520,33 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
     })
 
     batch_size = 50000
-    offset = 0
+    last_domain = ""  # keyset pagination cursor
     all_matches = []
     last_progress_report = 0
     batches_since_stop_check = 0
-
-    base_query = "SELECT domain, tld, first_seen FROM domains_cache"
-    if max_age_days > 0:
-        base_query += " WHERE first_seen >= datetime('now', '-' || ? || ' days')"
+    keyword_matcher = matcher.Matcher(keywords)
 
     while True:
         cursor = db.cursor()
         if max_age_days > 0:
+            # Keyset pagination: WHERE domain > last ORDER BY domain avoids the
+            # O(n^2) cost of deep OFFSET scans on large caches.
             cursor.execute(
-                f"{base_query} ORDER BY domain LIMIT ? OFFSET ?",
-                (max_age_days, batch_size, offset)
+                "SELECT domain, tld, first_seen FROM domains_cache "
+                "WHERE first_seen >= datetime('now', '-' || ? || ' days') AND domain > ? "
+                "ORDER BY domain LIMIT ?",
+                (max_age_days, last_domain, batch_size)
             )
         else:
             cursor.execute(
-                "SELECT domain, tld, first_seen FROM domains_cache ORDER BY domain LIMIT ? OFFSET ?",
-                (batch_size, offset)
+                "SELECT domain, tld, first_seen FROM domains_cache "
+                "WHERE domain > ? ORDER BY domain LIMIT ?",
+                (last_domain, batch_size)
             )
         rows = cursor.fetchall()
         if not rows:
             break
+        last_domain = rows[-1][0]
 
         domains = []
         tld_map = {}
@@ -466,14 +556,13 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
             tld_map[domain] = tld
             first_seen_map[domain] = first_seen
 
-        matches = matcher.match_domains(domains, keywords)
+        matches = keyword_matcher.match(domains)
         for m in matches:
             m["tld"] = tld_map.get(m["domain"], m["tld"])
             m["first_seen"] = first_seen_map.get(m["domain"], started_at)
             all_matches.append(m)
 
         stats["domains_checked"] += len(domains)
-        offset += batch_size
         batches_since_stop_check += 1
 
         # Check for stop request every 3 batches (~150k domains)
@@ -539,7 +628,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
     return stats
 
 
-def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str) -> tuple[list[dict], dict | None, bool]:
+def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False) -> tuple[list[dict], dict | None, bool]:
     """Poll and execute pending commands from the hosting. Returns (log entries, worker_stats, commands_processed)."""
     logs = []
     worker_stats = None
@@ -587,7 +676,7 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                     "is_running": 1,
                     "version": version,
                 })
-                worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version)
+                worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version, force=force)
                 result = json.dumps(worker_stats)
                 logs.append({"level": "info", "message": f"Worker cycle completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
 
@@ -657,12 +746,46 @@ def set_last_run(db: sqlite3.Connection) -> None:
     db.commit()
 
 
+def acquire_worker_lock(data_dir: str):
+    """Acquire an exclusive, non-blocking lock so two worker runs never overlap.
+
+    Returns the open file handle on success, or None if another run holds it.
+    On platforms without fcntl (e.g. Windows dev machines) locking is skipped.
+    """
+    os.makedirs(data_dir, exist_ok=True)
+    lock_path = os.path.join(data_dir, "worker.lock")
+    handle = open(lock_path, "w")
+    if fcntl is None:
+        return handle
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    handle.write(str(os.getpid()))
+    handle.flush()
+    return handle
+
+
+def release_worker_lock(handle) -> None:
+    if handle is None:
+        return
+    if fcntl is not None:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+        except OSError:
+            pass
+    handle.close()
+
+
 def main() -> int:
     parser_args = argparse.ArgumentParser(description="ThreatIntelligence-TDL Worker")
     parser_args.add_argument("--daemon", action="store_true", help="Run in daemon mode with command polling")
     parser_args.add_argument("--interval", type=int, default=60, help="Polling interval in seconds (daemon mode)")
     parser_args.add_argument("--once", action="store_true", help="Run one worker cycle and exit (legacy)")
     parser_args.add_argument("--status", action="store_true", help="Show last run status and exit")
+    parser_args.add_argument("--force", action="store_true",
+                             help="Ignore the daily guard and conditional cache, reprocessing all TLDs")
     args = parser_args.parse_args()
 
     config_path = os.path.join(os.path.dirname(__file__), "config.ini")
@@ -699,42 +822,53 @@ def main() -> int:
         db.close()
         return 0
 
+    lock_handle = acquire_worker_lock(data_dir)
+    if lock_handle is None:
+        log.warning("Another worker instance is already running. Exiting to avoid overlapping runs.")
+        print("[!] Another worker instance is already running. Exiting.")
+        db.close()
+        return 0
+    log.info(f"Worker lock acquired (pid {os.getpid()}).")
+
     if args.daemon:
         log.info(f"Daemon mode started. Polling every {args.interval}s. Press Ctrl+C to stop.")
-        while True:
-            logs = []
-            worker_stats = None
-            try:
-                cmd_logs, worker_stats, _ = handle_commands(db, cfg, host_url, api_key, version)
-                logs.extend(cmd_logs)
+        try:
+            while True:
+                logs = []
+                worker_stats = None
+                try:
+                    cmd_logs, worker_stats, _ = handle_commands(db, cfg, host_url, api_key, version)
+                    logs.extend(cmd_logs)
 
-                heartbeat_payload = {
-                    "last_heartbeat": datetime.now(timezone.utc).isoformat(),
-                    "is_running": 0,
-                    "version": version,
-                }
-                if worker_stats:
-                    heartbeat_payload["last_run"] = worker_stats.get("timestamp")
-                    heartbeat_payload["tlds_processed"] = worker_stats["tlds_processed"]
-                    heartbeat_payload["domains_processed"] = worker_stats["domains_processed"]
-                    heartbeat_payload["matches_found"] = worker_stats["matches_found"]
+                    heartbeat_payload = {
+                        "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+                        "is_running": 0,
+                        "version": version,
+                    }
+                    if worker_stats:
+                        heartbeat_payload["last_run"] = worker_stats.get("timestamp")
+                        heartbeat_payload["tlds_processed"] = worker_stats["tlds_processed"]
+                        heartbeat_payload["domains_processed"] = worker_stats["domains_processed"]
+                        heartbeat_payload["matches_found"] = worker_stats["matches_found"]
 
-                sync_client.send_heartbeat(host_url, api_key, heartbeat_payload)
+                    sync_client.send_heartbeat(host_url, api_key, heartbeat_payload)
 
-                if logs:
-                    sync_client.send_logs(host_url, api_key, logs)
+                    if logs:
+                        sync_client.send_logs(host_url, api_key, logs)
 
-            except Exception as e:
-                log.error(f"Daemon loop error: {e}")
+                except Exception as e:
+                    log.error(f"Daemon loop error: {e}")
 
-            time.sleep(args.interval)
+                time.sleep(args.interval)
+        except KeyboardInterrupt:
+            log.info("Daemon mode stopped by user.")
     else:
         # One-shot mode: process commands first, then run worker cycle if nothing was processed
-        logs, worker_stats, commands_processed = handle_commands(db, cfg, host_url, api_key, version)
+        logs, worker_stats, commands_processed = handle_commands(db, cfg, host_url, api_key, version, force=args.force)
 
         if not commands_processed and not worker_stats:
             # No commands pending → legacy cron behavior: run full cycle
-            worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version)
+            worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version, force=args.force)
             logs.append({"level": "info", "message": f"Worker cycle completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
 
         heartbeat_payload = {
@@ -751,6 +885,7 @@ def main() -> int:
         if logs:
             sync_client.send_logs(host_url, api_key, logs)
 
+    release_worker_lock(lock_handle)
     db.close()
     return 0
 

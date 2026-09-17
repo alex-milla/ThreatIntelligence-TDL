@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.39] - 2026-09-17
+
+### Worker performance / ICANN CZDS load reduction
+- **Conditional downloads**: `downloader.download_zone` now sends `If-None-Match` / `If-Modified-Since` when a previous `ETag` / `Last-Modified` is known. A `304 Not Modified` response skips both download and parse, so unchanged zones are not transferred again.
+- **Daily idempotency guard**: each TLD tracks its last successful run date (`tld_meta` table). A TLD already processed today is skipped, preventing the cron from re-scanning everything on repeated same-day runs.
+- **Zone file retention**: the last downloaded `.zone.gz` is kept on disk instead of being deleted, and writes are atomic (`.part` + rename) so an interrupted download never replaces a good copy.
+- **Anti-overlap lock**: the worker acquires an exclusive `flock` (`data/worker.lock`). A second cron/systemd instance exits immediately instead of duplicating downloads against ICANN.
+- **`--force` flag**: bypasses the daily guard and conditional cache for manual full reprocessing (`python3 scheduler.py --once --force`).
+
+### Worker processing speed (local CPU, no extra ICANN load)
+- **Parser byte pre-filter**: `parser.py` reads the zone as bytes and skips lines that cannot contain an NS record before decoding/tokenising them, greatly reducing per-line work on large zones.
+- **Aho-Corasick matcher**: `matcher.py` uses `pyahocorasick` when installed to find all keywords in a single pass (with a substring fallback if the optional dependency is missing). Preserves one match per (domain, keyword).
+- **SQLite tuning**: `synchronous=NORMAL`, `temp_store=MEMORY`, larger page cache/mmap, one commit per TLD and 50k insert batches.
+- **Bounded memory on huge TLDs**: `domains_cache` is no longer loaded into a Python `set`. New domains are detected in SQLite with a per-batch TEMP staging table and a `LEFT JOIN ... IS NULL` anti-join (using the primary-key indexes), so peak RAM stays bounded regardless of TLD size. The matcher automaton is also built once per run (`matcher.Matcher`) instead of per batch.
+- **Recheck keyset pagination**: `recheck_all_domains` pages with `WHERE domain > last ORDER BY domain LIMIT n` instead of `LIMIT/OFFSET`, removing the quadratic cost of deep offsets.
+
 ## [v1.3.9] - 2026-04-21
 
 ### New features

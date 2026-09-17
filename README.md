@@ -22,8 +22,8 @@ LXC/VPS (Python Worker)        HTTPS API        Shared Hosting (PHP + SQLite)
 - Python 3.8+
 - `requests` library
 - Internet access to ICANN CZDS API and your shared hosting
-- Enough disk space for temporary zone file downloads (up to ~200 MB per TLD compressed)
-- Enough RAM to hold existing domains for a TLD in memory (~1 GB recommended for large TLDs like `.xyz`)
+- Enough disk space to keep the latest downloaded zone file per active TLD (up to ~200 MB per TLD compressed)
+- Modest RAM: the known-domain cache is **not** loaded into memory (deduplication runs inside SQLite with a per-batch staging table), so memory no longer grows with the accumulated cache. Processing is batched; the main remaining cost is the parser holding the current zone's unique domains (~1 GB for very large TLDs like `.xyz`).
 
 ### Web UI (Shared Hosting)
 - PHP 8.0+
@@ -89,6 +89,21 @@ Then schedule it via cron (daily at 06:00 UTC):
 4. It fetches active keywords from the web UI via API.
 5. New domains are matched against keywords (case-insensitive substring).
 6. Matches are sent to the web UI, which creates notifications for each affected user.
+
+## Minimizing load on the ICANN CZDS API
+
+The worker is designed to query CZDS as little as possible:
+
+- **Conditional requests**: per-TLD `ETag` / `Last-Modified` values are stored and sent back via `If-None-Match` / `If-Modified-Since`. If the zone has not changed, ICANN replies `304 Not Modified` and nothing is transferred or parsed.
+- **Daily guard**: a TLD successfully processed today is skipped for the rest of the day. Running cron several times a day does **not** re-download or re-scan zones already done.
+- **Single instance lock**: `data/worker.lock` (via `flock`) prevents overlapping cron/systemd runs from duplicating downloads.
+- **Retained zone files**: the latest `.zone.gz` per active TLD is kept on disk (overwritten on the next change) instead of being deleted.
+
+To force a full reprocess (ignoring the daily guard and conditional cache):
+
+```bash
+python3 scheduler.py --once --force
+```
 
 ## User Features
 

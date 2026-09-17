@@ -31,7 +31,8 @@ def test_parser_basic() -> None:
         domains = list(parser.parse_zone_gz(path, "xyz"))
         assert "example.xyz" in domains, f"example.xyz missing: {domains}"
         assert "test.xyz" in domains, f"test.xyz missing: {domains}"
-        assert "sub.test.xyz" in domains, f"sub.test.xyz missing: {domains}"
+        # Only SLDs directly under the TLD are kept (v1.3.8 behavior).
+        assert "sub.test.xyz" not in domains, f"sub.test.xyz should be excluded: {domains}"
         print("[PASS] test_parser_basic")
 
 
