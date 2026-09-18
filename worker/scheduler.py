@@ -30,7 +30,7 @@ import whois
 log = logging.getLogger("tdl_worker")
 
 
-def init_local_db(db_path: str, cache_mb: int = 512) -> sqlite3.Connection:
+def init_local_db(db_path: str, cache_mb: int = 2048) -> sqlite3.Connection:
     """Create local worker SQLite database if not exists.
 
     cache_mb sets SQLite's page cache (PRAGMA cache_size, in KiB when negative).
@@ -1298,7 +1298,7 @@ def main() -> int:
         return 1
 
     db_path = os.path.join(data_dir, "worker.db")
-    cache_mb = cfg.getint("worker", "sqlite_cache_mb", fallback=512)
+    cache_mb = cfg.getint("worker", "sqlite_cache_mb", fallback=2048)
     db = init_local_db(db_path, cache_mb=cache_mb)
     log.info(f"SQLite page cache: {max(int(cache_mb), 1)} MB")
 

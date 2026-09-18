@@ -82,6 +82,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    if ($action === 'stop_recheck') {
+        $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['stop_recheck', '']);
+        $_SESSION['flash_message'] = 'Stop recheck queued. The worker will stop at the next batch boundary.';
+        header('Location: /admin/');
+        exit;
+    }
+
     if ($action === 'update_worker') {
         if (hasPendingCommand($db, 'update_worker')) {
             $_SESSION['flash_message'] = 'A worker update is already queued.';
@@ -164,7 +171,55 @@ require __DIR__ . '/../templates/header.php';
 </div>
 <?php endif; ?>
 
-<div class="card">
+<style>
+.admin-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid #e2e2e8; margin: 0 0 20px; padding: 0; }
+.admin-tabs a { padding: 10px 16px; text-decoration: none; color: #666; font-weight: 600; font-size: 0.95rem; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: none; cursor: pointer; }
+.admin-tabs a:hover { background: #f0f0f5; color: #333; }
+.admin-tabs a.active { background: #fff; color: #1a1a2e; border-color: #e2e2e8; margin-bottom: -2px; }
+.admin-pane { display: none; }
+.admin-pane.active { display: block; }
+.is-hidden { display: none !important; }
+</style>
+<nav class="admin-tabs" id="admin-tabs">
+    <a href="#overview" data-tab="overview" class="active">Overview</a>
+    <a href="#worker" data-tab="worker">Worker</a>
+    <a href="#commands" data-tab="commands">Commands</a>
+    <a href="#recheck" data-tab="recheck">Recheck</a>
+    <a href="/admin/tlds.php" data-tab="tlds">TLDs</a>
+    <a href="#users" data-tab="users">Users</a>
+    <a href="#sync" data-tab="sync">Sync</a>
+    <a href="#system" data-tab="system">System</a>
+</nav>
+
+<div class="card admin-pane active" data-tab="overview">
+    <h2>Quick actions</h2>
+    <p style="color:#666; font-size:0.9rem; margin-top:0;">Queue a command for the worker. It runs on the next poll (every ~20 s).</p>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px;">
+        <form method="POST" style="display: inline;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="run_worker">
+            <button type="submit" class="btn">Run Worker Now</button>
+        </form>
+        <form method="POST" style="display: inline;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="recheck_keywords">
+            <button type="submit" class="btn btn-danger">Recheck Keywords</button>
+        </form>
+        <form method="POST" style="display: inline;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="update_worker">
+            <button type="submit" class="btn" onclick="return confirm('Update the worker on its host (git pull + restart)? The web app is not affected.')">Update Worker</button>
+        </form>
+    </div>
+</div>
+
+<div class="card admin-pane" data-tab="tlds">
+    <h2>TLDs</h2>
+    <p style="color:#666; font-size:0.9rem;">Manage the list of approved TLDs the worker will download and process.</p>
+    <p style="margin-top: 12px;"><a href="/admin/tlds.php" class="btn">Open TLD management</a></p>
+</div>
+
+<div class="card admin-pane" data-tab="recheck">
     <h2>Keyword Recheck Status</h2>
     <?php
     $recheckStatus = $db->query("SELECT * FROM recheck_status WHERE id = 1")->fetch();
@@ -193,6 +248,27 @@ require __DIR__ . '/../templates/header.php';
         <?php else: ?>
             <p><strong>Status:</strong> <span style="color: #7f8c8d;">Idle</span></p>
         <?php endif; ?>
+        <?php
+        $pendingRecheck = $db->query("SELECT COUNT(*) FROM commands WHERE command = 'recheck_keywords' AND status = 'pending'")->fetchColumn();
+        if ((int)$pendingRecheck > 0 && !$recheckRunning): ?>
+            <p style="color: #e67e22; font-size: 0.9rem;"><strong><?= (int)$pendingRecheck ?></strong> recheck command(s) queued — waiting for worker.</p>
+        <?php endif; ?>
+        <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+            <form method="POST">
+                <?php csrfField(); ?>
+                <input type="hidden" name="action" value="recheck_keywords">
+                <button type="submit" class="btn" <?= ($recheckRunning || (int)$pendingRecheck > 0) ? 'disabled' : '' ?>>
+                    <?= $recheckRunning ? 'Recheck in progress...' : ((int)$pendingRecheck > 0 ? 'Queued — waiting for worker' : 'Recheck All Cached Domains') ?>
+                </button>
+            </form>
+            <?php if ($recheckRunning): ?>
+            <form method="POST">
+                <?php csrfField(); ?>
+                <input type="hidden" name="action" value="stop_recheck">
+                <button type="submit" class="btn btn-danger">⏹ Stop Recheck</button>
+            </form>
+            <?php endif; ?>
+        </div>
     </div>
 </div>
 
@@ -208,7 +284,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
     }
 }
 ?>
-<div class="card" id="live-worker-card" style="display: <?= (($workerStatus['is_running'] ?? 0) && ($workerStatus['total_tlds'] ?? 0) > 0) ? 'block' : 'none' ?>">
+<div class="card admin-pane <?= (($workerStatus['is_running'] ?? 0) && ($workerStatus['total_tlds'] ?? 0) > 0) ? '' : 'is-hidden' ?>" data-tab="worker" id="live-worker-card">
     <h2>Live Worker Progress</h2>
     <div id="live-worker-container">
         <?php
@@ -229,7 +305,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
     </div>
 </div>
 
-<div class="card">
+<div class="card admin-pane" data-tab="worker">
     <h2>Worker Status</h2>
     <?php if ($workerStatus): ?>
         <?php if (($workerStatus['is_running'] ?? 0)): ?>
@@ -259,29 +335,9 @@ if (!empty($workerStatus['last_heartbeat'])) {
     <?php else: ?>
         <p>No worker status received yet. Is the worker running?</p>
     <?php endif; ?>
-
-    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-        <form method="POST" style="display: inline;">
-            <?php csrfField(); ?>
-            <input type="hidden" name="action" value="run_worker">
-            <button type="submit" class="btn">Run Worker Now</button>
-        </form>
-        <form method="POST" style="display: inline;">
-            <?php csrfField(); ?>
-            <input type="hidden" name="action" value="recheck_keywords">
-            <button type="submit" class="btn btn-danger">Recheck Keywords</button>
-        </form>
-        <form method="POST" style="display: inline;">
-            <?php csrfField(); ?>
-            <input type="hidden" name="action" value="update_worker">
-            <button type="submit" class="btn" onclick="return confirm('Update the worker on its host (git pull + restart)? The web app is not affected.')">Update Worker</button>
-        </form>
-        <a href="/admin/cleanup.php" class="btn btn-danger">Cleanup False Matches</a>
-        <a href="/admin/update.php" class="btn">Update Web App</a>
-    </div>
 </div>
 
-<div class="card">
+<div class="card admin-pane" data-tab="commands">
     <h2>Recent Commands</h2>
     <?php if (empty($recentCommands)): ?>
         <p style="color:#666;">No commands have been queued yet.</p>
@@ -321,7 +377,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
     <?php endif; ?>
 </div>
 
-<div class="card">
+<div class="card admin-pane" data-tab="commands">
     <h2>Pending Commands</h2>
     <?php if (empty($pendingCommandsList)): ?>
         <p style="color: #666;">No pending commands. The queue is clear.</p>
@@ -362,7 +418,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
     <?php endif; ?>
 </div>
 
-<div class="card">
+<div class="card admin-pane" data-tab="worker">
     <h2>Worker Logs</h2>
     <?php if (empty($workerLogs)): ?>
         <p>No worker logs yet.</p>
@@ -384,7 +440,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
     <?php endif; ?>
 </div>
 
-<div class="card">
+<div class="card admin-pane" data-tab="users">
     <h2>Users</h2>
     <table>
         <thead>
@@ -437,7 +493,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
     </table>
 </div>
 
-<div class="card">
+<div class="card admin-pane" data-tab="sync">
     <h2>Sync Logs</h2>
     <table>
         <thead>
@@ -458,10 +514,16 @@ if (!empty($workerStatus['last_heartbeat'])) {
 </div>
 
 <?php $regOpen = isRegistrationOpen($db); ?>
-<div class="card">
+<div class="card admin-pane" data-tab="system">
     <h2>System</h2>
-    <p><a href="/admin/update.php" class="btn">Check for Updates</a></p>
-    
+    <h3 style="margin-top: 0;">Maintenance</h3>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <a href="/admin/update.php" class="btn">Check for Updates / Update Web App</a>
+        <a href="/admin/cleanup.php" class="btn btn-danger">Cleanup False Matches</a>
+    </div>
+
+    <hr style="margin: 15px 0; border: none; border-top: 1px solid #eee;">
+
     <h3 style="margin-top: 20px;">Registration</h3>
     <p>Status: <strong><?= $regOpen ? 'Open' : 'Closed' ?></strong></p>
     <form method="POST" style="margin-top: 10px;">
@@ -482,6 +544,30 @@ if (!empty($workerStatus['last_heartbeat'])) {
     </form>
     <p style="color: #666; font-size: 0.85rem; margin-top: 5px;">Domains created within this window will show the 🆕 badge and appear in the "New only" filter.</p>
 </div>
+
+<script>
+(function() {
+    const tabs = document.querySelectorAll('#admin-tabs a[data-tab]');
+    const panes = document.querySelectorAll('.admin-pane[data-tab]');
+    function activate(tab) {
+        tabs.forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
+        panes.forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
+    }
+    tabs.forEach(a => {
+        a.addEventListener('click', function(e) {
+            // TLDs is a direct link (href to another page); let it navigate.
+            if (a.dataset.tab === 'tlds') return;
+            e.preventDefault();
+            const t = a.dataset.tab;
+            if (history.replaceState) history.replaceState(null, '', '#'+t);
+            activate(t);
+        });
+    });
+    const hash = (location.hash || '').replace('#','');
+    const valid = ['overview','worker','commands','recheck','users','sync','system'];
+    if (hash && valid.includes(hash)) activate(hash);
+})();
+</script>
 
 <script>
 (function() {
@@ -537,11 +623,11 @@ if (!empty($workerStatus['last_heartbeat'])) {
                 const total = parseInt(s.total_tlds || 0);
 
                 if (!running || total === 0) {
-                    card.style.display = 'none';
+                    card.classList.add('is-hidden');
                     return;
                 }
 
-                card.style.display = 'block';
+                card.classList.remove('is-hidden');
                 const done = parseInt(s.tlds_processed || 0);
                 const domains = parseInt(s.domains_processed || 0);
                 const pct = total > 0 ? Math.round(done / total * 100) : 0;

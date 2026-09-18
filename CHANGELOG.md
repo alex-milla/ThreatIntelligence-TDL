@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.49] - 2026-09-19
+
+### Worker
+- **`sqlite_cache_mb` default raised to 2048 MB** (was 512). With the recommended 8 GB LXC, this avoids editing `config.ini` by hand on fresh deploys. On hosts with less RAM, lower it (e.g. 512). An explicit value in `config.ini` always wins, so existing installs are unaffected.
+
+### Web UI reorganisation (no routes or endpoints changed)
+- **Navbar**: split into two zones — App (Dashboard / Keywords / Notifications / Watchlist) and dropdowns for Account (email notifications, API key, logout) and Admin (Overview / Worker / Commands / Recheck / TLDs / Users / Sync / System). `TLDs` moved into the Admin dropdown. Refined dropdown styling reusing the existing `.action-menu-dropdown`.
+- **Dashboard**: redesigned as an operational at-a-glance view — KPIs (keywords, matches in period, unread, last-24h new), a pure CSS/SVG "matches per day" sparkline, and the existing recent-matches table with its period filter. Removed the admin-only Keyword Recheck and Last Sync cards (they live in the Admin panel). A compact worker-health indicator is shown to admins and links to Admin Overview.
+- **Admin panel** (`/admin/`): the monolithic page now exposes an in-place tabbed sub-navigation (Overview / Worker / Commands / Recheck / TLDs / Users / Sync / System), anchorable as `/admin/#worker`. The orphaned Cleanup and Update buttons left inside "Worker Status" now live under the System tab. `admin/tlds.php`, `admin/update.php` and `admin/cleanup.php` are unchanged; only their entry points moved.
+- No API, AJAX, `.htaccess`, form `action=` or route changes. All existing bookmarks keep working.
+
 ## [v1.3.48] - 2026-09-18
 
 ### SQLite tuning for the parse (configurable)

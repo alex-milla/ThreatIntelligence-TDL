@@ -12,10 +12,22 @@ sendSecurityHeaders();
     <style>
         * { box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; background: #f5f7fa; color: #333; }
-        .navbar { background: #1a1a2e; color: #fff; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; }
+        .navbar { background: #1a1a2e; color: #fff; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; min-height: 52px; }
+        .navbar-left, .navbar-right { display: flex; align-items: center; gap: 2px; }
         .navbar a { color: #fff; text-decoration: none; padding: 15px 12px; display: inline-block; }
         .navbar a:hover { background: #16213e; }
         .navbar .brand { font-weight: bold; font-size: 1.1rem; }
+        .navbar .nav-sep { width: 1px; height: 22px; background: #2a2a4e; margin: 0 6px; display: inline-block; }
+        .nav-dropdown { position: relative; display: inline-block; }
+        .nav-dropdown > .nav-toggle { color: #fff; padding: 15px 12px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+        .nav-dropdown:hover > .nav-toggle { background: #16213e; }
+        .nav-dropdown > .nav-toggle .caret { font-size: 0.7rem; opacity: 0.7; }
+        .nav-dropdown-menu { display: none; position: absolute; right: 0; top: 100%; background: #16213e; border: 1px solid #2a2a4e; border-radius: 6px; box-shadow: 0 6px 16px rgba(0,0,0,0.35); z-index: 200; min-width: 220px; padding: 6px 0; }
+        .nav-dropdown:hover > .nav-dropdown-menu { display: block; }
+        .nav-dropdown-menu a, .nav-dropdown-menu .nav-item { display: block; width: 100%; text-align: left; color: #e8e8f0; padding: 9px 16px; cursor: pointer; }
+        .nav-dropdown-menu a:hover, .nav-dropdown-menu .nav-item:hover { background: #1f1f3a; color: #fff; }
+        .nav-dropdown-menu .nav-section { color: #8a8aab; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 16px 4px; }
+        .nav-dropdown-menu hr { border: none; border-top: 1px solid #2a2a4e; margin: 4px 0; }
         .container { max-width: 1100px; margin: 30px auto; padding: 0 20px; }
         .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 24px; margin-bottom: 20px; }
         .card h2 { margin-top: 0; font-size: 1.25rem; }
@@ -57,25 +69,45 @@ sendSecurityHeaders();
 </head>
 <body>
     <nav class="navbar">
-        <div>
+        <div class="navbar-left">
             <a href="/" class="brand">ThreatIntelligence-TDL</a>
             <?php if (!empty($_SESSION['user_id'])): ?>
                 <a href="/">Dashboard</a>
                 <a href="/keywords.php">Keywords</a>
-                <?php if (!empty($_SESSION['is_admin'])): ?>
-                    <a href="/admin/tlds.php">TLDs</a>
-                <?php endif; ?>
                 <a href="/notifications.php">Notifications</a>
                 <a href="/watchlist.php">Watchlist</a>
                 <?php if (!empty($_SESSION['is_admin'])): ?>
-                    <a href="/admin/">Admin</a>
+                <span class="nav-sep"></span>
+                <div class="nav-dropdown">
+                    <a class="nav-toggle" href="/admin/">Admin <span class="caret">▼</span></a>
+                    <div class="nav-dropdown-menu">
+                        <a href="/admin/#overview">Overview</a>
+                        <a href="/admin/#worker">Worker</a>
+                        <a href="/admin/#commands">Commands</a>
+                        <a href="/admin/#recheck">Recheck</a>
+                        <a href="/admin/tlds.php">TLDs</a>
+                        <a href="/admin/#users">Users</a>
+                        <a href="/admin/#sync">Sync</a>
+                        <a href="/admin/#system">System</a>
+                    </div>
+                </div>
                 <?php endif; ?>
             <?php endif; ?>
         </div>
-        <div>
+        <div class="navbar-right">
             <?php if (!empty($_SESSION['user_id'])): ?>
-                <span style="padding: 15px 12px; display: inline-block;"><?= htmlspecialchars($_SESSION['username'] ?? '') ?></span>
-                <a href="/logout.php">Logout</a>
+                <div class="nav-dropdown">
+                    <a class="nav-toggle" href="/" style="cursor: pointer;"><?= htmlspecialchars($_SESSION['username'] ?? '') ?> <span class="caret">▼</span></a>
+                    <div class="nav-dropdown-menu">
+                        <div class="nav-section">Account</div>
+                        <a href="/#email">Email notifications</a>
+                        <?php if (!empty($_SESSION['is_admin'])): ?>
+                            <a href="/admin/#users">API key</a>
+                        <?php endif; ?>
+                        <hr>
+                        <a href="/logout.php">Cerrar sesión</a>
+                    </div>
+                </div>
             <?php else: ?>
                 <a href="/login.php">Login</a>
                 <a href="/register.php">Register</a>

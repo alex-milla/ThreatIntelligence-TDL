@@ -158,7 +158,7 @@ retain_zone_hash_tlds = false   ; delete the multi-GB zone after parsing
 max_download_retries = 3
 retry_delay_seconds = 300
 commit_every_batches = 10   ; commit + WAL checkpoint every 500k domains
-sqlite_cache_mb = 512       ; SQLite page cache (MB)
+sqlite_cache_mb = 2048      ; SQLite page cache (MB); lower on hosts with little RAM
 sqlite_synchronous_parse = OFF  ; skip fsync during parse (NORMAL to revert)
 ```
 

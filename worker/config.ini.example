@@ -36,7 +36,8 @@ max_download_retries = 3
 ; like .com do not grow the SQLite WAL without bound during a single parse.
 commit_every_batches = 10
 ; SQLite page cache in MB for the worker database.
-sqlite_cache_mb = 512
+; Default 2048 MB suits an 8 GB host; lower it (e.g. 512) on hosts with less RAM.
+sqlite_cache_mb = 2048
 ; NORMAL = durable; OFF = skip fsync during the bulk parse (faster, but a crash
 ; can corrupt worker.db, which is a rebuildable cache).
 sqlite_synchronous_parse = OFF
