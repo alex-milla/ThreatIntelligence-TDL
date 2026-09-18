@@ -90,6 +90,21 @@ def mark_command_done(host_url: str, api_key: str, command_id: int, status: str 
     return update_command_status(host_url, api_key, command_id, status, result)
 
 
+def get_running_commands(host_url: str, api_key: str) -> list[dict]:
+    """Return commands left in 'running' state (e.g. after a worker restart)."""
+    url = f"{host_url}/api/v1/commands.php?recover=1"
+    headers = {"X-API-Key": api_key}
+    try:
+        r = requests.get(url, headers=headers, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        if data.get("success"):
+            return data.get("commands", [])
+    except Exception:
+        pass
+    return []
+
+
 def send_logs(host_url: str, api_key: str, logs: list[dict]) -> bool:
     """Send worker logs to the hosting API."""
     if not logs:

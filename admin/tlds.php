@@ -14,6 +14,10 @@ function tldStatusBadge(?string $status): string {
         'skipped_today' => ['#e2e3e5', '#383d41', 'Skipped today'],
         'failed'        => ['#f8d7da', '#721c24', 'Failed'],
         'pending'       => ['#fff3cd', '#856404', 'Pending'],
+        'incomplete'    => ['#ffe5d0', '#8a4b08', 'Incomplete'],
+        'skipped_large' => ['#e2e3e5', '#383d41', 'Skipped (large)'],
+        'no_space'      => ['#f8d7da', '#721c24', 'No space'],
+        'retrying'      => ['#fff3cd', '#856404', 'Retrying'],
     ];
     if ($status === null || $status === '' || !isset($map[$status])) {
         return '<span style="color:#999;">&mdash;</span>';
@@ -75,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $tlds = $db->query(
     "SELECT id, name, is_active, last_sync, status, records_total, records_new, "
-    . "zone_size, zone_file_mtime, last_error FROM tlds ORDER BY is_active DESC, name"
+    . "zone_size, zone_file_mtime, last_error, retry_attempts, next_retry FROM tlds ORDER BY is_active DESC, name"
 )->fetchAll();
 $workerStatus = $db->query("SELECT is_running FROM worker_status WHERE id = 1")->fetch();
 $workerRunning = !empty($workerStatus['is_running']);
@@ -154,11 +158,12 @@ require __DIR__ . '/../templates/header.php';
             <button type="button" class="btn btn-small" onclick="selectAllTlds(false)">Deselect All</button>
             <button type="submit" class="btn" name="action" value="save_selection">Save Selection</button>
             <button type="submit" class="btn" name="action" value="run_worker_refresh"
-                    title="Download the selected TLDs only if they changed (uses ETag/Last-Modified)">
+                    title="Download the selected TLDs only if they changed (uses ETag/Last-Modified)"
+                    onclick="return confirmLargeSelection()">
                 &#8635; Refresh Selected
             </button>
             <button type="submit" class="btn btn-danger" name="action" value="run_worker_force"
-                    onclick="return confirm('Re-download the selected TLDs unconditionally? This ignores the local cache and the daily guard.')">
+                    onclick="return confirmLargeSelection() && confirm('Re-download the selected TLDs unconditionally? This ignores the local cache and the daily guard.')">
                 &#8681; Force Re-download
             </button>
             <span id="tld-count"></span>
@@ -179,12 +184,13 @@ require __DIR__ . '/../templates/header.php';
                         <th>Domains</th>
                         <th>New</th>
                         <th>Size</th>
+                        <th>Retry</th>
                         <th>Error</th>
                     </tr>
                 </thead>
                 <tbody id="tld-tbody">
                     <?php foreach ($tlds as $t): ?>
-                    <tr class="tld-row" data-name="<?= htmlspecialchars($t['name']) ?>">
+                    <tr class="tld-row" data-name="<?= htmlspecialchars($t['name']) ?>" data-size="<?= (int)$t['zone_size'] ?>">
                         <td style="text-align: center;">
                             <input type="checkbox" name="active[]" value="<?= htmlspecialchars($t['name']) ?>" <?= $t['is_active'] ? 'checked' : '' ?> onchange="updateTldCount()">
                         </td>
@@ -194,6 +200,7 @@ require __DIR__ . '/../templates/header.php';
                         <td class="tld-domains"><?= (int)$t['records_total'] > 0 ? number_format((int)$t['records_total']) : '<span style="color:#999;">&mdash;</span>' ?></td>
                         <td class="tld-new"><?= (int)$t['records_new'] > 0 ? '<strong>' . number_format((int)$t['records_new']) . '</strong>' : '<span style="color:#999;">&mdash;</span>' ?></td>
                         <td class="tld-size"><?= formatBytes((int)$t['zone_size']) ?></td>
+                        <td class="tld-retry" style="font-size:0.82rem;"><?= (int)($t['retry_attempts'] ?? 0) > 0 ? '#' . (int)$t['retry_attempts'] . (empty($t['next_retry']) ? '' : ' @ ' . htmlspecialchars(substr((string)$t['next_retry'], 11, 8))) : '<span style="color:#999;">&mdash;</span>' ?></td>
                         <td class="tld-error" style="color:#c0392b; font-size:0.85rem;"><?= htmlspecialchars($t['last_error'] ?? '') ?></td>
                     </tr>
                     <?php endforeach; ?>
@@ -229,6 +236,30 @@ function updateTldCount() {
     document.getElementById('tld-count').textContent = checked + ' of ' + visible + ' visible TLDs selected';
 }
 
+// Warn before downloading a very large selection (e.g. .com is ~4.6 GB).
+const LARGE_SELECTION_BYTES = 1024 * 1024 * 1024; // 1 GB compressed
+const LARGE_TLD_BYTES = 512 * 1024 * 1024;        // 512 MB per TLD
+
+function confirmLargeSelection() {
+    let total = 0;
+    const big = [];
+    document.querySelectorAll('.tld-row input[name="active[]"]:checked').forEach(cb => {
+        const row = cb.closest('.tld-row');
+        const size = parseInt(row.dataset.size || '0');
+        total += size;
+        if (size >= LARGE_TLD_BYTES) big.push(row.dataset.name + ' (' + (size / 1073741824).toFixed(2) + ' GB)');
+    });
+    if (total <= LARGE_SELECTION_BYTES) return true;
+    let msg = 'Selected zones total ~' + (total / 1073741824).toFixed(1) + ' GB compressed.\n' +
+              'Downloading and parsing can take a long time and use significant disk/DB space.';
+    if (big.length) {
+        msg += '\n\nLarge TLDs: ' + big.join(', ') +
+               '\nZones above the hash threshold are cached by hash to save disk.';
+    }
+    msg += '\n\nContinue?';
+    return confirm(msg);
+}
+
 updateTldCount();
 
 // Live refresh of per-TLD download status while the worker is running.
@@ -241,7 +272,11 @@ updateTldCount();
         not_modified:  ['#d1ecf1', '#0c5460', 'Unchanged'],
         skipped_today: ['#e2e3e5', '#383d41', 'Skipped today'],
         failed:        ['#f8d7da', '#721c24', 'Failed'],
-        pending:       ['#fff3cd', '#856404', 'Pending']
+        pending:       ['#fff3cd', '#856404', 'Pending'],
+        incomplete:    ['#ffe5d0', '#8a4b08', 'Incomplete'],
+        skipped_large: ['#e2e3e5', '#383d41', 'Skipped (large)'],
+        no_space:      ['#f8d7da', '#721c24', 'No space'],
+        retrying:      ['#fff3cd', '#856404', 'Retrying']
     };
 
     function badge(status) {
@@ -273,6 +308,7 @@ updateTldCount();
                     const domains = row.querySelector('.tld-domains');
                     const newc = row.querySelector('.tld-new');
                     const size = row.querySelector('.tld-size');
+                    const retry = row.querySelector('.tld-retry');
                     const error = row.querySelector('.tld-error');
                     const syncText = t.last_sync ? t.last_sync : '<span style="color:#999;">&mdash;</span>';
                     if (lastSync && lastSync.innerHTML !== syncText) lastSync.innerHTML = syncText;
@@ -280,6 +316,12 @@ updateTldCount();
                     if (domains) domains.innerHTML = parseInt(t.records_total || 0) > 0 ? parseInt(t.records_total).toLocaleString() : '<span style="color:#999;">&mdash;</span>';
                     if (newc) newc.innerHTML = parseInt(t.records_new || 0) > 0 ? '<strong>' + parseInt(t.records_new).toLocaleString() + '</strong>' : '<span style="color:#999;">&mdash;</span>';
                     if (size) size.innerHTML = fmtSize(t.zone_size);
+                    if (retry) {
+                        const attempts = parseInt(t.retry_attempts || 0);
+                        retry.innerHTML = attempts > 0
+                            ? '#' + attempts + (t.next_retry ? ' @ ' + String(t.next_retry).substr(11, 8) : '')
+                            : '<span style="color:#999;">&mdash;</span>';
+                    }
                     if (error) error.textContent = t.last_error || '';
                 });
             })

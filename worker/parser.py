@@ -22,7 +22,11 @@ def parse_zone_gz(filepath: str, tld: str):
     # For a TLD like "co.uk" we expect 3 labels (example.co.uk).
     expected_labels = len(tld.lower().strip().rstrip(".").split(".")) + 1
 
-    seen = set()
+    # Deduplicate consecutive identical owners only. Zone files list all RRs for
+    # an owner together, so this catches the common duplicates in O(1) memory
+    # instead of keeping every domain of a huge zone (e.g. .com) in a set.
+    # Non-consecutive duplicates are removed later by the SQL staging table.
+    last_yielded = None
     current_owner = origin
 
     with gzip.open(filepath, "rb") as fh:
@@ -90,6 +94,6 @@ def parse_zone_gz(filepath: str, tld: str):
             if '*' in owner:
                 continue
 
-            if owner not in seen:
-                seen.add(owner)
+            if owner != last_yielded:
+                last_yielded = owner
                 yield owner

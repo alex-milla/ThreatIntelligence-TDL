@@ -13,7 +13,16 @@ if [ -z "${PYTHON_BIN}" ]; then
     exit 1
 fi
 
-"${PYTHON_BIN}" -m pip install -r requirements.txt
+if "${PYTHON_BIN}" -c "import requests, ahocorasick" 2>/dev/null; then
+    echo "[+] Python dependencies already available."
+else
+    if ! "${PYTHON_BIN}" -m pip install -r requirements.txt; then
+        echo "[!] Could not install dependencies automatically (PEP 668 externally-managed environment?)." >&2
+        echo "    Required: requests. Optional accelerator: pyahocorasick." >&2
+        echo "    Debian/Ubuntu:  apt install python3-requests python3-ahocorasick" >&2
+        echo "    Or a venv:      python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
+    fi
+fi
 
 if [ ! -f config.ini ]; then
     cp config.ini.example config.ini

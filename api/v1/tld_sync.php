@@ -26,13 +26,16 @@ if (!is_array($entries)) {
     jsonResponse(['success' => false, 'error' => 'Invalid entries payload'], 400);
 }
 
-$allowedStatus = ['downloaded', 'not_modified', 'skipped_today', 'failed', 'pending'];
+$allowedStatus = [
+    'downloaded', 'not_modified', 'skipped_today', 'failed', 'pending',
+    'incomplete', 'skipped_large', 'no_space', 'retrying',
+];
 $now = gmdate('c');
 $updated = 0;
 
 $stmt = $db->prepare(
     "UPDATE tlds SET last_sync = ?, status = ?, records_total = ?, records_new = ?, "
-    . "zone_size = ?, zone_file_mtime = ?, last_error = ? WHERE name = ?"
+    . "zone_size = ?, zone_file_mtime = ?, last_error = ?, retry_attempts = ?, next_retry = ? WHERE name = ?"
 );
 
 $db->beginTransaction();
@@ -51,6 +54,8 @@ try {
         }
         $error = isset($entry['error']) && $entry['error'] !== '' ? substr((string)$entry['error'], 0, 500) : null;
 
+        $nextRetry = isset($entry['next_retry']) && $entry['next_retry'] !== '' ? (string)$entry['next_retry'] : null;
+
         $stmt->execute([
             $now,
             $status,
@@ -59,6 +64,8 @@ try {
             (int)($entry['zone_size'] ?? 0),
             $entry['zone_file_mtime'] ?? null,
             $error,
+            (int)($entry['attempts'] ?? 0),
+            $nextRetry,
             $tld,
         ]);
         $updated += $stmt->rowCount();

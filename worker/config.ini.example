@@ -11,10 +11,25 @@ download_dir = ./zones
 data_dir = ./data
 batch_size = 10000
 max_retries = 5
+; Delay (seconds) before an enqueued sync/TLD retry (grows with each attempt).
 retry_delay_seconds = 300
 ; Maximum age in days for domains to be considered during recheck.
 ; Domains first_seen older than this will be skipped.
 max_domain_age_days = 30
+
+; --- Large zone handling (CZDS) ---
+; Refuse to download a zone bigger than this (GB). 0 = no hard limit.
+max_zone_size_gb = 0
+; Require at least this many GB free after finishing a download.
+min_free_disk_gb = 5
+; Zones >= this size (MB, compressed) are cached as 64-bit hashes instead of
+; domain text, which keeps the local DB small for TLDs like .com.
+hash_cache_min_mb = 512
+; Keep the .zone.gz file on disk for hash-cached (huge) TLDs. false frees the
+; multi-GB file after parsing.
+retain_zone_hash_tlds = false
+; Immediate download retries before the TLD is queued for the next cycle.
+max_download_retries = 3
 
 [tlds]
 ; Comma-separated list of TLDs to process. Leave empty to process all approved TLDs.

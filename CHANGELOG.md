@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.43] - 2026-09-18
+
+### Robust handling of very large zone files
+- **Resumable downloads**: `downloader.py` resumes an interrupted transfer with `Range` + `If-Range` (ICANN CZDS supports `206 Partial Content`) and retries transient failures (`IncompleteRead`, connection drops) with backoff.
+- **Size validation**: the remote size is read first (HEAD) and the final file size must match `Content-Length`; otherwise the download is marked `incomplete` and the partial is kept for the next attempt.
+- **Compact hash cache**: zones above `hash_cache_min_mb` (default 512 MB, e.g. `.com` ≈ 4.6 GB) store a 64-bit hash per domain instead of the domain text, keeping the local DB small. Matching still uses the real domain text. Huge TLD zones are removed after parsing (`retain_zone_hash_tlds=false`).
+- **Bounded parser memory**: `parser.py` no longer keeps every domain of a zone in a Python `set` (the cause of the 1.9 GB peak); it deduplicates consecutive owners and lets SQL remove the rest.
+- **Safety guards**: `max_zone_size_gb` (skip with `skipped_large`), `min_free_disk_gb` (skip with `no_space`) and a disk-space check before downloading.
+- **Per-TLD retry queue**: failed/incomplete TLDs are retried immediately (up to `max_download_retries`) and, if still failing, queued for the next cycle with exponential backoff (`tld_retry_queue`).
+
+### Visibility and robustness
+- **Live progress during a single TLD**: heartbeats every ~10 s show `Downloading .com 1.2/4.6 GB` and `Parsing .com (12M domains)`.
+- **Line-buffered stdout** so per-TLD `print()` output appears immediately in the journal.
+- **Orphaned commands recovered**: on startup the worker closes commands left in `running` by a crash/restart; a failed status update no longer aborts the daemon loop. Admin can also cancel `running` commands.
+- **New TLD statuses** shown with badges: `incomplete`, `skipped_large`, `no_space`, `retrying`, plus retry attempt/time.
+- **Large-selection warning** in `admin/tlds.php` before Force/Refresh.
+- **PEP 668**: `install.sh`/`update.sh` detect an externally-managed environment and print `apt install python3-ahocorasick` / venv guidance instead of a raw pip error.
+
 ## [v1.3.42] - 2026-09-18
 
 ### Worker visibility and lifecycle

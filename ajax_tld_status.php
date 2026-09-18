@@ -10,21 +10,23 @@ if (empty($_SESSION['user_id']) || empty($_SESSION['is_admin'])) {
 
 $db = Database::get();
 $rows = $db->query(
-    "SELECT name, is_active, last_sync, status, records_total, records_new, zone_size, last_error "
-    . "FROM tlds ORDER BY is_active DESC, name"
+    "SELECT name, is_active, last_sync, status, records_total, records_new, zone_size, "
+    . "last_error, retry_attempts, next_retry FROM tlds ORDER BY is_active DESC, name"
 )->fetchAll();
 
 $tlds = [];
 foreach ($rows as $r) {
     $tlds[] = [
-        'name'          => $r['name'],
-        'is_active'     => (int)$r['is_active'],
-        'last_sync'     => $r['last_sync'],
-        'status'        => $r['status'],
-        'records_total' => (int)$r['records_total'],
-        'records_new'   => (int)$r['records_new'],
-        'zone_size'     => (int)$r['zone_size'],
-        'last_error'    => $r['last_error'],
+        'name'           => $r['name'],
+        'is_active'      => (int)$r['is_active'],
+        'last_sync'      => $r['last_sync'],
+        'status'         => $r['status'],
+        'records_total'  => (int)$r['records_total'],
+        'records_new'    => (int)$r['records_new'],
+        'zone_size'      => (int)$r['zone_size'],
+        'last_error'     => $r['last_error'],
+        'retry_attempts' => (int)($r['retry_attempts'] ?? 0),
+        'next_retry'     => $r['next_retry'],
     ];
 }
 

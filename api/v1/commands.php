@@ -17,11 +17,14 @@ if (!$user || empty($user['is_admin'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    // Return pending commands
-    $stmt = $db->prepare("SELECT id, command, payload FROM commands WHERE status = 'pending' ORDER BY created_at ASC");
-    $stmt->execute();
-    $commands = $stmt->fetchAll();
-    jsonResponse(['success' => true, 'commands' => $commands]);
+    if (isset($_GET['recover'])) {
+        // Commands left in 'running' state (e.g. the worker was restarted):
+        // the worker closes them at startup so they don't hang forever.
+        $stmt = $db->query("SELECT id, command, payload FROM commands WHERE status = 'running' ORDER BY created_at ASC");
+    } else {
+        $stmt = $db->query("SELECT id, command, payload FROM commands WHERE status = 'pending' ORDER BY created_at ASC");
+    }
+    jsonResponse(['success' => true, 'commands' => $stmt->fetchAll()]);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {

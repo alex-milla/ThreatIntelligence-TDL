@@ -117,7 +117,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if ($action === 'cancel_command') {
         $cmdId = (int)($_POST['command_id'] ?? 0);
-        $db->prepare("UPDATE commands SET status = 'cancelled', executed_at = datetime('now') WHERE id = ? AND status = 'pending'") ->execute([$cmdId]);
+        $db->prepare(
+            "UPDATE commands SET status = 'cancelled', "
+            . "executed_at = COALESCE(executed_at, datetime('now')), finished_at = datetime('now') "
+            . "WHERE id = ? AND status IN ('pending', 'running')"
+        )->execute([$cmdId]);
         $message = 'Command cancelled.';
     }
     
@@ -284,7 +288,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
     <?php else: ?>
         <table>
             <thead>
-                <tr><th>ID</th><th>Command</th><th>Status</th><th>Queued</th><th>Started</th><th>Duration</th><th>Result</th></tr>
+                <tr><th>ID</th><th>Command</th><th>Status</th><th>Queued</th><th>Started</th><th>Duration</th><th>Result</th><th>Actions</th></tr>
             </thead>
             <tbody>
                 <?php foreach ($recentCommands as $cmd): ?>
@@ -296,6 +300,20 @@ if (!empty($workerStatus['last_heartbeat'])) {
                     <td><?= htmlspecialchars($cmd['executed_at'] ?? '-') ?></td>
                     <td><?= humanDuration($cmd['executed_at'], $cmd['finished_at']) ?></td>
                     <td style="font-size:0.82rem; max-width:340px; word-break:break-word;"><?= htmlspecialchars(mb_substr((string)($cmd['result'] ?? ''), 0, 300)) ?></td>
+                    <td>
+                        <?php if (in_array($cmd['status'], ['pending', 'running'], true)): ?>
+                        <form method="POST" style="display:inline; margin:0;">
+                            <?php csrfField(); ?>
+                            <input type="hidden" name="action" value="cancel_command">
+                            <input type="hidden" name="command_id" value="<?= (int)$cmd['id'] ?>">
+                            <button type="submit" class="btn btn-small btn-danger"
+                                    title="<?= $cmd['status'] === 'running' ? 'Only if the worker is stuck; a live run may overwrite this.' : '' ?>"
+                                    onclick="return confirm('Cancel command #<?= (int)$cmd['id'] ?>?')">Cancel</button>
+                        </form>
+                        <?php else: ?>
+                        <span style="color:#ccc;">&mdash;</span>
+                        <?php endif; ?>
+                    </td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>

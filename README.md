@@ -133,6 +133,30 @@ python3 scheduler.py --once --force     # full reprocess (ignore guard + cache)
 python3 scheduler.py --once --refresh   # bypass guard, keep conditional download
 ```
 
+## Very large zone files (e.g. `.com`)
+
+Some zones are multi-gigabyte (`.com` is ~4.6 GB compressed). The worker handles them specially:
+
+- **Resumable downloads**: a partial `.zone.gz.part` is kept and resumed with `Range`/`If-Range` (ICANN CZDS supports `206 Partial Content`), so a dropped connection does not restart the transfer.
+- **Completeness check**: the remote size is read first and the final file size must match `Content-Length`; otherwise the TLD is marked `incomplete` and retried.
+- **Compact hash cache**: zones larger than `hash_cache_min_mb` (default 512 MB) are cached as 64-bit hashes instead of domain text. `.com` (~160 M domains) then costs ~5 GB instead of ~17 GB. `recheck_keywords` excludes hash-cached TLDs (there is no text to match offline).
+- **Guards**: `max_zone_size_gb` refuses zones above a hard limit (`skipped_large`), and `min_free_disk_gb` refuses to start if free disk would drop too low (`no_space`).
+- **Per-TLD retries**: failed/incomplete TLDs are retried immediately (up to `max_download_retries`) and then queued for the next cycle with backoff (`tld_retry_queue`).
+
+Relevant `config.ini` keys:
+
+```ini
+[worker]
+max_zone_size_gb = 0        ; 0 = no hard limit
+min_free_disk_gb = 5
+hash_cache_min_mb = 512
+retain_zone_hash_tlds = false   ; delete the multi-GB zone after parsing
+max_download_retries = 3
+retry_delay_seconds = 300
+```
+
+> On Debian/Ubuntu with PEP 668, `pip install` may be blocked. The optional `pyahocorasick` accelerator can be installed with `apt install python3-ahocorasick`; the worker runs fine without it (substring fallback).
+
 ## User Features
 
 - **Keywords**: Each user can define keywords to monitor (e.g., `santander`, `nasa`).

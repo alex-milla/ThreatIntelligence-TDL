@@ -4,9 +4,11 @@ Supports daemon mode with command polling from the web panel."""
 
 import argparse
 import configparser
+import hashlib
 import json
 import logging
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -82,19 +84,68 @@ def init_local_db(db_path: str) -> sqlite3.Connection:
             last_run_date TEXT,
             last_run_status TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS domains_cache_hash (
+            domain_hash INTEGER PRIMARY KEY,
+            tld TEXT NOT NULL,
+            first_seen INTEGER NOT NULL
+        ) WITHOUT ROWID;
+        CREATE INDEX IF NOT EXISTS idx_cache_hash_tld ON domains_cache_hash(tld);
+
+        CREATE TABLE IF NOT EXISTS tld_retry_queue (
+            tld TEXT PRIMARY KEY,
+            attempts INTEGER DEFAULT 0,
+            next_retry TEXT,
+            last_error TEXT,
+            updated_at TEXT
+        );
     """)
     conn.commit()
     return conn
 
 
+def _domain_hash(domain: str) -> int:
+    """Stable 64-bit hash of a domain, used by the compact cache for huge TLDs."""
+    digest = hashlib.blake2b(domain.encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, "big", signed=True)
+
+
 def _stage_and_diff_batch(cursor: sqlite3.Cursor, tld: str, now: str, batch: list[str],
-                          keyword_matcher, matches: list[dict]) -> int:
+                          keyword_matcher, matches: list[dict], use_hash: bool = False) -> int:
     """Stage a parsed batch, insert genuinely new domains and match them.
 
     Uses a TEMP table plus a SQL anti-join so the full known-domain set is never
-    loaded into Python, keeping peak memory bounded on very large TLDs.
+    loaded into Python, keeping peak memory bounded on very large TLDs. When
+    use_hash is set, only a 64-bit hash per domain is persisted (compact cache)
+    but matching still runs on the real domain text.
     Returns the number of new domains found.
     """
+    if use_hash:
+        cursor.execute("DELETE FROM zone_batch_hash")
+        mapping: dict[int, str] = {}
+        for domain in batch:
+            mapping[_domain_hash(domain)] = domain
+        cursor.executemany(
+            "INSERT OR IGNORE INTO zone_batch_hash (domain_hash) VALUES (?)",
+            ((h,) for h in mapping)
+        )
+        cursor.execute(
+            "SELECT z.domain_hash FROM zone_batch_hash z "
+            "LEFT JOIN domains_cache_hash c ON c.domain_hash = z.domain_hash "
+            "WHERE c.domain_hash IS NULL"
+        )
+        new_hashes = [row[0] for row in cursor.fetchall()]
+        if not new_hashes:
+            return 0
+        first_seen = int(time.time())
+        cursor.executemany(
+            "INSERT OR IGNORE INTO domains_cache_hash (domain_hash, tld, first_seen) VALUES (?, ?, ?)",
+            ((h, tld, first_seen) for h in new_hashes)
+        )
+        if keyword_matcher is not None:
+            matches.extend(keyword_matcher.match(mapping[h] for h in new_hashes))
+        return len(new_hashes)
+
     cursor.execute("DELETE FROM zone_batch")
     cursor.executemany(
         "INSERT OR IGNORE INTO zone_batch (domain) VALUES (?)",
@@ -115,6 +166,39 @@ def _stage_and_diff_batch(cursor: sqlite3.Cursor, tld: str, now: str, batch: lis
     if keyword_matcher is not None:
         matches.extend(keyword_matcher.match(new_domains))
     return len(new_domains)
+
+
+def enqueue_tld_retry(db: sqlite3.Connection, tld: str, error: str, base_delay: int) -> tuple[int, str]:
+    """Schedule a retry for a failed/incomplete TLD. Returns (attempts, next_retry ISO)."""
+    cursor = db.cursor()
+    cursor.execute("SELECT attempts FROM tld_retry_queue WHERE tld = ?", (tld,))
+    row = cursor.fetchone()
+    attempts = (row[0] if row else 0) + 1
+    delay = min(base_delay * attempts, 3600)
+    next_retry = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    cursor.execute(
+        "INSERT OR REPLACE INTO tld_retry_queue (tld, attempts, next_retry, last_error, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (tld, attempts, next_retry, (error or "")[:500], now)
+    )
+    db.commit()
+    return attempts, next_retry
+
+
+def clear_tld_retry(db: sqlite3.Connection, tld: str) -> None:
+    db.execute("DELETE FROM tld_retry_queue WHERE tld = ?", (tld,))
+    db.commit()
+
+
+def get_due_tld_retries(db: sqlite3.Connection) -> list[str]:
+    """Return TLDs whose retry is due now."""
+    now = datetime.now(timezone.utc).isoformat()
+    rows = db.execute(
+        "SELECT tld FROM tld_retry_queue WHERE next_retry IS NULL OR next_retry <= ? ORDER BY next_retry ASC",
+        (now,)
+    ).fetchall()
+    return [row[0] for row in rows]
 
 
 def get_tld_meta(db: sqlite3.Connection, tld: str) -> dict:
@@ -154,7 +238,8 @@ def _zone_info(filepath: str) -> tuple[int, str | None]:
 
 def _tld_report(tld: str, status: str, filepath: str | None = None,
                 records_total: int = 0, records_new: int = 0,
-                error: str | None = None) -> dict:
+                error: str | None = None, attempts: int = 0,
+                next_retry: str | None = None) -> dict:
     """Build a per-TLD report entry for the hosting UI."""
     zone_size, zone_mtime = _zone_info(filepath) if filepath else (0, None)
     return {
@@ -165,12 +250,15 @@ def _tld_report(tld: str, status: str, filepath: str | None = None,
         "zone_size": zone_size,
         "zone_file_mtime": zone_mtime,
         "error": error,
+        "attempts": attempts,
+        "next_retry": next_retry,
     }
 
 
 def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
                 keywords: list[dict], force: bool = False,
-                refresh: bool = False) -> tuple[list[dict], dict]:
+                refresh: bool = False, settings: dict | None = None,
+                progress_callback=None) -> tuple[list[dict], dict]:
     """Download, parse, deduplicate and match a single TLD.
 
     Returns (matches, info) where info reports what happened to the TLD so the
@@ -181,8 +269,12 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
       - performs a conditional request (ETag / Last-Modified) so an unchanged
         zone is not transferred again (refresh keeps the validators, force drops
         them and re-downloads unconditionally),
-      - keeps the last downloaded zone file on disk instead of deleting it.
+      - resumes an interrupted download (HTTP Range) and validates the final
+        size against Content-Length,
+      - keeps the last downloaded zone file on disk instead of deleting it
+        (except for huge TLDs cached by hash, where disk is at a premium).
     """
+    settings = settings or {}
     today_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     now = datetime.now(timezone.utc).isoformat()
     meta = get_tld_meta(db, tld)
@@ -194,26 +286,60 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
     #    `refresh` bypasses the guard but keeps the conditional validators, so
     #    the zone is only transferred again if it actually changed.
     if not force and not refresh and meta["last_run_date"] == today_date and meta["last_run_status"] == "ok":
-        print(f"[=] .{tld} already processed today ({today_date}). Skipping to avoid re-scanning.")
+        print(f"[=] .{tld} already processed today ({today_date}). Skipping to avoid re-scanning.", flush=True)
         return [], _tld_report(tld, "skipped_today", filepath=filepath)
 
-    # 2. Conditional download (only transfers the zone if it changed).
+    # 2. Know the remote size first (also used for the hash-cache decision) and
+    #    apply the size / free-disk guards before transferring anything.
+    content_length, _head_etag, _head_lm = downloader.head_zone(tld, token)
+
+    max_zone_gb = settings.get("max_zone_size_gb", 0) or 0
+    if max_zone_gb and content_length and content_length > max_zone_gb * (1 << 30):
+        msg = f"zone too large ({content_length / (1 << 30):.2f} GB > limit {max_zone_gb} GB)"
+        print(f"[!] .{tld} skipped: {msg}", flush=True)
+        return [], _tld_report(tld, "skipped_large", filepath=filepath, error=msg)
+
+    min_free_gb = settings.get("min_free_disk_gb", 0) or 0
+    if content_length:
+        try:
+            free = shutil.disk_usage(download_dir).free
+        except OSError:
+            free = None
+        if free is not None and free - content_length < min_free_gb * (1 << 30):
+            msg = (f"not enough disk: {free / (1 << 30):.1f} GB free, "
+                   f"need {content_length / (1 << 30):.1f} GB + {min_free_gb:.1f} GB reserve")
+            print(f"[!] .{tld} skipped: {msg}", flush=True)
+            return [], _tld_report(tld, "no_space", filepath=filepath, error=msg)
+
+    # 3. Very large zones are cached as 64-bit hashes to bound disk usage.
+    hash_min_mb = settings.get("hash_cache_min_mb", 0) or 0
+    use_hash = bool(content_length and hash_min_mb and content_length >= hash_min_mb * (1 << 20))
+    if use_hash:
+        print(f"[*] .{tld}: large zone ({content_length / (1 << 30):.2f} GB) -> compact hash cache.", flush=True)
+
+    # 4. Conditional, resumable download with immediate retries.
     prev_etag = None if force else meta["etag"]
     prev_last_modified = None if force else meta["last_modified"]
-    status, etag, last_modified = downloader.download_zone(
-        tld, token, filepath, etag=prev_etag, last_modified=prev_last_modified
+    retry_delay = settings.get("retry_delay_seconds", 300)
+    status, etag, last_modified, error = downloader.download_zone(
+        tld, token, filepath, etag=prev_etag, last_modified=prev_last_modified,
+        progress_callback=progress_callback,
+        max_retries=settings.get("max_download_retries", 3),
     )
     if status == "failed":
-        return [], _tld_report(tld, "failed", filepath=filepath, error="download failed")
+        attempts, next_retry = enqueue_tld_retry(db, tld, error or "download failed", retry_delay)
+        return [], _tld_report(tld, "failed", filepath=filepath, error=error,
+                               attempts=attempts, next_retry=next_retry)
     if status == "not_modified":
-        print(f"[=] .{tld} zone unchanged since last run. Skipping parse.")
+        print(f"[=] .{tld} zone unchanged since last run. Skipping parse.", flush=True)
         update_tld_meta(db, tld, meta["etag"], meta["last_modified"], today_date, "ok")
+        clear_tld_retry(db, tld)
         return [], _tld_report(tld, "not_modified", filepath=filepath)
 
-    # 3. Parse and find new domains. The comparison against the cache is done
+    # 5. Parse and find new domains. The comparison against the cache is done
     #    entirely in SQLite (batched + anti-join) so the full known-domain set
     #    is never loaded into Python: peak memory stays bounded on huge TLDs.
-    print(f"[*] Parsing {tld}.zone ...")
+    print(f"[*] Parsing {tld}.zone ...", flush=True)
     keyword_matcher = matcher.Matcher(keywords) if keywords else None
     total = 0
     new_count = 0
@@ -221,26 +347,36 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
     cursor = db.cursor()
     batch = []
     batch_size = 50000
+    last_progress = time.time()
 
     try:
-        cursor.execute("CREATE TEMP TABLE IF NOT EXISTS zone_batch (domain TEXT PRIMARY KEY)")
+        if use_hash:
+            cursor.execute("CREATE TEMP TABLE IF NOT EXISTS zone_batch_hash (domain_hash INTEGER PRIMARY KEY)")
+        else:
+            cursor.execute("CREATE TEMP TABLE IF NOT EXISTS zone_batch (domain TEXT PRIMARY KEY)")
         for domain in parser.parse_zone_gz(filepath, tld):
             total += 1
             batch.append(domain)
             if len(batch) >= batch_size:
-                new_count += _stage_and_diff_batch(cursor, tld, now, batch, keyword_matcher, matches)
+                new_count += _stage_and_diff_batch(cursor, tld, now, batch, keyword_matcher,
+                                                   matches, use_hash=use_hash)
                 batch = []
+                if progress_callback and time.time() - last_progress >= 5:
+                    last_progress = time.time()
+                    progress_callback("parse", total, None)
         if batch:
-            new_count += _stage_and_diff_batch(cursor, tld, now, batch, keyword_matcher, matches)
+            new_count += _stage_and_diff_batch(cursor, tld, now, batch, keyword_matcher,
+                                               matches, use_hash=use_hash)
         # Single commit per TLD: with WAL + synchronous=NORMAL this is much
         # cheaper than committing every batch.
         db.commit()
         cursor.execute("DROP TABLE IF EXISTS zone_batch")
+        cursor.execute("DROP TABLE IF EXISTS zone_batch_hash")
     except Exception:
         db.rollback()
         raise
 
-    print(f"[+] {tld}: {total:,} total, {new_count:,} new.")
+    print(f"[+] {tld}: {total:,} total, {new_count:,} new.", flush=True)
 
     cursor.execute(
         "INSERT INTO zone_runs (tld, run_date, records_total, records_new, status) VALUES (?, ?, ?, ?, ?)",
@@ -251,13 +387,26 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
     # Zone parsed and cached successfully: persist validators + today's date so
     # subsequent runs can skip this TLD via a conditional request / daily guard.
     update_tld_meta(db, tld, etag, last_modified, today_date, "ok")
+    clear_tld_retry(db, tld)
 
     if matches:
         for m in matches:
             m["first_seen"] = now
-        print(f"[+] {len(matches)} matches found for .{tld}.")
-    return matches, _tld_report(tld, "downloaded", filepath=filepath,
-                                records_total=total, records_new=new_count)
+        print(f"[+] {len(matches)} matches found for .{tld}.", flush=True)
+
+    report = _tld_report(tld, "downloaded", filepath=filepath,
+                         records_total=total, records_new=new_count)
+
+    # Huge hash-cached TLDs: drop the multi-GB zone unless retention is enabled.
+    if use_hash and not settings.get("retain_zone_hash_tlds", False):
+        try:
+            os.remove(filepath)
+            print(f"[i] .{tld}: zone file removed after parse "
+                  f"(compact hash cache; set retain_zone_hash_tlds=true to keep it).", flush=True)
+        except OSError:
+            pass
+
+    return matches, report
 
 
 def retry_sync_queue(db: sqlite3.Connection, host_url: str, api_key: str, max_retries: int) -> None:
@@ -344,6 +493,15 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
     icann_user = cfg.get("icann", "username")
     icann_pass = cfg.get("icann", "password")
 
+    settings = {
+        "max_zone_size_gb": cfg.getfloat("worker", "max_zone_size_gb", fallback=0),
+        "min_free_disk_gb": cfg.getfloat("worker", "min_free_disk_gb", fallback=5),
+        "hash_cache_min_mb": cfg.getfloat("worker", "hash_cache_min_mb", fallback=512),
+        "retain_zone_hash_tlds": cfg.getboolean("worker", "retain_zone_hash_tlds", fallback=False),
+        "max_download_retries": cfg.getint("worker", "max_download_retries", fallback=3),
+        "retry_delay_seconds": cfg.getint("worker", "retry_delay_seconds", fallback=300),
+    }
+
     stats = {
         "tlds_processed": 0,
         "domains_processed": 0,
@@ -402,6 +560,15 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         log.warning("No TLDs to process.")
         return stats
 
+    # 3c. Include TLDs whose retry is due, even if they are no longer active
+    #     (a failed download should still be completed).
+    due_retries = get_due_tld_retries(db)
+    for rt in due_retries:
+        if rt not in tlds:
+            tlds.append(rt)
+    if due_retries:
+        log.info(f"Due TLD retries added to this cycle: {len(due_retries)}")
+
     # 4. Get keywords from hosting
     print("[*] Fetching keywords from hosting ...")
     try:
@@ -443,10 +610,43 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
             sync_client.report_tld_sync(host_url, api_key, list(report_batch))
             report_batch.clear()
 
+    def make_progress_callback(tld_name: str):
+        """Throttled callback so long downloads/parses show live progress."""
+        last = {"t": 0.0}
+
+        def cb(phase: str, current: int, total: int | None) -> None:
+            now_ts = time.time()
+            if now_ts - last["t"] < 10:
+                return
+            last["t"] = now_ts
+            if phase == "download":
+                if total:
+                    action = f"Downloading .{tld_name} {current / 1e9:.2f}/{total / 1e9:.2f} GB"
+                else:
+                    action = f"Downloading .{tld_name} {current / 1e6:.0f} MB"
+            else:
+                action = f"Parsing .{tld_name} ({current:,} domains)"
+            sync_client.send_heartbeat(host_url, api_key, {
+                "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+                "is_running": 1,
+                "version": version,
+                "current_action": action,
+                "current_tld": tld_name,
+                "total_tlds": total_tlds,
+                "tlds_processed": stats["tlds_processed"],
+                "domains_processed": domains_processed,
+                "current_command": command_label,
+                "current_command_id": command_id,
+            })
+
+        return cb
+
     for tld in tlds:
         try:
             matches, info = process_tld(tld, token, download_dir, db, keywords,
-                                        force=force, refresh=refresh)
+                                        force=force, refresh=refresh,
+                                        settings=settings,
+                                        progress_callback=make_progress_callback(tld))
             all_matches.extend(matches)
             stats["tlds_processed"] += 1
             domains_processed += int(info.get("records_total", 0))
@@ -527,6 +727,15 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
     }
 
     log.info("Starting keyword recheck against cached domains...")
+
+    # Huge TLDs use the compact hash cache (no domain text), so they cannot be
+    # matched offline; report how many are excluded.
+    try:
+        hashed = db.execute("SELECT COUNT(*) FROM domains_cache_hash").fetchone()[0]
+        if hashed:
+            log.info(f"Compact hash cache holds {hashed:,} domains (huge TLDs); excluded from recheck.")
+    except sqlite3.OperationalError:
+        pass
 
     try:
         keywords = sync_client.get_keywords(host_url, api_key)
@@ -831,13 +1040,21 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 result = f"Unknown command: {command}"
                 logs.append({"level": "warning", "message": result})
 
-            sync_client.mark_command_done(host_url, api_key, cmd_id, status, result)
-            logs.append({"level": "info", "message": f"Command {cmd_id} marked as {status}"})
+            try:
+                sync_client.mark_command_done(host_url, api_key, cmd_id, status, result)
+                logs.append({"level": "info", "message": f"Command {cmd_id} marked as {status}"})
+            except Exception as e:
+                # A failed status update must not abort the daemon loop; the
+                # startup recovery will close any command left 'running'.
+                logs.append({"level": "error", "message": f"Could not mark command {cmd_id} as {status}: {e}"})
 
         except Exception as e:
             error_msg = str(e)
             logs.append({"level": "error", "message": f"Command {cmd_id} failed: {error_msg}"})
-            sync_client.mark_command_done(host_url, api_key, cmd_id, "failed", error_msg)
+            try:
+                sync_client.mark_command_done(host_url, api_key, cmd_id, "failed", error_msg)
+            except Exception as e2:
+                logs.append({"level": "error", "message": f"Could not mark command {cmd_id} as failed: {e2}"})
 
         # Stop processing further commands so we can restart cleanly with the
         # freshly pulled code (systemd `Restart=always` relaunches the service).
@@ -903,6 +1120,11 @@ def release_worker_lock(handle) -> None:
 
 
 def main() -> int:
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
     parser_args = argparse.ArgumentParser(description="ThreatIntelligence-TDL Worker")
     parser_args.add_argument("--daemon", action="store_true", help="Run in daemon mode with command polling")
     parser_args.add_argument("--interval", type=int, default=60, help="Polling interval in seconds (daemon mode)")
@@ -955,6 +1177,20 @@ def main() -> int:
         db.close()
         return 0
     log.info(f"Worker lock acquired (pid {os.getpid()}).")
+
+    # Close commands left in 'running' by a previous crash/restart so they do
+    # not hang forever in the UI (get_commands only returns 'pending').
+    try:
+        stale = sync_client.get_running_commands(host_url, api_key)
+        for cmd in stale:
+            try:
+                sync_client.mark_command_done(host_url, api_key, cmd["id"], "failed",
+                                              "Worker restarted while the command was running")
+                log.warning(f"Closed orphaned running command {cmd['id']} ({cmd.get('command')}).")
+            except Exception as e:
+                log.error(f"Failed to close orphaned command {cmd['id']}: {e}")
+    except Exception as e:
+        log.debug(f"Could not recover running commands: {e}")
 
     if args.daemon:
         log.info(f"Daemon mode started. Polling every {args.interval}s. Press Ctrl+C to stop.")

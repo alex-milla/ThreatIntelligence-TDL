@@ -250,5 +250,11 @@ class Database {
         try {
             $db->exec("ALTER TABLE tlds ADD COLUMN last_error TEXT");
         } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE tlds ADD COLUMN retry_attempts INTEGER DEFAULT 0");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE tlds ADD COLUMN next_retry TEXT");
+        } catch (PDOException $e) { }
     }
 }
