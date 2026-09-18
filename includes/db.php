@@ -222,6 +222,17 @@ class Database {
         try {
             $db->exec("ALTER TABLE worker_status ADD COLUMN current_action TEXT");
         } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE worker_status ADD COLUMN current_command TEXT");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE worker_status ADD COLUMN current_command_id INTEGER");
+        } catch (PDOException $e) { }
+
+        // Safe migration: command lifecycle finished_at timestamp
+        try {
+            $db->exec("ALTER TABLE commands ADD COLUMN finished_at TEXT");
+        } catch (PDOException $e) { }
 
         // Safe migration: per-TLD download report columns (worker -> web)
         try {

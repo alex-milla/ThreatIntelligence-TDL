@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import sqlite3
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone, timedelta
@@ -335,7 +336,7 @@ def queue_matches(db: sqlite3.Connection, matches: list[dict]) -> None:
     print(f"[!] Queued {len(matches)} matches for retry.")
 
 
-def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False, refresh: bool = False) -> dict:
+def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False, refresh: bool = False, command_label: str | None = None, command_id: int | None = None) -> dict:
     """Run one full worker cycle. Returns stats dict."""
     download_dir = cfg.get("worker", "download_dir", fallback="./zones")
     data_dir = cfg.get("worker", "data_dir", fallback="./data")
@@ -425,12 +426,17 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         "tlds_processed": 0,
         "domains_processed": 0,
         "current_tld": None,
+        "current_command": command_label,
+        "current_command_id": command_id,
     })
 
     # 5. Process each TLD
     all_matches = []
     domains_processed = 0
     report_batch: list[dict] = []
+    # On small selections (e.g. a few TLDs) report after every TLD so the web
+    # UI updates live instead of only at the end of the cycle.
+    small_run = total_tlds <= 50
 
     def flush_reports(force_flush: bool = False) -> None:
         if report_batch and (force_flush or len(report_batch) >= 25):
@@ -445,7 +451,7 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
             stats["tlds_processed"] += 1
             domains_processed += int(info.get("records_total", 0))
             report_batch.append(info)
-            flush_reports()
+            flush_reports(force_flush=small_run)
 
             # Send incremental heartbeat + log after each TLD
             sync_client.send_heartbeat(host_url, api_key, {
@@ -457,6 +463,8 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
                 "total_tlds": total_tlds,
                 "tlds_processed": stats["tlds_processed"],
                 "domains_processed": domains_processed,
+                "current_command": command_label,
+                "current_command_id": command_id,
             })
             sync_client.send_logs(host_url, api_key, [{
                 "level": "info",
@@ -503,6 +511,8 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         "tlds_processed": stats["tlds_processed"],
         "domains_processed": domains_processed,
         "matches_found": stats["matches_found"],
+        "current_command": None,
+        "current_command_id": None,
     })
     log.info(f"End: {datetime.now(timezone.utc).isoformat()}")
     return stats
@@ -670,19 +680,60 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
     return stats
 
 
-def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False, refresh: bool = False) -> tuple[list[dict], dict | None, bool]:
-    """Poll and execute pending commands from the hosting. Returns (log entries, worker_stats, commands_processed)."""
+def perform_worker_update() -> tuple[str, str]:
+    """Update the worker checkout to origin/main. Returns (message, status).
+
+    Untracked files (config.ini, data/, zones/) are never touched. A hard reset
+    is used so a deployment checkout always matches the published main branch.
+    """
+    repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if not os.path.isdir(os.path.join(repo_dir, ".git")):
+        return ("This worker is not a git checkout; cannot self-update. Run update.sh on the server.", "failed")
+
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_ASKPASS"] = "echo"
+
+    try:
+        fetch = subprocess.run(
+            ["git", "-C", repo_dir, "fetch", "--prune", "origin"],
+            capture_output=True, text=True, timeout=180, env=env
+        )
+        if fetch.returncode != 0:
+            detail = (fetch.stderr or fetch.stdout).strip()[:300]
+            return (f"git fetch failed: {detail}", "failed")
+
+        reset = subprocess.run(
+            ["git", "-C", repo_dir, "reset", "--hard", "origin/main"],
+            capture_output=True, text=True, timeout=180, env=env
+        )
+        if reset.returncode != 0:
+            detail = (reset.stderr or reset.stdout).strip()[:300]
+            return (f"git reset failed: {detail}", "failed")
+    except Exception as e:
+        return (f"Update error: {e}", "failed")
+
+    new_version = get_version()
+    return (f"Worker source updated to {new_version}. Restart required to load it.", "completed")
+
+
+def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False, refresh: bool = False) -> tuple[list[dict], dict | None, bool, bool]:
+    """Poll and execute pending commands from the hosting.
+
+    Returns (log entries, worker_stats, commands_processed, restart_requested).
+    """
     logs = []
     worker_stats = None
     commands_processed = False
+    restart_requested = False
     try:
         commands = sync_client.get_commands(host_url, api_key)
     except Exception as e:
         logs.append({"level": "error", "message": f"Failed to fetch commands: {e}"})
-        return logs, worker_stats, commands_processed
+        return logs, worker_stats, commands_processed, restart_requested
 
     if not commands:
-        return logs, worker_stats, commands_processed
+        return logs, worker_stats, commands_processed, restart_requested
 
     # If a stop_recheck is present in this batch, cancel any recheck_keywords
     # in the same batch to prevent a relaunch after stopping.
@@ -712,6 +763,12 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
 
         try:
             status = "completed"
+            # Mark as running right away so the UI can show the command in progress.
+            try:
+                sync_client.update_command_status(host_url, api_key, cmd_id, "running", "")
+            except Exception as e:
+                logs.append({"level": "warning", "message": f"Could not mark command {cmd_id} as running: {e}"})
+
             if command == "run_worker":
                 # Payload may request a refresh (bypass daily guard, keep
                 # conditional validators) or a force (full re-download).
@@ -723,15 +780,19 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                         opts = {}
                 cmd_force = force or bool(opts.get("force"))
                 cmd_refresh = refresh or bool(opts.get("refresh"))
+                mode = "force" if cmd_force else ("refresh" if cmd_refresh else "normal")
                 sync_client.send_heartbeat(host_url, api_key, {
                     "last_heartbeat": datetime.now(timezone.utc).isoformat(),
                     "is_running": 1,
                     "version": version,
+                    "current_command": f"run_worker ({mode})",
+                    "current_command_id": cmd_id,
                 })
                 worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version,
-                                                force=cmd_force, refresh=cmd_refresh)
+                                                force=cmd_force, refresh=cmd_refresh,
+                                                command_label=f"run_worker ({mode})",
+                                                command_id=cmd_id)
                 result = json.dumps(worker_stats)
-                mode = "force" if cmd_force else ("refresh" if cmd_refresh else "normal")
                 logs.append({"level": "info", "message": f"Worker cycle ({mode}) completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
 
             elif command == "recheck_keywords":
@@ -739,6 +800,8 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                     "last_heartbeat": datetime.now(timezone.utc).isoformat(),
                     "is_running": 1,
                     "version": version,
+                    "current_command": "recheck_keywords",
+                    "current_command_id": cmd_id,
                 })
                 max_age = cfg.getint("worker", "max_domain_age_days", fallback=30)
                 stats = recheck_all_domains(db, host_url, api_key, max_age)
@@ -755,9 +818,10 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 logs.append({"level": "info", "message": result})
 
             elif command == "update_worker":
-                result = "Manual update not implemented. Use git pull."
-                logs.append({"level": "warning", "message": result})
-                status = "failed"
+                result, status = perform_worker_update()
+                logs.append({"level": "info" if status == "completed" else "error", "message": result})
+                if status == "completed":
+                    restart_requested = True
 
             elif command == "stop_recheck":
                 result = "Stop recheck command acknowledged. If a recheck is running it will stop at the next batch boundary."
@@ -775,7 +839,13 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
             logs.append({"level": "error", "message": f"Command {cmd_id} failed: {error_msg}"})
             sync_client.mark_command_done(host_url, api_key, cmd_id, "failed", error_msg)
 
-    return logs, worker_stats, commands_processed
+        # Stop processing further commands so we can restart cleanly with the
+        # freshly pulled code (systemd `Restart=always` relaunches the service).
+        if restart_requested:
+            logs.append({"level": "info", "message": "Worker update applied; restarting to load the new code."})
+            break
+
+    return logs, worker_stats, commands_processed, restart_requested
 
 
 def get_version() -> str:
@@ -888,13 +958,14 @@ def main() -> int:
 
     if args.daemon:
         log.info(f"Daemon mode started. Polling every {args.interval}s. Press Ctrl+C to stop.")
+        restart_requested = False
         try:
             while True:
                 logs = []
                 worker_stats = None
                 try:
-                    cmd_logs, worker_stats, _ = handle_commands(db, cfg, host_url, api_key, version,
-                                                                force=args.force, refresh=args.refresh)
+                    cmd_logs, worker_stats, _, restart_requested = handle_commands(db, cfg, host_url, api_key, version,
+                                                                                   force=args.force, refresh=args.refresh)
                     logs.extend(cmd_logs)
 
                     heartbeat_payload = {
@@ -916,13 +987,17 @@ def main() -> int:
                 except Exception as e:
                     log.error(f"Daemon loop error: {e}")
 
+                if restart_requested:
+                    log.info("Worker updated on disk; exiting so systemd restarts it with the new code.")
+                    break
+
                 time.sleep(args.interval)
         except KeyboardInterrupt:
             log.info("Daemon mode stopped by user.")
     else:
         # One-shot mode: process commands first, then run worker cycle if nothing was processed
-        logs, worker_stats, commands_processed = handle_commands(db, cfg, host_url, api_key, version,
-                                                                 force=args.force, refresh=args.refresh)
+        logs, worker_stats, commands_processed, restart_requested = handle_commands(db, cfg, host_url, api_key, version,
+                                                                                    force=args.force, refresh=args.refresh)
 
         if not commands_processed and not worker_stats:
             # No commands pending → legacy cron behavior: run full cycle
@@ -943,6 +1018,9 @@ def main() -> int:
         sync_client.send_heartbeat(host_url, api_key, heartbeat_payload)
         if logs:
             sync_client.send_logs(host_url, api_key, logs)
+
+        if restart_requested:
+            log.info("Worker updated on disk; cron mode will use the new code on the next run.")
 
     release_worker_lock(lock_handle)
     db.close()

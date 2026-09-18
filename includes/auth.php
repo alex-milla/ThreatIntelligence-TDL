@@ -122,6 +122,31 @@ function isRegistrationOpen(PDO $db): bool {
     return getSetting($db, 'registration_open', '1') === '1';
 }
 
+function hasPendingCommand(PDO $db, string $command): bool {
+    $stmt = $db->prepare("SELECT COUNT(*) FROM commands WHERE command = ? AND status IN ('pending','running')");
+    $stmt->execute([$command]);
+    return (int)$stmt->fetchColumn() > 0;
+}
+
+/**
+ * Return ['app' => x, 'worker' => y] when the running worker reports a version
+ * different from the application VERSION file, or null if they match/unknown.
+ */
+function workerVersionMismatch(PDO $db): ?array {
+    $versionFile = dirname(__DIR__) . '/VERSION';
+    $app = is_file($versionFile) ? trim(file_get_contents($versionFile)) : '';
+    $worker = '';
+    try {
+        $worker = (string)$db->query("SELECT version FROM worker_status WHERE id = 1")->fetchColumn();
+    } catch (Throwable $e) {
+        $worker = '';
+    }
+    if ($app === '' || $worker === '' || $worker === 'unknown' || $worker === $app) {
+        return null;
+    }
+    return ['app' => $app, 'worker' => $worker];
+}
+
 function getMaxKeywords(PDO $db, int $userId): int {
     $stmt = $db->prepare("SELECT max_keywords FROM users WHERE id = ? LIMIT 1");
     $stmt->execute([$userId]);

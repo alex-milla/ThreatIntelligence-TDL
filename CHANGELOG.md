@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.42] - 2026-09-18
+
+### Worker visibility and lifecycle
+- **Version mismatch banner**: the Admin panel and TLDs page now warn when `worker_status.version` differs from the app `VERSION`, with a one-click **Update Worker** action. This prevents the "I updated but nothing happens" case where only the web app was updated.
+- **`update_worker` implemented**: the worker pulls `origin/main` (`git fetch` + `git reset --hard`, never touching `config.ini`, `data/`, `zones/`) and exits so systemd (`Restart=always`) relaunches it with the new code. Fails gracefully on non-git checkouts.
+- **Command lifecycle**: commands are marked `running` when execution starts and `completed`/`failed`/`cancelled` when it ends, with a new `finished_at` timestamp. Admin shows a **Recent Commands** table with status, start/finish and duration.
+- **Current command in `worker_status`**: `current_command` / `current_command_id` are reported and shown in the Live Worker card.
+- **Live per-TLD reporting**: on small selections (≤50 TLDs, e.g. a force/refresh of a few TLDs) the worker reports after every TLD, so the TLD table updates during the run instead of only at the end.
+- **Anti-duplicate queuing**: `run_worker`, `recheck_keywords` and `update_worker` are not queued again while an equivalent command is pending or running.
+
+### Install
+- **`worker/install.sh`**: installs and enables the `tdl-worker` systemd service (paths generated from the checkout location); `tdl-worker.service` sets `PYTHONUNBUFFERED=1` for live logs.
+
 ## [v1.3.41] - 2026-09-18
 
 ### Per-TLD download visibility (worker -> web)

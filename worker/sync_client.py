@@ -64,8 +64,8 @@ def get_commands(host_url: str, api_key: str) -> list[dict]:
     return []
 
 
-def mark_command_done(host_url: str, api_key: str, command_id: int, status: str = "completed", result: str = "") -> bool:
-    """Mark a command as completed on the hosting API. Raises on failure so callers can retry."""
+def update_command_status(host_url: str, api_key: str, command_id: int, status: str, result: str = "") -> bool:
+    """Update a command's lifecycle status on the hosting API. Retries on failure."""
     url = f"{host_url}/api/v1/commands.php"
     headers = {
         "X-API-Key": api_key,
@@ -83,6 +83,11 @@ def mark_command_done(host_url: str, api_key: str, command_id: int, status: str 
         if attempt < 3:
             time.sleep(2 ** attempt)
     raise RuntimeError(f"Failed to mark command {command_id} as {status}: HTTP {r.status_code} - {r.text}")
+
+
+def mark_command_done(host_url: str, api_key: str, command_id: int, status: str = "completed", result: str = "") -> bool:
+    """Mark a command as completed on the hosting API. Raises on failure so callers can retry."""
+    return update_command_status(host_url, api_key, command_id, status, result)
 
 
 def send_logs(host_url: str, api_key: str, logs: list[dict]) -> bool:

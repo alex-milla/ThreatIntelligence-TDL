@@ -7,6 +7,37 @@ $db = Database::get();
 $message = $_SESSION['flash_message'] ?? '';
 unset($_SESSION['flash_message']);
 
+function commandStatusBadge(string $status): string {
+    $map = [
+        'pending'   => ['#fff3cd', '#856404', 'Pending'],
+        'running'   => ['#cce5ff', '#004085', 'Running'],
+        'completed' => ['#d4edda', '#155724', 'Completed'],
+        'failed'    => ['#f8d7da', '#721c24', 'Failed'],
+        'cancelled' => ['#e2e3e5', '#383d41', 'Cancelled'],
+    ];
+    [$bg, $color, $label] = $map[$status] ?? ['#e2e3e5', '#383d41', htmlspecialchars($status)];
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.78rem;'
+        . 'background:' . $bg . ';color:' . $color . ';white-space:nowrap;">' . $label . '</span>';
+}
+
+function humanDuration(?string $from, ?string $to): string {
+    if (!$from || !$to) {
+        return '&mdash;';
+    }
+    $seconds = strtotime($to) - strtotime($from);
+    if ($seconds < 0) {
+        return '&mdash;';
+    }
+    if ($seconds < 60) {
+        return $seconds . 's';
+    }
+    $mins = floor($seconds / 60);
+    if ($mins < 60) {
+        return $mins . 'm ' . ($seconds % 60) . 's';
+    }
+    return floor($mins / 60) . 'h ' . ($mins % 60) . 'm';
+}
+
 // Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
@@ -30,15 +61,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     
     if ($action === 'run_worker') {
-        $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['run_worker', '']);
-        $_SESSION['flash_message'] = 'Worker execution queued. It will run on next poll.';
+        if (hasPendingCommand($db, 'run_worker')) {
+            $_SESSION['flash_message'] = 'A worker run is already queued. Wait for it to finish before queuing another.';
+        } else {
+            $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['run_worker', '']);
+            $_SESSION['flash_message'] = 'Worker execution queued. It will run on next poll.';
+        }
         header('Location: /admin/');
         exit;
     }
     
     if ($action === 'recheck_keywords') {
-        $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['recheck_keywords', '']);
-        $_SESSION['flash_message'] = 'Keyword recheck queued. The worker will scan all cached domains against current keywords.';
+        if (hasPendingCommand($db, 'recheck_keywords')) {
+            $_SESSION['flash_message'] = 'A keyword recheck is already queued.';
+        } else {
+            $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['recheck_keywords', '']);
+            $_SESSION['flash_message'] = 'Keyword recheck queued. The worker will scan all cached domains against current keywords.';
+        }
+        header('Location: /admin/');
+        exit;
+    }
+
+    if ($action === 'update_worker') {
+        if (hasPendingCommand($db, 'update_worker')) {
+            $_SESSION['flash_message'] = 'A worker update is already queued.';
+        } else {
+            $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['update_worker', '']);
+            $_SESSION['flash_message'] = 'Worker update queued. It will pull the latest code and restart itself.';
+        }
         header('Location: /admin/');
         exit;
     }
@@ -85,6 +135,8 @@ $workerStatus = $db->query("SELECT * FROM worker_status WHERE id = 1")->fetch();
 $workerLogs = $db->query("SELECT * FROM worker_logs ORDER BY created_at DESC LIMIT 20")->fetchAll();
 $pendingCommands = $db->query("SELECT COUNT(*) FROM commands WHERE status = 'pending'")->fetchColumn();
 $pendingCommandsList = $db->query("SELECT id, command, payload, created_at FROM commands WHERE status = 'pending' ORDER BY created_at ASC")->fetchAll();
+$recentCommands = $db->query("SELECT id, command, payload, status, result, created_at, executed_at, finished_at FROM commands ORDER BY id DESC LIMIT 20")->fetchAll();
+$versionMismatch = workerVersionMismatch($db);
 
 $pageTitle = 'Admin Panel';
 require __DIR__ . '/../templates/header.php';
@@ -92,6 +144,20 @@ require __DIR__ . '/../templates/header.php';
 
 <?php if ($message): ?>
 <div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
+<?php endif; ?>
+
+<?php if ($versionMismatch): ?>
+<div class="alert alert-error">
+    <strong>&#9888; Worker out of date.</strong>
+    The web app is <strong>v<?= htmlspecialchars($versionMismatch['app']) ?></strong> but the worker is running
+    <strong>v<?= htmlspecialchars($versionMismatch['worker']) ?></strong>.
+    Queue an update below (or run <code>bash worker/update.sh --restart</code> on the worker host).
+    <form method="POST" style="display: inline; margin-left: 8px;">
+        <?php csrfField(); ?>
+        <input type="hidden" name="action" value="update_worker">
+        <button type="submit" class="btn btn-small">Update Worker Now</button>
+    </form>
+</div>
 <?php endif; ?>
 
 <div class="card">
@@ -146,6 +212,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
         $lwDone = (int)($workerStatus['tlds_processed'] ?? 0);
         $lwPct = $lwTotal > 0 ? round($lwDone / $lwTotal * 100, 1) : 0;
         ?>
+        <p><strong>Command:</strong> <span id="live-command"><?= htmlspecialchars($workerStatus['current_command'] ?? '—') ?></span></p>
         <p><strong>Action:</strong> <span id="live-action"><?= htmlspecialchars($workerStatus['current_action'] ?? '—') ?></span></p>
         <p><strong>Current TLD:</strong> <span id="live-tld"><?= htmlspecialchars($workerStatus['current_tld'] ?? '—') ?></span></p>
         <div style="background: #f0f0f0; border-radius: 4px; height: 24px; margin: 10px 0; overflow: hidden;">
@@ -200,9 +267,40 @@ if (!empty($workerStatus['last_heartbeat'])) {
             <input type="hidden" name="action" value="recheck_keywords">
             <button type="submit" class="btn btn-danger">Recheck Keywords</button>
         </form>
+        <form method="POST" style="display: inline;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="update_worker">
+            <button type="submit" class="btn" onclick="return confirm('Update the worker on its host (git pull + restart)? The web app is not affected.')">Update Worker</button>
+        </form>
         <a href="/admin/cleanup.php" class="btn btn-danger">Cleanup False Matches</a>
-        <a href="/admin/update.php" class="btn">Check for Updates</a>
+        <a href="/admin/update.php" class="btn">Update Web App</a>
     </div>
+</div>
+
+<div class="card">
+    <h2>Recent Commands</h2>
+    <?php if (empty($recentCommands)): ?>
+        <p style="color:#666;">No commands have been queued yet.</p>
+    <?php else: ?>
+        <table>
+            <thead>
+                <tr><th>ID</th><th>Command</th><th>Status</th><th>Queued</th><th>Started</th><th>Duration</th><th>Result</th></tr>
+            </thead>
+            <tbody>
+                <?php foreach ($recentCommands as $cmd): ?>
+                <tr>
+                    <td><?= (int)$cmd['id'] ?></td>
+                    <td><?= htmlspecialchars($cmd['command']) ?></td>
+                    <td><?= commandStatusBadge((string)$cmd['status']) ?></td>
+                    <td><?= htmlspecialchars($cmd['created_at'] ?? '-') ?></td>
+                    <td><?= htmlspecialchars($cmd['executed_at'] ?? '-') ?></td>
+                    <td><?= humanDuration($cmd['executed_at'], $cmd['finished_at']) ?></td>
+                    <td style="font-size:0.82rem; max-width:340px; word-break:break-word;"><?= htmlspecialchars(mb_substr((string)($cmd['result'] ?? ''), 0, 300)) ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php endif; ?>
 </div>
 
 <div class="card">
@@ -430,6 +528,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
                 const domains = parseInt(s.domains_processed || 0);
                 const pct = total > 0 ? Math.round(done / total * 100) : 0;
 
+                document.getElementById('live-command').textContent = s.current_command || '—';
                 document.getElementById('live-action').textContent = s.current_action || '—';
                 document.getElementById('live-tld').textContent = s.current_tld || '—';
                 document.getElementById('live-bar').style.width = pct + '%';

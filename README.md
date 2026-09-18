@@ -83,13 +83,19 @@ Then schedule it via cron (daily at 06:00 UTC):
 
 ### Updating the worker
 
+> **The web updater (`/admin/update.php`) and the worker are separate.** Updating the web app does **not** update the worker running on its own host (LXC/VPS). The Admin panel and the TLDs page show a warning when the worker reports a version different from the app.
+
+From the panel: **Admin → Update Worker** queues an `update_worker` command. The worker does `git fetch` + `git reset --hard origin/main` (untracked `config.ini`, `data/`, `zones/` are never touched) and exits so systemd (`Restart=always`) relaunches it with the new code. This requires a git checkout and the `tdl-worker` service.
+
+From the shell:
+
 ```bash
 cd /path/to/ThreatIntelligence-TDL/worker
 bash update.sh            # git pull --ff-only + pip install -r requirements.txt
 bash update.sh --restart  # also restart the tdl-worker systemd service (daemon mode)
 ```
 
-Untracked files (`config.ini`, `data/`, `zones/`) are never touched. In cron mode the next run picks up the new code automatically; in daemon mode use `--restart`.
+In cron mode the next run picks up the new code automatically; in daemon mode use `--restart`.
 
 ## How It Works
 
@@ -136,7 +142,9 @@ python3 scheduler.py --once --refresh   # bypass guard, keep conditional downloa
 
 ## Updates
 
-The admin panel includes a **System Update** page that checks GitHub releases and updates application files automatically. Your SQLite database is never overwritten during updates.
+The admin panel includes a **System Update** page (`/admin/update.php`) that checks GitHub releases and updates the **web application** files automatically. Your SQLite database is never overwritten during updates.
+
+The **worker** is updated separately: use **Admin → Update Worker** (queues the `update_worker` command, requires a git checkout + the `tdl-worker` systemd service) or run `worker/update.sh --restart` on the worker host. The panel shows a warning if the worker version does not match the app version.
 
 For private repositories, set a GitHub personal access token in `admin/update.php` or via the `GITHUB_TOKEN` environment variable.
 

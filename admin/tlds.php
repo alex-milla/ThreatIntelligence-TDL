@@ -52,6 +52,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $db->commit();
 
     if ($action === 'run_worker_refresh' || $action === 'run_worker_force') {
+        if (hasPendingCommand($db, 'run_worker')) {
+            $_SESSION['flash_message'] = 'A worker run is already queued or running. Wait for it to finish.';
+            header('Location: /admin/tlds.php');
+            exit;
+        }
         $refresh = $action === 'run_worker_refresh';
         $payload = json_encode($refresh ? ['refresh' => true] : ['force' => true]);
         $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")
@@ -74,6 +79,7 @@ $tlds = $db->query(
 )->fetchAll();
 $workerStatus = $db->query("SELECT is_running FROM worker_status WHERE id = 1")->fetch();
 $workerRunning = !empty($workerStatus['is_running']);
+$versionMismatch = workerVersionMismatch($db);
 
 $summary = ['downloaded' => 0, 'not_modified' => 0, 'skipped_today' => 0, 'failed' => 0];
 foreach ($tlds as $t) {
@@ -94,6 +100,15 @@ require __DIR__ . '/../templates/header.php';
 
 <?php if ($message): ?>
 <div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
+<?php endif; ?>
+
+<?php if ($versionMismatch): ?>
+<div class="alert alert-error">
+    <strong>&#9888; Worker out of date.</strong>
+    The web app is <strong>v<?= htmlspecialchars($versionMismatch['app']) ?></strong> but the worker is running
+    <strong>v<?= htmlspecialchars($versionMismatch['worker']) ?></strong>, so new commands (force/refresh) may be ignored.
+    Update it from <a href="/admin/">Admin &rarr; Update Worker</a> or run <code>bash worker/update.sh --restart</code> on the worker host.
+</div>
 <?php endif; ?>
 
 <style>

@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root/ThreatIntelligence-TDL/worker
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /root/ThreatIntelligence-TDL/worker/scheduler.py --daemon --interval 60
 Restart=always
 RestartSec=10

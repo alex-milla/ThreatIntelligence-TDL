@@ -34,7 +34,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         jsonResponse(['success' => false, 'error' => 'Missing command_id'], 400);
     }
 
-    $stmt = $db->prepare("UPDATE commands SET status = ?, result = ?, executed_at = datetime('now') WHERE id = ?");
+    $isTerminal = in_array($status, ['completed', 'failed', 'cancelled'], true);
+    if ($isTerminal) {
+        // Keep the original start time; record when it finished separately.
+        $stmt = $db->prepare(
+            "UPDATE commands SET status = ?, result = ?, "
+            . "executed_at = COALESCE(executed_at, datetime('now')), finished_at = datetime('now') WHERE id = ?"
+        );
+    } else {
+        // 'running' (or any non-terminal state) marks the start time.
+        $stmt = $db->prepare(
+            "UPDATE commands SET status = ?, result = ?, executed_at = datetime('now') WHERE id = ?"
+        );
+    }
     $stmt->execute([$status, $result, $commandId]);
     jsonResponse(['success' => true]);
 }
