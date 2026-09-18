@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.44] - 2026-09-18
+
+### Critical parser fix: lowercase rrtypes
+- CZDS zone files commonly use **lowercase rrtypes** (`in ns`). The byte pre-filter added in v1.3.39 (`b" NS"` / `b"\tNS"`) was case-sensitive and silently dropped almost every NS line, so **no domains were parsed since v1.3.39**.
+- `parser.py` now accepts `NS`/`ns`/mixed case in the pre-filter. Added regression tests with lowercase and mixed-case rrtypes.
+- **`parse_error` safety net**: if a non-trivial zone (> 1 MB) yields 0 domains, the TLD is **not** marked as processed, the zone is kept and a retry is queued, and the UI shows `Parse error` instead of a false `Downloaded`.
+
+### Actions after upgrading
+- Run **Force Re-download** (or `--force`) for the affected TLDs: the daily guard already marked them as done for today. `com` (~160 M domains) will use the compact hash cache; `sbs`/`online` use the text cache.
+
 ## [v1.3.43] - 2026-09-18
 
 ### Robust handling of very large zone files

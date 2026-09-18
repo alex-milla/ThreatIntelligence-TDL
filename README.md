@@ -106,6 +106,8 @@ In cron mode the next run picks up the new code automatically; in daemon mode us
 5. New domains are matched against keywords (case-insensitive substring).
 6. Matches are sent to the web UI, which creates notifications for each affected user.
 
+> **Zone file format:** CZDS zone files use lowercase rrtypes (`example.com. 3600 in ns ns1.example.net.`). The parser is case-insensitive for the record type, and a non-trivial zone that yields zero domains is flagged as `parse_error` (not marked as processed) so parser regressions are visible.
+
 ## Minimizing load on the ICANN CZDS API
 
 The worker is designed to query CZDS as little as possible:

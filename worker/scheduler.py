@@ -378,6 +378,17 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
 
     print(f"[+] {tld}: {total:,} total, {new_count:,} new.", flush=True)
 
+    # Safety net: a non-trivial zone that yields no domains means the parser is
+    # broken (e.g. the v1.3.39 case-sensitive pre-filter). Do not mark the TLD as
+    # done, do not delete the zone and flag it for retry so it is visible.
+    zone_bytes = content_length or _zone_info(filepath)[0]
+    if total == 0 and zone_bytes > (1 << 20):
+        msg = f"parse_error: 0 domains parsed from a {zone_bytes / (1 << 20):.1f} MB zone"
+        attempts, next_retry = enqueue_tld_retry(db, tld, msg, retry_delay)
+        print(f"[!] .{tld}: {msg}", flush=True)
+        return [], _tld_report(tld, "parse_error", filepath=filepath, error=msg,
+                               attempts=attempts, next_retry=next_retry)
+
     cursor.execute(
         "INSERT INTO zone_runs (tld, run_date, records_total, records_new, status) VALUES (?, ?, ?, ?, ?)",
         (tld, now, total, new_count, "ok")

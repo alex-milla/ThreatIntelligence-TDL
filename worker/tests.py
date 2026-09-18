@@ -69,6 +69,40 @@ def test_parser_whitespace_continuation() -> None:
         print("[PASS] test_parser_whitespace_continuation")
 
 
+def test_parser_lowercase_rrtype() -> None:
+    # CZDS zone files use lowercase rrtypes ("in ns"). Regression test for the
+    # case-sensitive byte pre-filter that dropped every NS line.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "test.zone.gz")
+        create_test_zone(path, [
+            "$ORIGIN sbs.",
+            "sbs.\t900\tin\tsoa\tns0.example.net. hostmaster.example.net. 1 900 1800 604800 3600",
+            "0-1-4-9-8-0-7.sbs.\t3600\tin\tns\tns1.dyna-ns.net.",
+            "0-1-4-9-8-0-7.sbs.\t3600\tin\tns\tns2.dyna-ns.net.",
+            "example.sbs.\t3600\tin\tns\tns1.example.com.",
+        ])
+        domains = list(parser.parse_zone_gz(path, "sbs"))
+        assert "0-1-4-9-8-0-7.sbs" in domains, f"lowercase ns SLD missing: {domains}"
+        assert "example.sbs" in domains, f"example.sbs missing: {domains}"
+        assert domains.count("0-1-4-9-8-0-7.sbs") == 1, f"duplicated: {domains}"
+        print("[PASS] test_parser_lowercase_rrtype")
+
+
+def test_parser_mixed_case_rrtype() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "test.zone.gz")
+        create_test_zone(path, [
+            "$ORIGIN xyz.",
+            "a.xyz.\t3600\tIN\tNS\tns1.example.com.",
+            "b.xyz.\t3600\tin\tns\tns1.example.com.",
+            "c.xyz.\t3600\tIn\tNs\tns1.example.com.",
+        ])
+        domains = list(parser.parse_zone_gz(path, "xyz"))
+        for expected in ("a.xyz", "b.xyz", "c.xyz"):
+            assert expected in domains, f"{expected} missing: {domains}"
+        print("[PASS] test_parser_mixed_case_rrtype")
+
+
 def test_matcher_basic() -> None:
     keywords = [
         {"id": 1, "keyword": "santander"},
@@ -103,6 +137,8 @@ if __name__ == "__main__":
     test_parser_basic()
     test_parser_origin_relative()
     test_parser_whitespace_continuation()
+    test_parser_lowercase_rrtype()
+    test_parser_mixed_case_rrtype()
     test_matcher_basic()
     test_matcher_case_insensitive()
     print("\nAll tests passed.")

@@ -42,7 +42,11 @@ def parse_zone_gz(filepath: str, tld: str):
                 continue
 
             # Cheap byte-level pre-filter: skip lines with no NS-type token.
-            if b" NS" not in raw and b"\tNS" not in raw:
+            # CZDS zone files commonly use lowercase rrtypes ("in ns"), so the
+            # check must be case-insensitive; the token loop below normalises
+            # the type with .upper().
+            if (b" NS" not in raw and b"\tNS" not in raw
+                    and b" ns" not in raw and b"\tns" not in raw):
                 continue
 
             line = raw.decode("utf-8", "ignore").rstrip("\n\r")

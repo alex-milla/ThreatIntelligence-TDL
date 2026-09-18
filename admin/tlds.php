@@ -18,6 +18,7 @@ function tldStatusBadge(?string $status): string {
         'skipped_large' => ['#e2e3e5', '#383d41', 'Skipped (large)'],
         'no_space'      => ['#f8d7da', '#721c24', 'No space'],
         'retrying'      => ['#fff3cd', '#856404', 'Retrying'],
+        'parse_error'   => ['#f8d7da', '#721c24', 'Parse error'],
     ];
     if ($status === null || $status === '' || !isset($map[$status])) {
         return '<span style="color:#999;">&mdash;</span>';
@@ -276,7 +277,8 @@ updateTldCount();
         incomplete:    ['#ffe5d0', '#8a4b08', 'Incomplete'],
         skipped_large: ['#e2e3e5', '#383d41', 'Skipped (large)'],
         no_space:      ['#f8d7da', '#721c24', 'No space'],
-        retrying:      ['#fff3cd', '#856404', 'Retrying']
+        retrying:      ['#fff3cd', '#856404', 'Retrying'],
+        parse_error:   ['#f8d7da', '#721c24', 'Parse error']
     };
 
     function badge(status) {
