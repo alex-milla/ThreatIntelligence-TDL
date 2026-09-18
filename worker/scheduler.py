@@ -25,6 +25,7 @@ import logger
 import parser
 import matcher
 import sync_client
+import whois
 
 log = logging.getLogger("tdl_worker")
 
@@ -1080,6 +1081,40 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 if status == "completed":
                     restart_requested = True
 
+            elif command == "whois_lookup":
+                opts = {}
+                if payload:
+                    try:
+                        opts = json.loads(payload) if isinstance(payload, str) else {}
+                    except (ValueError, TypeError):
+                        opts = {}
+                domains = opts.get("domains")
+                if not domains and opts.get("domain"):
+                    domains = [opts["domain"]]
+                if not isinstance(domains, list):
+                    domains = []
+                domains = [str(d).lower().strip() for d in domains if d][:200]
+                data_dir = cfg.get("worker", "data_dir", fallback="./data")
+                if cfg.has_section("whois"):
+                    timeout = cfg.getint("whois", "timeout", fallback=20)
+                    rdap_only = cfg.getboolean("whois", "rdap_only", fallback=False)
+                    whois_fallback = cfg.getboolean("whois", "whois_fallback", fallback=True)
+                    rate_delay = cfg.getfloat("whois", "rate_delay", fallback=1.0)
+                else:
+                    timeout, rdap_only, whois_fallback, rate_delay = 20, False, True, 1.0
+                entries = []
+                for d in domains:
+                    entries.append(whois.lookup_domain(d, data_dir, timeout=timeout,
+                                                       rdap_only=rdap_only,
+                                                       whois_fallback=whois_fallback))
+                    if rate_delay > 0:
+                        time.sleep(rate_delay)
+                ok = sync_client.send_whois_results(host_url, api_key, entries)
+                result = json.dumps({"requested": len(domains), "looked_up": len(entries), "sent": ok})
+                logs.append({"level": "info", "message": f"WHOIS lookup: {len(entries)} domain(s), sent={ok}"})
+                if not ok:
+                    status = "failed"
+
             elif command == "stop_recheck":
                 result = "Stop recheck command acknowledged. If a recheck is running it will stop at the next batch boundary."
                 logs.append({"level": "info", "message": result})
@@ -1175,7 +1210,8 @@ def main() -> int:
 
     parser_args = argparse.ArgumentParser(description="ThreatIntelligence-TDL Worker")
     parser_args.add_argument("--daemon", action="store_true", help="Run in daemon mode with command polling")
-    parser_args.add_argument("--interval", type=int, default=60, help="Polling interval in seconds (daemon mode)")
+    parser_args.add_argument("--interval", type=int, default=None,
+                             help="Polling interval in seconds (daemon mode); overrides [worker] poll_interval")
     parser_args.add_argument("--once", action="store_true", help="Run one worker cycle and exit (legacy)")
     parser_args.add_argument("--status", action="store_true", help="Show last run status and exit")
     parser_args.add_argument("--force", action="store_true",
@@ -1196,6 +1232,7 @@ def main() -> int:
     host_url = cfg.get("hosting", "url").rstrip("/")
     api_key = cfg.get("hosting", "api_key")
     data_dir = cfg.get("worker", "data_dir", fallback="./data")
+    poll_interval = args.interval if args.interval is not None else cfg.getint("worker", "poll_interval", fallback=20)
     version = get_version()
 
     # Setup logging with 90-day rotation
@@ -1241,7 +1278,7 @@ def main() -> int:
         log.debug(f"Could not recover running commands: {e}")
 
     if args.daemon:
-        log.info(f"Daemon mode started. Polling every {args.interval}s. Press Ctrl+C to stop.")
+        log.info(f"Daemon mode started. Polling every {poll_interval}s. Press Ctrl+C to stop.")
         restart_requested = False
         try:
             while True:
@@ -1275,7 +1312,7 @@ def main() -> int:
                     log.info("Worker updated on disk; exiting so systemd restarts it with the new code.")
                     break
 
-                time.sleep(args.interval)
+                time.sleep(poll_interval)
         except KeyboardInterrupt:
             log.info("Daemon mode stopped by user.")
     else:

@@ -7,7 +7,7 @@ Type=simple
 User=root
 WorkingDirectory=/root/ThreatIntelligence-TDL/worker
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /root/ThreatIntelligence-TDL/worker/scheduler.py --daemon --interval 60
+ExecStart=/usr/bin/python3 /root/ThreatIntelligence-TDL/worker/scheduler.py --daemon
 Restart=always
 RestartSec=10
 StandardOutput=journal

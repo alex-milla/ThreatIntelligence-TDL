@@ -40,7 +40,7 @@ if [ -f "${SCRIPT_DIR}/tdl-worker.service" ] && command -v systemctl >/dev/null 
     if [ "$(id -u)" -eq 0 ]; then
         sed \
             -e "s|WorkingDirectory=.*|WorkingDirectory=${SCRIPT_DIR}|" \
-            -e "s|ExecStart=.*|ExecStart=${PYTHON_BIN} ${SCRIPT_DIR}/scheduler.py --daemon --interval 60|" \
+            -e "s|ExecStart=.*|ExecStart=${PYTHON_BIN} ${SCRIPT_DIR}/scheduler.py --daemon|" \
             "${SCRIPT_DIR}/tdl-worker.service" > "/etc/systemd/system/${SERVICE_NAME}.service"
         systemctl daemon-reload
         systemctl enable "${SERVICE_NAME}" >/dev/null 2>&1 || true

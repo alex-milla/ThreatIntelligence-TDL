@@ -168,6 +168,15 @@ commit_every_batches = 10   ; commit + WAL checkpoint every 500k domains
 - **Dashboard**: View recent matches and statistics.
 - **Admin Panel**: Manage users, keyword limits, API keys, sync logs, and system updates.
 
+## WHOIS / RDAP enrichment (on demand)
+
+From any domain modal you can click **Fetch WHOIS (worker)**. The web queues a `whois_lookup` command; the **worker** performs the RDAP query (with a WHOIS port 43 fallback) and posts the result back. The modal shows registrar, creation/expiration dates and nameservers. The Notifications page also has a batch **Fetch WHOIS (worker)** button for the selected/visible domains.
+
+- Registration data is cached in `domain_whois`, so repeat views are instant.
+- RDAP/WHOIS is **not DNS**: nameservers come from the registration response, not a resolver. No local DNS server is involved.
+- Lookups are spaced by `[whois] rate_delay` (config) to be gentle with registries.
+- Command latency depends on `[worker] poll_interval` (default 20 s).
+
 ## Updates
 
 The admin panel includes a **System Update** page (`/admin/update.php`) that checks GitHub releases and updates the **web application** files automatically. Your SQLite database is never overwritten during updates.

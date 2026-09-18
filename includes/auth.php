@@ -54,7 +54,7 @@ function validateCsrf(): void {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         return;
     }
-    $sent   = $_POST['csrf_token'] ?? '';
+    $sent   = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
     $stored = $_SESSION['csrf_token'] ?? '';
     if (!hash_equals($stored, $sent)) {
         http_response_code(403);

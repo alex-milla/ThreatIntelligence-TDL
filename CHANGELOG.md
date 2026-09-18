@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.46] - 2026-09-18
+
+### On-demand WHOIS/RDAP lookups executed by the worker
+- **Worker-side lookup** (`worker/whois.py`): RDAP via the IANA bootstrap (cached 7 days) with a **WHOIS port 43 fallback** for TLDs without RDAP. Extracts registrar, creation/expiration dates and nameservers.
+- **New command `whois_lookup`**: the web queues it (single domain or a batch) and the worker performs the lookup and posts results.
+- **`api/v1/whois_results.php`**: upserts `domain_whois` (extended with `name_servers`, `source`, `status`, `updated_at`).
+- **Web UI**: domain modal now shows cached data instantly and a **Fetch WHOIS (worker)** button that queues the lookup and polls for the result. New endpoints `ajax_whois_cache.php`, `ajax_whois_request.php`, `ajax_whois_result.php`; CSRF via `X-CSRF-Token` (meta tag added to the layout). Shared modal logic in `assets/whois.js`.
+- **Batch lookups**: Notifications page has a **Fetch WHOIS (worker)** button for the selected (or all visible) domains.
+- **Removed the blocking synchronous prefetch** in `notifications.php` (it queried RDAP one-by-one with a 3 s timeout on every page load). The list now renders immediately and is enriched on demand.
+- **Faster command latency**: daemon poll interval is configurable (`[worker] poll_interval`, default 20 s); `tdl-worker.service`/`install.sh` no longer force 60 s.
+
+### Notes
+- WHOIS/RDAP is not DNS; no local resolver is involved. Nameservers come from the registration data.
+- Registry rate limits: lookups are spaced by `[whois] rate_delay` and capped per request.
+
 ## [v1.3.45] - 2026-09-18
 
 ### Safe parsing of huge zones (WAL / disk)

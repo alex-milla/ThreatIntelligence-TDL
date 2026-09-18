@@ -90,6 +90,22 @@ def mark_command_done(host_url: str, api_key: str, command_id: int, status: str 
     return update_command_status(host_url, api_key, command_id, status, result)
 
 
+def send_whois_results(host_url: str, api_key: str, entries: list[dict]) -> bool:
+    """Send domain registration (whois/RDAP) results to the hosting API."""
+    if not entries:
+        return True
+    url = f"{host_url}/api/v1/whois_results.php"
+    headers = {
+        "X-API-Key": api_key,
+        "Content-Type": "application/json",
+    }
+    r = requests.post(url, headers=headers, json={"entries": entries}, timeout=60)
+    if r.status_code == 200:
+        return True
+    print(f"[-] Failed to send whois results: HTTP {r.status_code} - {r.text}")
+    return False
+
+
 def get_running_commands(host_url: str, api_key: str) -> list[dict]:
     """Return commands left in 'running' state (e.g. after a worker restart)."""
     url = f"{host_url}/api/v1/commands.php?recover=1"

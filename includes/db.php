@@ -256,5 +256,19 @@ class Database {
         try {
             $db->exec("ALTER TABLE tlds ADD COLUMN next_retry TEXT");
         } catch (PDOException $e) { }
+
+        // Safe migration: extend domain_whois with nameservers + lookup metadata
+        try {
+            $db->exec("ALTER TABLE domain_whois ADD COLUMN name_servers TEXT");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE domain_whois ADD COLUMN source TEXT");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE domain_whois ADD COLUMN status TEXT");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE domain_whois ADD COLUMN updated_at TEXT");
+        } catch (PDOException $e) { }
     }
 }

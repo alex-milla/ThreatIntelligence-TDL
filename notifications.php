@@ -183,20 +183,8 @@ if (!empty($notifications)) {
     foreach ($whoisStmt->fetchAll() as $w) {
         $domainWhois[$w['domain']] = $w;
     }
-
-    // Fetch missing whois entries with short timeout (bulk context)
-    $missingDomains = array_filter($domainsOnPage, function($d) use ($domainWhois) {
-        return !isset($domainWhois[$d]);
-    });
-    foreach ($missingDomains as $md) {
-        $whoisData = getDomainWhois($md, 3);
-        $creationDate = $whoisData['creation_date'] ?? null;
-        $expirationDate = $whoisData['expiration_date'] ?? null;
-        $registrar = $whoisData['registrar'] ?? null;
-        $db->prepare("INSERT OR REPLACE INTO domain_whois (domain, creation_date, expiration_date, registrar, cached_at) VALUES (?, ?, ?, ?, datetime('now'))")
-            ->execute([$md, $creationDate, $expirationDate, $registrar]);
-        $domainWhois[$md] = ['domain' => $md, 'creation_date' => $creationDate];
-    }
+    // Missing entries are left empty; WHOIS is filled on demand by the worker
+    // (no blocking network calls while rendering the page).
 }
 
 // Helper to build pagination URLs preserving filters
@@ -277,6 +265,7 @@ require __DIR__ . '/templates/header.php';
                     <input type="checkbox" id="select-all"> <strong>Select all visible</strong>
                 </label>
                 <button type="submit" class="btn btn-small btn-danger" onclick="return confirm('Delete selected notifications?')">Delete Selected</button>
+                <button type="button" class="btn btn-small" onclick="fetchVisibleWhois()">Fetch WHOIS (worker)</button>
                 <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all'): ?>
                 <button type="submit" formaction="/notifications.php" formmethod="POST" class="btn btn-small btn-danger" name="action" value="delete_all_matching" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')">Delete All Matching (<?= $total ?>)</button>
                 <?php endif; ?>
@@ -322,7 +311,7 @@ require __DIR__ . '/templates/header.php';
                     }
                     $creationDisplay = $creationDate ? date('Y-m-d', strtotime($creationDate)) : '—';
                 ?>
-                <tr class="<?= $n['is_read'] ? '' : 'unread' ?>">
+                <tr class="<?= $n['is_read'] ? '' : 'unread' ?>" data-domain="<?= htmlspecialchars($n['domain']) ?>">
                     <td><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form"></td>
                     <td><?= $n['is_read'] ? 'Read' : '<strong>Unread</strong>' ?></td>
                     <td><a href="javascript:void(0)" onclick="openDomainModal('<?= htmlspecialchars(addslashes($n['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($n['domain']) ?></a><?= $tagBadge ?></td>
@@ -411,7 +400,7 @@ require __DIR__ . '/templates/header.php';
     <div style="background: white; padding: 25px; border-radius: 8px; max-width: 520px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto;">
         <h3 id="modal-domain-title" style="margin-top: 0; word-break: break-all;"></h3>
         <div id="modal-whois-box" style="margin: 15px 0;">
-            <button type="button" id="modal-whois-btn" class="btn" style="width: 100%;" onclick="fetchWhois()">🔍 Consultar Whois (RDAP)</button>
+            <button type="button" id="modal-whois-btn" class="btn" style="width: 100%;" onclick="fetchWhois()">🔍 Fetch WHOIS (worker)</button>
             <div id="modal-whois-loading" style="display: none; color: #666; font-size: 0.9rem; margin-top: 10px;">Consultando whois...</div>
             <div id="modal-whois-content" style="display: none; margin-top: 10px;">
                 <table style="width: 100%; font-size: 0.9rem;">
@@ -452,10 +441,10 @@ function openDomainModal(domain) {
     _modalDomain = domain;
     document.getElementById('modal-domain-title').textContent = domain;
     document.getElementById('modal-vt').href = 'https://www.virustotal.com/gui/domain/' + encodeURIComponent(domain);
-    document.getElementById('modal-whois-btn').style.display = 'block';
     document.getElementById('modal-whois-loading').style.display = 'none';
     document.getElementById('modal-whois-content').style.display = 'none';
     document.getElementById('modal-whois-error').style.display = 'none';
+    loadCachedWhois();
     document.getElementById('modal-tag-box').style.display = 'block';
     document.getElementById('modal-tag-current').textContent = 'Loading...';
     document.getElementById('modal-watchlist-box').style.display = 'block';
@@ -543,34 +532,31 @@ function htmlspecialchars(str) {
     div.textContent = str;
     return div.innerHTML;
 }
-function fetchWhois() {
-    if (!_modalDomain) return;
-    document.getElementById('modal-whois-btn').style.display = 'none';
-    document.getElementById('modal-whois-loading').style.display = 'block';
-    document.getElementById('modal-whois-error').style.display = 'none';
-
-    fetch('/ajax_whois.php?domain=' + encodeURIComponent(_modalDomain))
-        .then(r => r.json())
-        .then(data => {
-            document.getElementById('modal-whois-loading').style.display = 'none';
-            if (data.success) {
-                document.getElementById('modal-creation').textContent = data.creationDate ? new Date(data.creationDate).toLocaleString() : 'N/A';
-                document.getElementById('modal-expiration').textContent = data.expirationDate ? new Date(data.expirationDate).toLocaleString() : 'N/A';
-                document.getElementById('modal-registrar').textContent = data.registrar || 'N/A';
-                document.getElementById('modal-ns').innerHTML = data.nameServers.length ? data.nameServers.map(ns => '<div>' + ns + '</div>').join('') : 'N/A';
-                document.getElementById('modal-whois-content').style.display = 'block';
-            } else {
-                document.getElementById('modal-whois-error').textContent = 'Whois unavailable: ' + (data.error || 'Unknown error');
-                document.getElementById('modal-whois-error').style.display = 'block';
-                document.getElementById('modal-whois-btn').style.display = 'block';
-            }
-        })
-        .catch(() => {
-            document.getElementById('modal-whois-loading').style.display = 'none';
-            document.getElementById('modal-whois-error').textContent = 'Whois query failed. Try again later.';
-            document.getElementById('modal-whois-error').style.display = 'block';
-            document.getElementById('modal-whois-btn').style.display = 'block';
-        });
+function fetchVisibleWhois() {
+    const domains = [];
+    document.querySelectorAll('tr[data-domain]').forEach(tr => {
+        const cb = tr.querySelector('.row-check');
+        if (cb && cb.checked) domains.push(tr.dataset.domain);
+    });
+    if (!domains.length) {
+        document.querySelectorAll('tr[data-domain]').forEach(tr => domains.push(tr.dataset.domain));
+    }
+    if (!domains.length) { alert('No domains to fetch.'); return; }
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    fetch('/ajax_whois_request.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': meta ? meta.content : ''},
+        body: JSON.stringify({domains: domains})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert('Queued ' + (data.queued || 0) + ' domain(s) for the worker. Reload in a moment to see results.');
+        } else {
+            alert(data.error || 'Failed to queue WHOIS lookup');
+        }
+    })
+    .catch(() => alert('Failed to queue WHOIS lookup'));
 }
 document.getElementById('domain-modal').addEventListener('click', function(e) {
     if (e.target === this) this.style.display = 'none';

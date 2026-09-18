@@ -7,6 +7,7 @@ sendSecurityHeaders();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(csrfToken()) ?>">
     <title><?= htmlspecialchars($pageTitle ?? 'ThreatIntelligence-TDL') ?></title>
     <style>
         * { box-sizing: border-box; }
@@ -52,6 +53,7 @@ sendSecurityHeaders();
         .unread { background: #fff3cd; }
         .badge-new { display: inline-block; background: #e74c3c; color: #fff; font-size: 0.7rem; padding: 1px 5px; border-radius: 3px; margin-left: 4px; white-space: nowrap; }
     </style>
+    <script src="/assets/whois.js"></script>
 </head>
 <body>
     <nav class="navbar">

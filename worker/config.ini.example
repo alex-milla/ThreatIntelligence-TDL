@@ -10,6 +10,8 @@ api_key = TU_API_KEY
 download_dir = ./zones
 data_dir = ./data
 batch_size = 10000
+; Seconds between command polls in daemon mode (lower = snappier web actions).
+poll_interval = 20
 max_retries = 5
 ; Delay (seconds) before an enqueued sync/TLD retry (grows with each attempt).
 retry_delay_seconds = 300
@@ -37,3 +39,12 @@ commit_every_batches = 10
 [tlds]
 ; Comma-separated list of TLDs to process. Leave empty to process all approved TLDs.
 whitelist = zip, wine
+
+[whois]
+; On-demand domain registration lookups requested from the web panel.
+; RDAP is used first; the WHOIS port 43 fallback covers TLDs without RDAP.
+timeout = 20
+rdap_only = false
+whois_fallback = true
+; Seconds to wait between lookups (be polite to the registries).
+rate_delay = 1.0
