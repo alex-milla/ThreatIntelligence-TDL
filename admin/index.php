@@ -171,6 +171,27 @@ require __DIR__ . '/../templates/header.php';
 </div>
 <?php endif; ?>
 
+<div class="card <?= (($workerStatus['is_running'] ?? 0) && ($workerStatus['total_tlds'] ?? 0) > 0) ? '' : 'is-hidden' ?>" id="live-worker-card">
+    <h2>Live Worker Progress</h2>
+    <div id="live-worker-container">
+        <?php
+        $lwTotal = (int)($workerStatus['total_tlds'] ?? 0);
+        $lwDone = (int)($workerStatus['tlds_processed'] ?? 0);
+        $lwPct = $lwTotal > 0 ? round($lwDone / $lwTotal * 100, 1) : 0;
+        ?>
+        <p><strong>Command:</strong> <span id="live-command"><?= htmlspecialchars($workerStatus['current_command'] ?? '—') ?></span></p>
+        <p><strong>Action:</strong> <span id="live-action"><?= htmlspecialchars($workerStatus['current_action'] ?? '—') ?></span></p>
+        <p><strong>Current TLD:</strong> <span id="live-tld"><?= htmlspecialchars($workerStatus['current_tld'] ?? '—') ?></span></p>
+        <div style="background: #f0f0f0; border-radius: 4px; height: 24px; margin: 10px 0; overflow: hidden;">
+            <div id="live-bar" style="background: #3498db; width: <?= $lwPct ?>%; height: 100%; transition: width 0.5s;"></div>
+        </div>
+        <p id="live-text">
+            Processed <strong id="live-done"><?= number_format($lwDone) ?></strong> of <strong id="live-total"><?= number_format($lwTotal) ?></strong> TLDs
+            (<?= $lwPct ?>%) — <strong id="live-domains"><?= number_format((int)($workerStatus['domains_processed'] ?? 0)) ?></strong> domains
+        </p>
+    </div>
+</div>
+
 <style>
 .admin-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid #e2e2e8; margin: 0 0 20px; padding: 0; }
 .admin-tabs a { padding: 10px 16px; text-decoration: none; color: #666; font-weight: 600; font-size: 0.95rem; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: none; cursor: pointer; }
@@ -284,26 +305,6 @@ if (!empty($workerStatus['last_heartbeat'])) {
     }
 }
 ?>
-<div class="card admin-pane <?= (($workerStatus['is_running'] ?? 0) && ($workerStatus['total_tlds'] ?? 0) > 0) ? '' : 'is-hidden' ?>" data-tab="worker" id="live-worker-card">
-    <h2>Live Worker Progress</h2>
-    <div id="live-worker-container">
-        <?php
-        $lwTotal = (int)($workerStatus['total_tlds'] ?? 0);
-        $lwDone = (int)($workerStatus['tlds_processed'] ?? 0);
-        $lwPct = $lwTotal > 0 ? round($lwDone / $lwTotal * 100, 1) : 0;
-        ?>
-        <p><strong>Command:</strong> <span id="live-command"><?= htmlspecialchars($workerStatus['current_command'] ?? '—') ?></span></p>
-        <p><strong>Action:</strong> <span id="live-action"><?= htmlspecialchars($workerStatus['current_action'] ?? '—') ?></span></p>
-        <p><strong>Current TLD:</strong> <span id="live-tld"><?= htmlspecialchars($workerStatus['current_tld'] ?? '—') ?></span></p>
-        <div style="background: #f0f0f0; border-radius: 4px; height: 24px; margin: 10px 0; overflow: hidden;">
-            <div id="live-bar" style="background: #3498db; width: <?= $lwPct ?>%; height: 100%; transition: width 0.5s;"></div>
-        </div>
-        <p id="live-text">
-            Processed <strong id="live-done"><?= number_format($lwDone) ?></strong> of <strong id="live-total"><?= number_format($lwTotal) ?></strong> TLDs
-            (<?= $lwPct ?>%) — <strong id="live-domains"><?= number_format((int)($workerStatus['domains_processed'] ?? 0)) ?></strong> domains
-        </p>
-    </div>
-</div>
 
 <div class="card admin-pane" data-tab="worker">
     <h2>Worker Status</h2>
