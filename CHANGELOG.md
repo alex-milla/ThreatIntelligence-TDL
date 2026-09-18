@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.50] - 2026-09-19
+
+### Fix
+- **Live Worker Progress card always visible**: the TLD download/parse progress bar was hidden inside the Worker tab pane (introduced in v1.3.49), so it only appeared when that tab was active. Moved out of the tab system — now shows whenever the worker is running, matching the original behaviour.
+
 ## [v1.3.49] - 2026-09-19
 
 ### Worker
