@@ -158,7 +158,11 @@ retain_zone_hash_tlds = false   ; delete the multi-GB zone after parsing
 max_download_retries = 3
 retry_delay_seconds = 300
 commit_every_batches = 10   ; commit + WAL checkpoint every 500k domains
+sqlite_cache_mb = 512       ; SQLite page cache (MB)
+sqlite_synchronous_parse = OFF  ; skip fsync during parse (NORMAL to revert)
 ```
+
+> `sqlite_synchronous_parse = OFF` only applies while a zone is being parsed and is restored to `NORMAL` afterwards. It speeds up the write path but reduces durability; `worker.db` is a rebuildable cache (if corrupted, stop the worker, delete `worker.db*` and re-parse).
 
 > On Debian/Ubuntu with PEP 668, `pip install` may be blocked. The optional `pyahocorasick` accelerator can be installed with `apt install python3-ahocorasick`; the worker runs fine without it (substring fallback).
 

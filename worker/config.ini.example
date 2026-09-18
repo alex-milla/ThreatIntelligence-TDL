@@ -35,6 +35,11 @@ max_download_retries = 3
 ; Commit + WAL checkpoint every N batches (1 batch = 50k domains) so huge zones
 ; like .com do not grow the SQLite WAL without bound during a single parse.
 commit_every_batches = 10
+; SQLite page cache in MB for the worker database.
+sqlite_cache_mb = 512
+; NORMAL = durable; OFF = skip fsync during the bulk parse (faster, but a crash
+; can corrupt worker.db, which is a rebuildable cache).
+sqlite_synchronous_parse = OFF
 
 [tlds]
 ; Comma-separated list of TLDs to process. Leave empty to process all approved TLDs.

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.48] - 2026-09-18
+
+### SQLite tuning for the parse (configurable)
+- **Configurable page cache**: `[worker] sqlite_cache_mb` (default now **512 MB**, was a fixed 64 MB). With enough RAM this reduces page re-reads during the anti-join (`stage`) and inserts.
+- **`synchronous=OFF` during the bulk parse only**: new `[worker] sqlite_synchronous_parse` (default `OFF`). It skips `fsync` on commits/checkpoints while a zone is parsed, then restores `NORMAL`. `worker.db` is a rebuildable cache, so the durability trade-off is bounded; set it to `NORMAL` to revert.
+- No behaviour change to matching or reporting; both settings are read from `config.ini`.
+
 ## [v1.3.47] - 2026-09-18
 
 ### Parse phase timing (measurement only, no behaviour change)

@@ -30,14 +30,17 @@ import whois
 log = logging.getLogger("tdl_worker")
 
 
-def init_local_db(db_path: str) -> sqlite3.Connection:
-    """Create local worker SQLite database if not exists."""
+def init_local_db(db_path: str, cache_mb: int = 512) -> sqlite3.Connection:
+    """Create local worker SQLite database if not exists.
+
+    cache_mb sets SQLite's page cache (PRAGMA cache_size, in KiB when negative).
+    """
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA temp_store=MEMORY")
-    conn.execute("PRAGMA cache_size=-65536")
+    conn.execute(f"PRAGMA cache_size=-{max(int(cache_mb), 1) * 1024}")
     conn.execute("PRAGMA mmap_size=268435456")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS domains_cache (
@@ -383,6 +386,14 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
     space_abort = False
     # Phase timings (wall clock) for the [timing] log line.
     timing = {"stage": 0.0, "insert": 0.0, "match": 0.0, "commit": 0.0}
+    # Optional durability trade-off for the bulk parse only: with synchronous=OFF
+    # SQLite skips fsync on commits/checkpoints. worker.db is a rebuildable cache.
+    sync_off = settings.get("sqlite_synchronous_parse", "NORMAL") == "OFF"
+    if sync_off:
+        try:
+            db.execute("PRAGMA synchronous=OFF")
+        except sqlite3.OperationalError:
+            sync_off = False
     t_parse0 = time.perf_counter()
 
     try:
@@ -428,6 +439,12 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
     except Exception:
         db.rollback()
         raise
+    finally:
+        if sync_off:
+            try:
+                db.execute("PRAGMA synchronous=NORMAL")
+            except sqlite3.OperationalError:
+                pass
     t_parse_total = time.perf_counter() - t_parse0
 
     if space_abort:
@@ -586,6 +603,7 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         "max_download_retries": cfg.getint("worker", "max_download_retries", fallback=3),
         "retry_delay_seconds": cfg.getint("worker", "retry_delay_seconds", fallback=300),
         "commit_every_batches": cfg.getint("worker", "commit_every_batches", fallback=10),
+        "sqlite_synchronous_parse": cfg.get("worker", "sqlite_synchronous_parse", fallback="OFF").strip().upper(),
     }
 
     stats = {
@@ -1280,7 +1298,9 @@ def main() -> int:
         return 1
 
     db_path = os.path.join(data_dir, "worker.db")
-    db = init_local_db(db_path)
+    cache_mb = cfg.getint("worker", "sqlite_cache_mb", fallback=512)
+    db = init_local_db(db_path, cache_mb=cache_mb)
+    log.info(f"SQLite page cache: {max(int(cache_mb), 1)} MB")
 
     last_run = get_last_run(db)
     if last_run:
