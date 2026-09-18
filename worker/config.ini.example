@@ -30,6 +30,9 @@ hash_cache_min_mb = 512
 retain_zone_hash_tlds = false
 ; Immediate download retries before the TLD is queued for the next cycle.
 max_download_retries = 3
+; Commit + WAL checkpoint every N batches (1 batch = 50k domains) so huge zones
+; like .com do not grow the SQLite WAL without bound during a single parse.
+commit_every_batches = 10
 
 [tlds]
 ; Comma-separated list of TLDs to process. Leave empty to process all approved TLDs.

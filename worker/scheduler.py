@@ -90,7 +90,8 @@ def init_local_db(db_path: str) -> sqlite3.Connection:
             tld TEXT NOT NULL,
             first_seen INTEGER NOT NULL
         ) WITHOUT ROWID;
-        CREATE INDEX IF NOT EXISTS idx_cache_hash_tld ON domains_cache_hash(tld);
+        -- No index on tld: recheck excludes hash-cached TLDs, so it would only
+        -- add time and disk on 100M+ row tables.
 
         CREATE TABLE IF NOT EXISTS tld_retry_queue (
             tld TEXT PRIMARY KEY,
@@ -100,6 +101,11 @@ def init_local_db(db_path: str) -> sqlite3.Connection:
             updated_at TEXT
         );
     """)
+    # Migration: drop the unused tld index on the hash cache (older versions).
+    try:
+        conn.execute("DROP INDEX IF EXISTS idx_cache_hash_tld")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     return conn
 
@@ -348,6 +354,10 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
     batch = []
     batch_size = 50000
     last_progress = time.time()
+    commit_batches = settings.get("commit_every_batches", 10) or 10
+    min_free_bytes = (min_free_gb or 0) * (1 << 30)
+    batches_since_commit = 0
+    space_abort = False
 
     try:
         if use_hash:
@@ -361,20 +371,46 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
                 new_count += _stage_and_diff_batch(cursor, tld, now, batch, keyword_matcher,
                                                    matches, use_hash=use_hash)
                 batch = []
+                batches_since_commit += 1
                 if progress_callback and time.time() - last_progress >= 5:
                     last_progress = time.time()
                     progress_callback("parse", total, None)
-        if batch:
+                if batches_since_commit >= commit_batches:
+                    # Huge zones (e.g. .com, ~160M inserts) must not grow the WAL
+                    # unbounded: commit and checkpoint regularly.
+                    db.commit()
+                    batches_since_commit = 0
+                    try:
+                        cursor.execute("PRAGMA wal_checkpoint(PASSIVE)")
+                    except sqlite3.OperationalError:
+                        pass
+                    if min_free_bytes and shutil.disk_usage(download_dir).free < min_free_bytes:
+                        space_abort = True
+                        print(f"[!] .{tld}: stopping mid-parse, free disk below the "
+                              f"{min_free_bytes / (1 << 30):.1f} GB reserve.", flush=True)
+                        break
+        if batch and not space_abort:
             new_count += _stage_and_diff_batch(cursor, tld, now, batch, keyword_matcher,
                                                matches, use_hash=use_hash)
-        # Single commit per TLD: with WAL + synchronous=NORMAL this is much
-        # cheaper than committing every batch.
         db.commit()
         cursor.execute("DROP TABLE IF EXISTS zone_batch")
         cursor.execute("DROP TABLE IF EXISTS zone_batch_hash")
     except Exception:
         db.rollback()
         raise
+
+    if space_abort:
+        msg = (f"no_space: stopped after {total:,} domains; free disk below the "
+               f"{min_free_bytes / (1 << 30):.1f} GB reserve")
+        # Drop the multi-GB zone to recover space; the TLD is queued for retry.
+        try:
+            os.remove(filepath)
+        except OSError:
+            pass
+        attempts, next_retry = enqueue_tld_retry(db, tld, msg, retry_delay)
+        print(f"[!] .{tld}: {msg}", flush=True)
+        return [], _tld_report(tld, "no_space", error=msg,
+                               attempts=attempts, next_retry=next_retry)
 
     print(f"[+] {tld}: {total:,} total, {new_count:,} new.", flush=True)
 
@@ -511,6 +547,7 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         "retain_zone_hash_tlds": cfg.getboolean("worker", "retain_zone_hash_tlds", fallback=False),
         "max_download_retries": cfg.getint("worker", "max_download_retries", fallback=3),
         "retry_delay_seconds": cfg.getint("worker", "retry_delay_seconds", fallback=300),
+        "commit_every_batches": cfg.getint("worker", "commit_every_batches", fallback=10),
     }
 
     stats = {

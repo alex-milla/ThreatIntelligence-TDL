@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.45] - 2026-09-18
+
+### Safe parsing of huge zones (WAL / disk)
+- **Batched commits**: TLDs are no longer committed once at the end. Every `commit_every_batches` batches (default 10 → 500k domains) the worker commits and runs `PRAGMA wal_checkpoint(PASSIVE)`, so the SQLite WAL does not grow to several GB while parsing a zone like `.com` (~160M rows).
+- **Mid-parse disk guard**: if free disk drops below `min_free_disk_gb` during parsing, the worker stops cleanly with status `no_space`, removes the multi-GB zone file and queues the TLD for retry (instead of filling the disk).
+- **Dropped `idx_cache_hash_tld`**: the hash cache is never queried by TLD (`recheck` excludes hash-cached TLDs), so the index only cost time and disk on 100M+ row tables. Removed on new databases and dropped by migration on existing ones.
+
 ## [v1.3.44] - 2026-09-18
 
 ### Critical parser fix: lowercase rrtypes
