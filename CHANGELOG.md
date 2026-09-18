@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.47] - 2026-09-18
+
+### Parse phase timing (measurement only, no behaviour change)
+- The worker now logs a per-TLD breakdown of where time goes:
+  `[timing] .sbs parse=18.3s stage=15.2s insert=6.8s match=1.8s commit=0.4s download=2.1s total=42.1s`
+  where `parse` is gzip + line scanning, `stage` is dedupe/temp-insert/anti-join,
+  `insert` is writing new domains, `match` is keyword matching, `commit` is
+  commit + WAL checkpoint and `download` is the transfer.
+- Purely additive logging to decide, with data, the next optimisation step
+  (SQLite cache/synchronous vs CPU). No configuration or durability changes.
+
 ## [v1.3.46] - 2026-09-18
 
 ### On-demand WHOIS/RDAP lookups executed by the worker

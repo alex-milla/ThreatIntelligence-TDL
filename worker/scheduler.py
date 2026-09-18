@@ -117,16 +117,26 @@ def _domain_hash(domain: str) -> int:
     return int.from_bytes(digest, "big", signed=True)
 
 
+def _timing_add(timing: dict | None, key: str, seconds: float) -> None:
+    if timing is not None:
+        timing[key] = timing.get(key, 0.0) + seconds
+
+
 def _stage_and_diff_batch(cursor: sqlite3.Cursor, tld: str, now: str, batch: list[str],
-                          keyword_matcher, matches: list[dict], use_hash: bool = False) -> int:
+                          keyword_matcher, matches: list[dict], use_hash: bool = False,
+                          timing: dict | None = None) -> int:
     """Stage a parsed batch, insert genuinely new domains and match them.
 
     Uses a TEMP table plus a SQL anti-join so the full known-domain set is never
     loaded into Python, keeping peak memory bounded on very large TLDs. When
     use_hash is set, only a 64-bit hash per domain is persisted (compact cache)
     but matching still runs on the real domain text.
+
+    When `timing` is given, accumulates wall time per phase under the keys
+    "stage" (dedupe + temp insert + anti-join), "insert" (new rows) and "match".
     Returns the number of new domains found.
     """
+    t0 = time.perf_counter()
     if use_hash:
         cursor.execute("DELETE FROM zone_batch_hash")
         mapping: dict[int, str] = {}
@@ -142,6 +152,8 @@ def _stage_and_diff_batch(cursor: sqlite3.Cursor, tld: str, now: str, batch: lis
             "WHERE c.domain_hash IS NULL"
         )
         new_hashes = [row[0] for row in cursor.fetchall()]
+        t_stage = time.perf_counter()
+        _timing_add(timing, "stage", t_stage - t0)
         if not new_hashes:
             return 0
         first_seen = int(time.time())
@@ -149,8 +161,11 @@ def _stage_and_diff_batch(cursor: sqlite3.Cursor, tld: str, now: str, batch: lis
             "INSERT OR IGNORE INTO domains_cache_hash (domain_hash, tld, first_seen) VALUES (?, ?, ?)",
             ((h, tld, first_seen) for h in new_hashes)
         )
+        t_insert = time.perf_counter()
+        _timing_add(timing, "insert", t_insert - t_stage)
         if keyword_matcher is not None:
             matches.extend(keyword_matcher.match(mapping[h] for h in new_hashes))
+        _timing_add(timing, "match", time.perf_counter() - t_insert)
         return len(new_hashes)
 
     cursor.execute("DELETE FROM zone_batch")
@@ -164,14 +179,19 @@ def _stage_and_diff_batch(cursor: sqlite3.Cursor, tld: str, now: str, batch: lis
         "WHERE c.domain IS NULL"
     )
     new_domains = [row[0] for row in cursor.fetchall()]
+    t_stage = time.perf_counter()
+    _timing_add(timing, "stage", t_stage - t0)
     if not new_domains:
         return 0
     cursor.executemany(
         "INSERT OR IGNORE INTO domains_cache (domain, tld, first_seen) VALUES (?, ?, ?)",
         ((domain, tld, now) for domain in new_domains)
     )
+    t_insert = time.perf_counter()
+    _timing_add(timing, "insert", t_insert - t_stage)
     if keyword_matcher is not None:
         matches.extend(keyword_matcher.match(new_domains))
+    _timing_add(timing, "match", time.perf_counter() - t_insert)
     return len(new_domains)
 
 
@@ -328,11 +348,13 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
     prev_etag = None if force else meta["etag"]
     prev_last_modified = None if force else meta["last_modified"]
     retry_delay = settings.get("retry_delay_seconds", 300)
+    t_dl0 = time.perf_counter()
     status, etag, last_modified, error = downloader.download_zone(
         tld, token, filepath, etag=prev_etag, last_modified=prev_last_modified,
         progress_callback=progress_callback,
         max_retries=settings.get("max_download_retries", 3),
     )
+    t_download = time.perf_counter() - t_dl0
     if status == "failed":
         attempts, next_retry = enqueue_tld_retry(db, tld, error or "download failed", retry_delay)
         return [], _tld_report(tld, "failed", filepath=filepath, error=error,
@@ -359,6 +381,9 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
     min_free_bytes = (min_free_gb or 0) * (1 << 30)
     batches_since_commit = 0
     space_abort = False
+    # Phase timings (wall clock) for the [timing] log line.
+    timing = {"stage": 0.0, "insert": 0.0, "match": 0.0, "commit": 0.0}
+    t_parse0 = time.perf_counter()
 
     try:
         if use_hash:
@@ -370,7 +395,7 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
             batch.append(domain)
             if len(batch) >= batch_size:
                 new_count += _stage_and_diff_batch(cursor, tld, now, batch, keyword_matcher,
-                                                   matches, use_hash=use_hash)
+                                                   matches, use_hash=use_hash, timing=timing)
                 batch = []
                 batches_since_commit += 1
                 if progress_callback and time.time() - last_progress >= 5:
@@ -379,12 +404,14 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
                 if batches_since_commit >= commit_batches:
                     # Huge zones (e.g. .com, ~160M inserts) must not grow the WAL
                     # unbounded: commit and checkpoint regularly.
+                    t_commit = time.perf_counter()
                     db.commit()
                     batches_since_commit = 0
                     try:
                         cursor.execute("PRAGMA wal_checkpoint(PASSIVE)")
                     except sqlite3.OperationalError:
                         pass
+                    _timing_add(timing, "commit", time.perf_counter() - t_commit)
                     if min_free_bytes and shutil.disk_usage(download_dir).free < min_free_bytes:
                         space_abort = True
                         print(f"[!] .{tld}: stopping mid-parse, free disk below the "
@@ -392,13 +419,16 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
                         break
         if batch and not space_abort:
             new_count += _stage_and_diff_batch(cursor, tld, now, batch, keyword_matcher,
-                                               matches, use_hash=use_hash)
+                                               matches, use_hash=use_hash, timing=timing)
+        t_commit = time.perf_counter()
         db.commit()
+        _timing_add(timing, "commit", time.perf_counter() - t_commit)
         cursor.execute("DROP TABLE IF EXISTS zone_batch")
         cursor.execute("DROP TABLE IF EXISTS zone_batch_hash")
     except Exception:
         db.rollback()
         raise
+    t_parse_total = time.perf_counter() - t_parse0
 
     if space_abort:
         msg = (f"no_space: stopped after {total:,} domains; free disk below the "
@@ -414,6 +444,13 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
                                attempts=attempts, next_retry=next_retry)
 
     print(f"[+] {tld}: {total:,} total, {new_count:,} new.", flush=True)
+
+    sql_time = timing["stage"] + timing["insert"] + timing["match"] + timing["commit"]
+    parse_time = max(t_parse_total - sql_time, 0.0)
+    print(f"[timing] .{tld} parse={parse_time:.1f}s stage={timing['stage']:.1f}s "
+          f"insert={timing['insert']:.1f}s match={timing['match']:.1f}s "
+          f"commit={timing['commit']:.1f}s download={t_download:.1f}s "
+          f"total={t_parse_total:.1f}s", flush=True)
 
     # Safety net: a non-trivial zone that yields no domains means the parser is
     # broken (e.g. the v1.3.39 case-sensitive pre-filter). Do not mark the TLD as

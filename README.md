@@ -145,6 +145,7 @@ Some zones are multi-gigabyte (`.com` is ~4.6 GB compressed). The worker handles
 - **Guards**: `max_zone_size_gb` refuses zones above a hard limit (`skipped_large`), and `min_free_disk_gb` refuses to start if free disk would drop too low. The same limit is checked **during** parsing: if it is reached, the worker stops with `no_space` and frees the zone file.
 - **Bounded WAL**: huge zones are committed and WAL-checkpointed every `commit_every_batches` batches (default 10 → 500k domains) instead of one giant transaction, so the WAL does not balloon while parsing `.com`.
 - **Per-TLD retries**: failed/incomplete TLDs are retried immediately (up to `max_download_retries`) and then queued for the next cycle with backoff (`tld_retry_queue`).
+- **Phase timing**: each parsed TLD logs a `[timing]` line with the wall time spent in `parse` (gzip+scan), `stage` (dedupe/anti-join), `insert`, `match`, `commit` and `download`, to identify whether parsing is CPU- or I/O-bound (`journalctl -u tdl-worker | grep timing`).
 
 Relevant `config.ini` keys:
 
