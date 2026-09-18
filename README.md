@@ -109,10 +109,22 @@ The worker is designed to query CZDS as little as possible:
 - **Single instance lock**: `data/worker.lock` (via `flock`) prevents overlapping cron/systemd runs from duplicating downloads.
 - **Retained zone files**: the latest `.zone.gz` per active TLD is kept on disk (overwritten on the next change) instead of being deleted.
 
-To force a full reprocess (ignoring the daily guard and conditional cache):
+### Download visibility and manual refresh
+
+The worker reports the result of every TLD back to the web UI (`api/v1/tld_sync.php`). The **TLDs** admin page (`/admin/tlds.php`) shows, per TLD: last sync time, a status badge (`Downloaded`, `Unchanged`, `Skipped today`, `Failed`), number of domains, new domains, zone file size and the last error. The table refreshes automatically while the worker is running.
+
+From that page you can also trigger a run without leaving the browser:
+
+- **Refresh Selected** — skips the daily guard but keeps the `ETag`/`Last-Modified` validators, so the zone is downloaded only if it changed on ICANN's side.
+- **Force Re-download** — ignores the daily guard *and* the cache, re-downloading the full zone files for the selected TLDs.
+
+Both operate on the **currently active (checked)** TLDs only, never on all approved TLDs.
+
+Equivalent CLI flags:
 
 ```bash
-python3 scheduler.py --once --force
+python3 scheduler.py --once --force     # full reprocess (ignore guard + cache)
+python3 scheduler.py --once --refresh   # bypass guard, keep conditional download
 ```
 
 ## User Features

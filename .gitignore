@@ -8,6 +8,16 @@ worker/config.ini
 data/*
 !data/.htaccess
 
+# Local secrets / environment
+env/
+
+# Local documentation checkpoints (not published)
+md/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
 # IDE
 .vscode/
 .idea/

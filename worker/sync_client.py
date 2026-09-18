@@ -110,6 +110,22 @@ def send_tlds(host_url: str, api_key: str, tlds: list[str]) -> bool:
     return r.status_code == 200
 
 
+def report_tld_sync(host_url: str, api_key: str, entries: list[dict]) -> bool:
+    """Report per-TLD download/parse results so the web UI can show what was updated."""
+    if not entries:
+        return True
+    url = f"{host_url}/api/v1/tld_sync.php"
+    headers = {
+        "X-API-Key": api_key,
+        "Content-Type": "application/json",
+    }
+    r = requests.post(url, headers=headers, json={"entries": entries}, timeout=60)
+    if r.status_code == 200:
+        return True
+    print(f"[-] Failed to report TLD sync: HTTP {r.status_code} - {r.text}")
+    return False
+
+
 def get_active_tlds(host_url: str, api_key: str) -> list[str]:
     """Fetch active TLDs from the hosting API."""
     url = f"{host_url}/api/v1/tlds.php?active=1"

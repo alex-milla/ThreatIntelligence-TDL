@@ -222,5 +222,22 @@ class Database {
         try {
             $db->exec("ALTER TABLE worker_status ADD COLUMN current_action TEXT");
         } catch (PDOException $e) { }
+
+        // Safe migration: per-TLD download report columns (worker -> web)
+        try {
+            $db->exec("ALTER TABLE tlds ADD COLUMN records_total INTEGER DEFAULT 0");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE tlds ADD COLUMN records_new INTEGER DEFAULT 0");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE tlds ADD COLUMN zone_size INTEGER DEFAULT 0");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE tlds ADD COLUMN zone_file_mtime TEXT");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE tlds ADD COLUMN last_error TEXT");
+        } catch (PDOException $e) { }
     }
 }

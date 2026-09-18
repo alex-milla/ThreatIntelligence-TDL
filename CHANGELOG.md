@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.41] - 2026-09-18
+
+### Per-TLD download visibility (worker -> web)
+- **New API endpoint `api/v1/tld_sync.php`**: the worker reports the outcome of every processed TLD (`downloaded`, `not_modified`, `skipped_today`, `failed`) together with record counts, zone file size/mtime and the last error.
+- **`tlds` table**: safe migrations add `records_total`, `records_new`, `zone_size`, `zone_file_mtime` and `last_error`.
+- **`worker/sync_client.py`**: new `report_tld_sync()`; reports are flushed in batches of 25 to avoid one HTTP call per TLD.
+- **`worker/scheduler.py`**: `process_tld()` now returns `(matches, info)`; the heartbeat `domains_processed` is taken from the real run result instead of a stale `zone_runs` lookup.
+
+### Visual validation (`admin/tlds.php`)
+- TLD table now shows **Last Sync**, a colour-coded **Status** badge, **Domains**, **New**, **Size** and **Error** per TLD, plus a summary of the last cycle.
+- New session-authenticated `ajax_tld_status.php`; the table auto-refreshes every 5 s while the worker is running.
+
+### Manual refresh from the UI
+- **Refresh Selected**: bypasses the daily guard but keeps the conditional `ETag`/`Last-Modified` validators, so a TLD is only transferred again if it actually changed.
+- **Force Re-download**: ignores both the daily guard and the cache (full re-download of the selected TLDs).
+- Both queue a `run_worker` command with a JSON payload; `handle_commands` parses `force`/`refresh`. New CLI flag `--refresh`.
+- Fixed: daemon mode now passes `--force`/`--refresh` to command handling (previously the flag was ignored in daemon mode).
+
 ## [v1.3.40] - 2026-09-17
 
 ### Worker maintenance

@@ -141,39 +141,73 @@ def update_tld_meta(db: sqlite3.Connection, tld: str, etag: str | None,
     db.commit()
 
 
+def _zone_info(filepath: str) -> tuple[int, str | None]:
+    """Return (size_bytes, iso_mtime_utc) for a retained zone file, or (0, None)."""
+    try:
+        size = os.path.getsize(filepath)
+        mtime = datetime.fromtimestamp(os.path.getmtime(filepath), tz=timezone.utc).isoformat()
+        return size, mtime
+    except OSError:
+        return 0, None
+
+
+def _tld_report(tld: str, status: str, filepath: str | None = None,
+                records_total: int = 0, records_new: int = 0,
+                error: str | None = None) -> dict:
+    """Build a per-TLD report entry for the hosting UI."""
+    zone_size, zone_mtime = _zone_info(filepath) if filepath else (0, None)
+    return {
+        "tld": tld,
+        "status": status,
+        "records_total": records_total,
+        "records_new": records_new,
+        "zone_size": zone_size,
+        "zone_file_mtime": zone_mtime,
+        "error": error,
+    }
+
+
 def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
-                keywords: list[dict], force: bool = False) -> list[dict]:
-    """Download, parse, deduplicate and match a single TLD. Returns match dicts.
+                keywords: list[dict], force: bool = False,
+                refresh: bool = False) -> tuple[list[dict], dict]:
+    """Download, parse, deduplicate and match a single TLD.
+
+    Returns (matches, info) where info reports what happened to the TLD so the
+    web UI can show it.
 
     To minimise load on the ICANN CZDS API this function:
-      - skips a TLD already successfully processed today (unless force is set),
+      - skips a TLD already successfully processed today (unless force/refresh),
       - performs a conditional request (ETag / Last-Modified) so an unchanged
-        zone is not transferred again,
+        zone is not transferred again (refresh keeps the validators, force drops
+        them and re-downloads unconditionally),
       - keeps the last downloaded zone file on disk instead of deleting it.
     """
     today_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     now = datetime.now(timezone.utc).isoformat()
     meta = get_tld_meta(db, tld)
 
-    # 1. Daily idempotency guard: never re-scan a TLD already done today.
-    if not force and meta["last_run_date"] == today_date and meta["last_run_status"] == "ok":
-        print(f"[=] .{tld} already processed today ({today_date}). Skipping to avoid re-scanning.")
-        return []
-
-    # 2. Conditional download (only transfers the zone if it changed).
     os.makedirs(download_dir, exist_ok=True)
     filepath = os.path.join(download_dir, f"{tld}.zone.gz")
+
+    # 1. Daily idempotency guard: never re-scan a TLD already done today.
+    #    `refresh` bypasses the guard but keeps the conditional validators, so
+    #    the zone is only transferred again if it actually changed.
+    if not force and not refresh and meta["last_run_date"] == today_date and meta["last_run_status"] == "ok":
+        print(f"[=] .{tld} already processed today ({today_date}). Skipping to avoid re-scanning.")
+        return [], _tld_report(tld, "skipped_today", filepath=filepath)
+
+    # 2. Conditional download (only transfers the zone if it changed).
     prev_etag = None if force else meta["etag"]
     prev_last_modified = None if force else meta["last_modified"]
     status, etag, last_modified = downloader.download_zone(
         tld, token, filepath, etag=prev_etag, last_modified=prev_last_modified
     )
     if status == "failed":
-        return []
+        return [], _tld_report(tld, "failed", filepath=filepath, error="download failed")
     if status == "not_modified":
         print(f"[=] .{tld} zone unchanged since last run. Skipping parse.")
         update_tld_meta(db, tld, meta["etag"], meta["last_modified"], today_date, "ok")
-        return []
+        return [], _tld_report(tld, "not_modified", filepath=filepath)
 
     # 3. Parse and find new domains. The comparison against the cache is done
     #    entirely in SQLite (batched + anti-join) so the full known-domain set
@@ -217,12 +251,12 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
     # subsequent runs can skip this TLD via a conditional request / daily guard.
     update_tld_meta(db, tld, etag, last_modified, today_date, "ok")
 
-    if not matches:
-        return []
-    for m in matches:
-        m["first_seen"] = now
-    print(f"[+] {len(matches)} matches found for .{tld}.")
-    return matches
+    if matches:
+        for m in matches:
+            m["first_seen"] = now
+        print(f"[+] {len(matches)} matches found for .{tld}.")
+    return matches, _tld_report(tld, "downloaded", filepath=filepath,
+                                records_total=total, records_new=new_count)
 
 
 def retry_sync_queue(db: sqlite3.Connection, host_url: str, api_key: str, max_retries: int) -> None:
@@ -301,7 +335,7 @@ def queue_matches(db: sqlite3.Connection, matches: list[dict]) -> None:
     print(f"[!] Queued {len(matches)} matches for retry.")
 
 
-def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False) -> dict:
+def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False, refresh: bool = False) -> dict:
     """Run one full worker cycle. Returns stats dict."""
     download_dir = cfg.get("worker", "download_dir", fallback="./zones")
     data_dir = cfg.get("worker", "data_dir", fallback="./data")
@@ -396,26 +430,29 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
     # 5. Process each TLD
     all_matches = []
     domains_processed = 0
+    report_batch: list[dict] = []
+
+    def flush_reports(force_flush: bool = False) -> None:
+        if report_batch and (force_flush or len(report_batch) >= 25):
+            sync_client.report_tld_sync(host_url, api_key, list(report_batch))
+            report_batch.clear()
+
     for tld in tlds:
         try:
-            matches = process_tld(tld, token, download_dir, db, keywords, force=force)
+            matches, info = process_tld(tld, token, download_dir, db, keywords,
+                                        force=force, refresh=refresh)
             all_matches.extend(matches)
             stats["tlds_processed"] += 1
-            # Count total domains seen this cycle from zone_runs
-            cursor = db.cursor()
-            cursor.execute(
-                "SELECT records_total FROM zone_runs WHERE tld = ? AND run_date = (SELECT MAX(run_date) FROM zone_runs WHERE tld = ?)",
-                (tld, tld)
-            )
-            row = cursor.fetchone()
-            if row:
-                domains_processed += row[0]
+            domains_processed += int(info.get("records_total", 0))
+            report_batch.append(info)
+            flush_reports()
+
             # Send incremental heartbeat + log after each TLD
             sync_client.send_heartbeat(host_url, api_key, {
                 "last_heartbeat": datetime.now(timezone.utc).isoformat(),
                 "is_running": 1,
                 "version": version,
-                "current_action": f"Processing .{tld}",
+                "current_action": f".{tld} {info['status']}",
                 "current_tld": tld,
                 "total_tlds": total_tlds,
                 "tlds_processed": stats["tlds_processed"],
@@ -423,7 +460,8 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
             })
             sync_client.send_logs(host_url, api_key, [{
                 "level": "info",
-                "message": f"TLD {stats['tlds_processed']}/{total_tlds}: .{tld} done ({row[0] if row else 0} domains)"
+                "message": f"TLD {stats['tlds_processed']}/{total_tlds}: .{tld} {info['status']} "
+                           f"({info.get('records_total', 0)} domains, {info.get('records_new', 0)} new)"
             }])
         except Exception as e:
             print(f"[-] Exception processing {tld}: {e}")
@@ -433,10 +471,14 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
                 db.rollback()
             except Exception:
                 pass
+            report_batch.append(_tld_report(tld, "failed", error=str(e)))
+            flush_reports()
             sync_client.send_logs(host_url, api_key, [{
                 "level": "error",
                 "message": f"Exception processing .{tld}: {e}"
             }])
+
+    flush_reports(force_flush=True)
 
     # 6. Send all matches to hosting
     if all_matches:
@@ -628,7 +670,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
     return stats
 
 
-def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False) -> tuple[list[dict], dict | None, bool]:
+def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False, refresh: bool = False) -> tuple[list[dict], dict | None, bool]:
     """Poll and execute pending commands from the hosting. Returns (log entries, worker_stats, commands_processed)."""
     logs = []
     worker_stats = None
@@ -671,14 +713,26 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
         try:
             status = "completed"
             if command == "run_worker":
+                # Payload may request a refresh (bypass daily guard, keep
+                # conditional validators) or a force (full re-download).
+                opts = {}
+                if payload:
+                    try:
+                        opts = json.loads(payload) if isinstance(payload, str) else {}
+                    except (ValueError, TypeError):
+                        opts = {}
+                cmd_force = force or bool(opts.get("force"))
+                cmd_refresh = refresh or bool(opts.get("refresh"))
                 sync_client.send_heartbeat(host_url, api_key, {
                     "last_heartbeat": datetime.now(timezone.utc).isoformat(),
                     "is_running": 1,
                     "version": version,
                 })
-                worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version, force=force)
+                worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version,
+                                                force=cmd_force, refresh=cmd_refresh)
                 result = json.dumps(worker_stats)
-                logs.append({"level": "info", "message": f"Worker cycle completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
+                mode = "force" if cmd_force else ("refresh" if cmd_refresh else "normal")
+                logs.append({"level": "info", "message": f"Worker cycle ({mode}) completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
 
             elif command == "recheck_keywords":
                 sync_client.send_heartbeat(host_url, api_key, {
@@ -786,6 +840,8 @@ def main() -> int:
     parser_args.add_argument("--status", action="store_true", help="Show last run status and exit")
     parser_args.add_argument("--force", action="store_true",
                              help="Ignore the daily guard and conditional cache, reprocessing all TLDs")
+    parser_args.add_argument("--refresh", action="store_true",
+                             help="Bypass the daily guard but keep conditional validators (download only if changed)")
     args = parser_args.parse_args()
 
     config_path = os.path.join(os.path.dirname(__file__), "config.ini")
@@ -837,7 +893,8 @@ def main() -> int:
                 logs = []
                 worker_stats = None
                 try:
-                    cmd_logs, worker_stats, _ = handle_commands(db, cfg, host_url, api_key, version)
+                    cmd_logs, worker_stats, _ = handle_commands(db, cfg, host_url, api_key, version,
+                                                                force=args.force, refresh=args.refresh)
                     logs.extend(cmd_logs)
 
                     heartbeat_payload = {
@@ -864,11 +921,13 @@ def main() -> int:
             log.info("Daemon mode stopped by user.")
     else:
         # One-shot mode: process commands first, then run worker cycle if nothing was processed
-        logs, worker_stats, commands_processed = handle_commands(db, cfg, host_url, api_key, version, force=args.force)
+        logs, worker_stats, commands_processed = handle_commands(db, cfg, host_url, api_key, version,
+                                                                 force=args.force, refresh=args.refresh)
 
         if not commands_processed and not worker_stats:
             # No commands pending → legacy cron behavior: run full cycle
-            worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version, force=args.force)
+            worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version,
+                                            force=args.force, refresh=args.refresh)
             logs.append({"level": "info", "message": f"Worker cycle completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
 
         heartbeat_payload = {
