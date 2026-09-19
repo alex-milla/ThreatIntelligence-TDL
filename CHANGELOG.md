@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.62] - 2026-09-19
+
+### Fix
+- **Navbar icons**: the top menu icons used `class="material-icons left"`, and Materialize v2 styles `i.left` as `float:left; margin-left:-8px`, which pushed them out of the flow and mixed them with the previous item's text. Removed the icons from the top nav links (Dashboard, Keywords, Notifications, Watchlist, TLDs, Admin, account, Login/Register), leaving clean text. The dropdown caret (`arrow_drop_down`) and the theme toggle icon are kept. Icons in the dropdowns and the mobile sidenav are unchanged.
+
 ## [v1.3.61] - 2026-09-19
 
 ### Web UI — warm "brown pastel" theme, icon spacing and sticky footer

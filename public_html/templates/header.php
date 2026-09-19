@@ -50,15 +50,15 @@ $isAdminArea = strpos($curPath, '/admin') === 0;
                 <a href="#" data-target="mobile-nav" class="sidenav-trigger" aria-label="Open navigation menu"><i class="material-icons">menu</i></a>
                 <ul class="right hide-on-med-and-down">
                     <?php if ($loggedIn): ?>
-                        <li><a href="/" class="<?= ($current === 'index.php' && !$isAdminArea) ? 'active' : '' ?>" aria-current="<?= ($current === 'index.php' && !$isAdminArea) ? 'page' : 'false' ?>"><i class="material-icons left">dashboard</i>Dashboard</a></li>
-                        <li><a href="/keywords.php" class="<?= $current === 'keywords.php' ? 'active' : '' ?>" aria-current="<?= $current === 'keywords.php' ? 'page' : 'false' ?>"><i class="material-icons left">search</i>Keywords</a></li>
-                        <li><a href="/notifications.php" class="<?= $current === 'notifications.php' ? 'active' : '' ?>" aria-current="<?= $current === 'notifications.php' ? 'page' : 'false' ?>"><i class="material-icons left">notifications</i>Notifications</a></li>
-                        <li><a href="/watchlist.php" class="<?= $current === 'watchlist.php' ? 'active' : '' ?>" aria-current="<?= $current === 'watchlist.php' ? 'page' : 'false' ?>"><i class="material-icons left">visibility</i>Watchlist</a></li>
+                        <li><a href="/" class="<?= ($current === 'index.php' && !$isAdminArea) ? 'active' : '' ?>" aria-current="<?= ($current === 'index.php' && !$isAdminArea) ? 'page' : 'false' ?>">Dashboard</a></li>
+                        <li><a href="/keywords.php" class="<?= $current === 'keywords.php' ? 'active' : '' ?>" aria-current="<?= $current === 'keywords.php' ? 'page' : 'false' ?>">Keywords</a></li>
+                        <li><a href="/notifications.php" class="<?= $current === 'notifications.php' ? 'active' : '' ?>" aria-current="<?= $current === 'notifications.php' ? 'page' : 'false' ?>">Notifications</a></li>
+                        <li><a href="/watchlist.php" class="<?= $current === 'watchlist.php' ? 'active' : '' ?>" aria-current="<?= $current === 'watchlist.php' ? 'page' : 'false' ?>">Watchlist</a></li>
                         <?php if ($isAdmin): ?>
-                            <li><a href="/admin/tlds.php" class="<?= $current === 'tlds.php' ? 'active' : '' ?>" aria-current="<?= $current === 'tlds.php' ? 'page' : 'false' ?>"><i class="material-icons left">public</i>TLDs</a></li>
+                            <li><a href="/admin/tlds.php" class="<?= $current === 'tlds.php' ? 'active' : '' ?>" aria-current="<?= $current === 'tlds.php' ? 'page' : 'false' ?>">TLDs</a></li>
                             <li>
                                 <a class="dropdown-trigger<?= $isAdminArea ? ' active' : '' ?>" href="#!" data-target="admin-dropdown" aria-haspopup="true" aria-current="<?= $isAdminArea ? 'page' : 'false' ?>">
-                                    <i class="material-icons left">admin_panel_settings</i>Admin
+                                    Admin
                                     <i class="material-icons right">arrow_drop_down</i>
                                 </a>
                             </li>
@@ -72,13 +72,13 @@ $isAdminArea = strpos($curPath, '/admin') === 0;
                     <?php if ($loggedIn): ?>
                         <li>
                             <a class="dropdown-trigger" href="#!" data-target="account-dropdown" aria-haspopup="true">
-                                <i class="material-icons left">account_circle</i><?= htmlspecialchars($username) ?>
+                                <?= htmlspecialchars($username) ?>
                                 <i class="material-icons right">arrow_drop_down</i>
                             </a>
                         </li>
                     <?php else: ?>
-                        <li><a href="/login.php" class="<?= $current === 'login.php' ? 'active' : '' ?>"><i class="material-icons left">login</i>Login</a></li>
-                        <li><a href="/register.php" class="<?= $current === 'register.php' ? 'active' : '' ?>"><i class="material-icons left">person_add</i>Register</a></li>
+                        <li><a href="/login.php" class="<?= $current === 'login.php' ? 'active' : '' ?>">Login</a></li>
+                        <li><a href="/register.php" class="<?= $current === 'register.php' ? 'active' : '' ?>">Register</a></li>
                     <?php endif; ?>
                 </ul>
             </div>
