@@ -81,6 +81,30 @@ input[type="text"], input[type="email"], input[type="password"] { width: 100%; p
 #live-worker-card { min-height: 0; transition: opacity 0.2s; }
 #live-worker-card.is-hidden { display: none; }
 
+/* ===== Domain detail modal ===== */
+.dmodal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); align-items: center; justify-content: center; }
+.dmodal-overlay.is-open { display: flex; }
+.dmodal { background: #fff; border-radius: 10px; max-width: 560px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+.dmodal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 24px 16px; border-bottom: 1px solid #eee; }
+.dmodal-header h3 { margin: 0; font-size: 1.15rem; word-break: break-all; color: #1a1a2e; line-height: 1.4; }
+.dmodal-close { flex-shrink: 0; width: 30px; height: 30px; border: none; background: #f0f0f5; border-radius: 50%; cursor: pointer; font-size: 1.1rem; color: #666; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
+.dmodal-close:hover { background: #e8e8f0; color: #333; }
+.dmodal-body { padding: 20px 24px; }
+.dmodal-section { margin-bottom: 20px; }
+.dmodal-section:last-child { margin-bottom: 0; }
+.dmodal-section-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #999; margin-bottom: 8px; }
+.dmodal-whois-grid { display: grid; grid-template-columns: 130px 1fr; gap: 0; border: 1px solid #e8e8e8; border-radius: 6px; overflow: hidden; }
+.dmodal-whois-grid > div { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; font-size: 0.88rem; }
+.dmodal-whois-grid > div:nth-last-child(-n+2) { border-bottom: none; }
+.dmodal-whois-grid > div:nth-child(odd) { background: #fafafa; color: #888; font-weight: 500; }
+.dmodal-whois-grid > div:nth-child(even) { font-weight: 600; color: #333; word-break: break-all; }
+.dmodal-status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.9rem; }
+.dmodal-status-row .status-value { font-weight: 600; }
+.dmodal-btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.dmodal-btn-row .btn { flex: 1; min-width: 80px; text-align: center; }
+.dmodal-footer { padding: 16px 24px; border-top: 1px solid #eee; display: flex; gap: 10px; }
+.dmodal-footer .btn { flex: 1; text-align: center; }
+
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
     .navbar { flex-wrap: wrap; padding: 0 12px; }
@@ -91,4 +115,6 @@ input[type="text"], input[type="email"], input[type="password"] { width: 100%; p
     .card { padding: 16px; }
     table { font-size: 0.85rem; }
     th, td { padding: 8px; }
+    .dmodal { width: 95%; }
+    .dmodal-whois-grid { grid-template-columns: 100px 1fr; }
 }

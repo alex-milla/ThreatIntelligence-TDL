@@ -396,42 +396,56 @@ require __DIR__ . '/templates/header.php';
 </div>
 
 <!-- Domain detail modal -->
-<div id="domain-modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); align-items: center; justify-content: center;">
-    <div style="background: white; padding: 25px; border-radius: 8px; max-width: 520px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto;">
-        <h3 id="modal-domain-title" style="margin-top: 0; word-break: break-all;"></h3>
-        <div id="modal-whois-box" style="margin: 15px 0;">
-            <button type="button" id="modal-whois-btn" class="btn" style="width: 100%;" onclick="fetchWhois()">🔍 Fetch WHOIS (worker)</button>
-            <div id="modal-whois-loading" style="display: none; color: #666; font-size: 0.9rem; margin-top: 10px;">Consultando whois...</div>
-            <div id="modal-whois-content" style="display: none; margin-top: 10px;">
-                <table style="width: 100%; font-size: 0.9rem;">
-                    <tr><td style="color: #666; padding: 4px 8px 4px 0;">Creation Date</td><td id="modal-creation" style="font-weight: 600;"></td></tr>
-                    <tr><td style="color: #666; padding: 4px 8px 4px 0;">Expiration Date</td><td id="modal-expiration" style="font-weight: 600;"></td></tr>
-                    <tr><td style="color: #666; padding: 4px 8px 4px 0;">Registrar</td><td id="modal-registrar" style="font-weight: 600;"></td></tr>
-                    <tr><td style="color: #666; padding: 4px 8px 4px 0; vertical-align: top;">Name Servers</td><td id="modal-ns" style="font-weight: 600;"></td></tr>
-                </table>
+<div id="domain-modal" class="dmodal-overlay">
+    <div class="dmodal">
+        <div class="dmodal-header">
+            <h3 id="modal-domain-title"></h3>
+            <button type="button" class="dmodal-close" onclick="document.getElementById('domain-modal').classList.remove('is-open')">&#10005;</button>
+        </div>
+        <div class="dmodal-body">
+            <div class="dmodal-section">
+                <div class="dmodal-section-label">WHOIS Registry Data</div>
+                <button type="button" id="modal-whois-btn" class="btn btn-small" style="width:100%; margin-bottom:10px;" onclick="fetchWhois()">Fetch WHOIS via worker</button>
+                <div id="modal-whois-loading" style="display:none; color:#888; font-size:0.85rem; padding:6px 0;">Consultando WHOIS...</div>
+                <div id="modal-whois-content" style="display:none;">
+                    <div class="dmodal-whois-grid">
+                        <div>Creation Date</div><div id="modal-creation"></div>
+                        <div>Expiration Date</div><div id="modal-expiration"></div>
+                        <div>Registrar</div><div id="modal-registrar"></div>
+                        <div>Name Servers</div><div id="modal-ns"></div>
+                    </div>
+                </div>
+                <div id="modal-whois-error" style="display:none; color:#c0392b; font-size:0.85rem; padding:6px 0;"></div>
             </div>
-            <div id="modal-whois-error" style="display: none; color: #c0392b; font-size: 0.9rem; margin-top: 10px;"></div>
-        </div>
-        <div id="modal-watchlist-box" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; display: none;">
-            <div style="font-size: 0.85rem; color: #666; margin-bottom: 6px;">Watchlist</div>
-            <div id="modal-watchlist-current" style="font-weight: 600; margin-bottom: 8px;"></div>
-            <div id="modal-watchlist-actions" style="display: flex; gap: 8px;">
-                <button type="button" id="modal-watchlist-btn" class="btn btn-small" style="flex:1;" onclick="toggleWatchlist(_modalDomain)">⭐ Add to Watchlist</button>
+
+            <div class="dmodal-section" id="modal-tag-box" style="display:none;">
+                <div class="dmodal-section-label">Classification</div>
+                <div class="dmodal-status-row">
+                    <span style="color:#888;">Status:</span>
+                    <span class="status-value" id="modal-tag-current">Loading...</span>
+                </div>
+                <div class="dmodal-btn-row">
+                    <button type="button" class="btn btn-small" style="background:#27ae60;" onclick="tagDomain(_modalDomain, 'good')">Mark Good</button>
+                    <button type="button" class="btn btn-small" style="background:#c0392b;" onclick="tagDomain(_modalDomain, 'bad')">Mark Bad</button>
+                    <button type="button" class="btn btn-small btn-danger" onclick="tagDomain(_modalDomain, '')">Clear</button>
+                </div>
+            </div>
+
+            <div class="dmodal-section" id="modal-watchlist-box" style="display:none;">
+                <div class="dmodal-section-label">Watchlist</div>
+                <div class="dmodal-status-row">
+                    <span style="color:#888;">Status:</span>
+                    <span class="status-value" id="modal-watchlist-current">Loading...</span>
+                </div>
+                <div class="dmodal-btn-row">
+                    <button type="button" id="modal-watchlist-btn" class="btn btn-small" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button>
+                </div>
             </div>
         </div>
-        <div id="modal-tag-box" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; display: none;">
-            <div style="font-size: 0.85rem; color: #666; margin-bottom: 6px;">Domain classification</div>
-            <div id="modal-tag-current" style="font-weight: 600; margin-bottom: 8px;"></div>
-            <div style="display: flex; gap: 8px;">
-                <button type="button" class="btn btn-small" style="background:#27ae60; flex:1;" onclick="tagDomain(_modalDomain, 'good')">Mark Good</button>
-                <button type="button" class="btn btn-small" style="background:#c0392b; flex:1;" onclick="tagDomain(_modalDomain, 'bad')">Mark Bad</button>
-                <button type="button" class="btn btn-small btn-danger" style="flex:1;" onclick="tagDomain(_modalDomain, '')">Remove</button>
-            </div>
+        <div class="dmodal-footer">
+            <a id="modal-vt" href="#" target="_blank" class="btn" style="background:#3949ab;">Open in VirusTotal</a>
+            <button type="button" class="btn btn-danger" onclick="document.getElementById('domain-modal').classList.remove('is-open')">Close</button>
         </div>
-        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
-            <a id="modal-vt" href="#" target="_blank" class="btn" style="text-align: center; background: #3949ab;">🛡️ Open in VirusTotal</a>
-        </div>
-        <button onclick="document.getElementById('domain-modal').style.display='none'" class="btn btn-danger" style="margin-top: 15px; width: 100%;">Close</button>
     </div>
 </div>
 
@@ -449,7 +463,7 @@ function openDomainModal(domain) {
     document.getElementById('modal-tag-current').textContent = 'Loading...';
     document.getElementById('modal-watchlist-box').style.display = 'block';
     document.getElementById('modal-watchlist-current').textContent = 'Loading...';
-    document.getElementById('domain-modal').style.display = 'flex';
+    document.getElementById('domain-modal').classList.add('is-open');
     loadDomainTag(domain);
     loadWatchlistStatus(domain);
 }
@@ -461,7 +475,7 @@ function loadDomainTag(domain) {
             if (data.success && data.tag) {
                 const color = data.tag.tag === 'good' ? '#27ae60' : '#c0392b';
                 box.innerHTML = '<span style="color:' + color + '; font-weight:700;">' + data.tag.tag.toUpperCase() + '</span>';
-                if (data.tag.note) box.innerHTML += ' — ' + htmlspecialchars(data.tag.note);
+                if (data.tag.note) box.innerHTML += ' &mdash; ' + htmlspecialchars(data.tag.note);
             } else {
                 box.textContent = 'Not classified';
             }
@@ -477,15 +491,15 @@ function loadWatchlistStatus(domain) {
             const box = document.getElementById('modal-watchlist-current');
             const btn = document.getElementById('modal-watchlist-btn');
             if (data.in_watchlist) {
-                let html = '<span style="color: #f39c12;">⭐ In watchlist</span>';
-                if (data.group_name) html += ' <span style="color:#666;font-size:0.85rem;">(' + htmlspecialchars(data.group_name) + ')</span>';
-                if (data.note) html += ' — ' + htmlspecialchars(data.note);
+                let html = '<span style="color: #f39c12; font-weight:700;">In watchlist</span>';
+                if (data.group_name) html += ' <span style="color:#888;font-size:0.85rem;">(' + htmlspecialchars(data.group_name) + ')</span>';
+                if (data.note) html += ' &mdash; ' + htmlspecialchars(data.note);
                 box.innerHTML = html;
                 btn.textContent = 'Remove from Watchlist';
                 btn.style.background = '#e74c3c';
             } else {
                 box.textContent = 'Not in watchlist';
-                btn.textContent = '⭐ Add to Watchlist';
+                btn.textContent = 'Add to Watchlist';
                 btn.style.background = '';
             }
         })
@@ -559,7 +573,7 @@ function fetchVisibleWhois() {
     .catch(() => alert('Failed to queue WHOIS lookup'));
 }
 document.getElementById('domain-modal').addEventListener('click', function(e) {
-    if (e.target === this) this.style.display = 'none';
+    if (e.target === this) this.classList.remove('is-open');
 });
 </script>
 
