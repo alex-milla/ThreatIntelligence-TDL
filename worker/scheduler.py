@@ -1367,13 +1367,18 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                         cmd += ["--tlds", ",".join(str(t).lower() for t in tlds if t)]
                     if opts.get("recheck"):
                         cmd.append("--recheck")
+                    cmd += ["--command-id", str(cmd_id)]
                     try:
                         with open(out_path, "a", encoding="utf-8") as out:
                             subprocess.Popen(cmd, cwd=os.path.dirname(script),
                                              stdout=out, stderr=out, start_new_session=True)
-                        result = json.dumps({"started": True, "tlds": tlds or "config"})
+                        result = json.dumps({"started": True, "tlds": tlds or "config",
+                                             "recheck": bool(opts.get("recheck"))})
+                        # Keep the command 'running': the detached child reports
+                        # progress and marks it completed/failed when it ends.
+                        status = "running"
                         logs.append({"level": "info", "message":
-                                     f"OpenINTEL import started in background ({', '.join(tlds) if tlds else 'config TLDs'})."})
+                                     f"OpenINTEL run started in background ({', '.join(tlds) if tlds else 'config TLDs'})."})
                     except Exception as e:
                         result = f"Failed to start OpenINTEL import: {e}"
                         status = "failed"

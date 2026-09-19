@@ -557,14 +557,17 @@ def run_tld(tld: str, session: requests.Session, conn: sqlite3.Connection,
 
 
 def recheck_cached(conn: sqlite3.Connection, tlds: list[str], host_url: str,
-                   api_key: str, settings: dict) -> dict:
+                   api_key: str, settings: dict, progress_cb=None) -> dict:
     """Match already-cached ccTLD domains against the current keywords.
 
     The cached domains are existing registrations, so the matches are flagged
     as historical (hidden from the default "new" listings; visible with the
     "Include tagged / historical" toggle), mirroring the CZDS recheck.
+
+    `progress_cb(checked, total, matches)` is called periodically so the web UI
+    can show progress while a long recheck runs.
     """
-    stats = {"domains_checked": 0, "matches_found": 0}
+    stats = {"domains_checked": 0, "total_domains": 0, "matches_found": 0}
     try:
         keywords = sync_client.get_keywords(host_url, api_key)
     except Exception as e:
@@ -576,6 +579,12 @@ def recheck_cached(conn: sqlite3.Connection, tlds: list[str], host_url: str,
         log.warning("OpenINTEL recheck: no active keywords.")
         return stats
 
+    for tld in tlds:
+        stats["total_domains"] += int(
+            conn.execute("SELECT COUNT(*) FROM cctld_seen WHERE tld = ?", (tld,)).fetchone()[0]
+        )
+
+    last_progress = 0
     for tld in tlds:
         last = ""
         checked = 0
@@ -608,7 +617,13 @@ def recheck_cached(conn: sqlite3.Connection, tlds: list[str], host_url: str,
                     log.warning("OpenINTEL recheck .%s: failed to send %d matches", tld, len(matches))
             stats["domains_checked"] += len(domains)
             checked += len(domains)
+            if progress_cb and stats["domains_checked"] - last_progress >= 50000:
+                last_progress = stats["domains_checked"]
+                progress_cb(stats["domains_checked"], stats["total_domains"], stats["matches_found"])
         log.info("OpenINTEL recheck .%s: checked=%d matches=%d", tld, checked, tld_matches)
+
+    if progress_cb:
+        progress_cb(stats["domains_checked"], stats["total_domains"], stats["matches_found"])
     return stats
 
 
@@ -668,6 +683,8 @@ def main() -> int:
     parser.add_argument("--recheck", action="store_true",
                         help="Match already-cached ccTLD domains against the current keywords")
     parser.add_argument("--reset-tld", help="Delete the seen-set for a TLD first (testing)")
+    parser.add_argument("--command-id", type=int, default=0,
+                        help="Web command id to report progress/result to (internal)")
     args = parser.parse_args()
 
     cfg, settings = load_settings()
@@ -693,15 +710,29 @@ def main() -> int:
         log.warning("Another OpenINTEL import is already running. Exiting.")
         return 0
 
+    def report(status: str, payload: dict) -> None:
+        """Report progress/result back to the web command (if any)."""
+        if not args.command_id:
+            return
+        try:
+            sync_client.update_command_status(host_url, api_key, args.command_id,
+                                              status, json.dumps(payload))
+        except Exception as e:
+            log.debug("Could not report command %s: %s", args.command_id, e)
+
     session = requests.Session()
     session.headers.update({"User-Agent": "ThreatIntelligence-TDL-OpenINTEL/1.0"})
     conn = init_db(settings["db_path"])
     reports = []
+    kind = "recheck" if args.recheck else ("test" if args.file else "import")
     try:
         tlds = resolve_tlds(cfg, args, session, host_url, api_key)
         if not tlds:
             log.warning("No OpenINTEL TLDs configured (config [openintel] tlds or web panel).")
+            report("completed", {"kind": kind, "tlds": [], "message": "No OpenINTEL TLDs configured."})
             return 0
+
+        report("running", {"kind": kind, "tlds": tlds, "message": "Starting"})
 
         if args.reset_tld:
             conn.execute("DELETE FROM cctld_seen WHERE tld = ?", (args.reset_tld,))
@@ -709,20 +740,36 @@ def main() -> int:
             conn.commit()
 
         if args.recheck:
-            stats = recheck_cached(conn, tlds, host_url, api_key, settings)
+            def progress(checked, total, matches):
+                report("running", {"kind": "recheck", "tlds": tlds, "total_domains": total,
+                                   "checked_domains": checked, "matches_found": matches})
+            stats = recheck_cached(conn, tlds, host_url, api_key, settings, progress_cb=progress)
             log.info("OpenINTEL recheck done: checked=%d matches=%d",
                      stats["domains_checked"], stats["matches_found"])
+            report("completed", {"kind": "recheck", "tlds": tlds,
+                                 "total_domains": stats["total_domains"],
+                                 "checked_domains": stats["domains_checked"],
+                                 "matches_found": stats["matches_found"]})
             return 0
 
-        for tld in tlds:
+        for idx, tld in enumerate(tlds):
             if args.reset_tld and tld != args.reset_tld:
                 continue
-            report = run_tld(tld, session, conn, host_url, api_key, settings, args)
-            reports.append(report)
+            report("running", {"kind": kind, "tlds": tlds, "current_tld": tld,
+                               "done": idx, "total": len(tlds)})
+            reports.append(run_tld(tld, session, conn, host_url, api_key, settings, args))
 
         if reports and not args.dry_run:
             sync_client.send_cctld_sync(host_url, api_key, reports)
+        report("completed", {"kind": kind, "tlds": tlds,
+                             "records_total": sum(int(r.get("records_total", 0)) for r in reports),
+                             "records_new": sum(int(r.get("records_new", 0)) for r in reports),
+                             "statuses": {r["tld"]: r["status"] for r in reports}})
         return 0
+    except Exception as e:
+        log.error("OpenINTEL run failed: %s", e)
+        report("failed", {"kind": kind, "error": str(e)[:500]})
+        return 1
     finally:
         release_lock(lock)
         conn.close()

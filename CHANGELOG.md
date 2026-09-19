@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.4.4] - 2026-09-19
+
+### Fixed
+
+- **OpenINTEL run visibility**: the `run_openintel` command was marked `completed` immediately with `{"started": true}`, so the UI could not tell whether the import/recheck had finished or what it found.
+  - The daemon now keeps the command **`running`** and passes `--command-id` to the detached `openintel.py`, which reports **progress** (checked/total/matches) and the **final summary** (or error) back through the command.
+  - The OpenINTEL tab's run status is now a live section, so it refreshes automatically while running and shows the final result (e.g. `checked X / Y domains · N match(es)` for a recheck).
+
 ## [v1.4.3] - 2026-09-19
 
 ### Added

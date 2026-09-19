@@ -226,23 +226,53 @@ require __DIR__ . '/../templates/header.php';
         <button type="submit" class="btn waves-effect"><i class="material-icons left">add</i>Add ccTLD</button>
     </form>
 
+    <div id="live-openintel-run" data-live-section>
     <?php if ($openintelLast): ?>
         <?php
             $runState = (string)$openintelLast['status'];
             $runCls = in_array($runState, ['completed'], true) ? 'status-completed'
                 : (in_array($runState, ['failed', 'cancelled'], true) ? 'status-failed' : 'status-pending');
+            $runResult = (string)($openintelLast['result'] ?? '');
+            $runData = json_decode($runResult, true);
+            if (!is_array($runData)) { $runData = null; }
         ?>
         <div class="notice notice-info" style="margin-bottom:12px;">
-            <i class="material-icons">info</i>
+            <i class="material-icons"><?= $runState === 'running' ? 'autorenew' : 'info' ?></i>
             <div>
-                Last OpenINTEL command:
+                OpenINTEL <?= htmlspecialchars((string)($runData['kind'] ?? 'run')) ?>:
                 <span class="status-badge <?= $runCls ?>"><?= htmlspecialchars(ucfirst($runState)) ?></span>
-                <?php if (!empty($openintelLast['executed_at'])): ?>at <?= htmlspecialchars(fmt_date($openintelLast['executed_at'])) ?><?php endif; ?>
-                <?php if (!empty($openintelLast['result'])): ?><br><code><?= htmlspecialchars(mb_substr((string)$openintelLast['result'], 0, 300)) ?></code><?php endif; ?>
+                <?php if (!empty($openintelLast['executed_at'])): ?> at <?= htmlspecialchars(fmt_date($openintelLast['executed_at'])) ?><?php endif; ?>
+                <?php if (is_array($runData)): ?>
+                    <?php if (isset($runData['tlds']) && is_array($runData['tlds']) && $runData['tlds']): ?>
+                        &middot; <?= htmlspecialchars(implode(', ', $runData['tlds'])) ?>
+                    <?php endif; ?>
+                    <?php if (isset($runData['total_domains'])): ?>
+                        <br>Checked <strong><?= number_format((int)($runData['checked_domains'] ?? 0)) ?></strong>
+                        / <?= number_format((int)$runData['total_domains']) ?> domains
+                        &middot; <strong><?= number_format((int)($runData['matches_found'] ?? 0)) ?></strong> match(es)
+                    <?php elseif (isset($runData['records_new'])): ?>
+                        <br>Domains <strong><?= number_format((int)($runData['records_total'] ?? 0)) ?></strong>
+                        &middot; new <strong><?= number_format((int)$runData['records_new']) ?></strong>
+                        <?php if (!empty($runData['statuses'])): ?>
+                            &middot; <?= htmlspecialchars(implode(', ', array_map(
+                                fn($k, $v) => "$k=$v", array_keys($runData['statuses']), $runData['statuses']))) ?>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                    <?php if (!empty($runData['error'])): ?>
+                        <br><span class="text-danger"><?= htmlspecialchars((string)$runData['error']) ?></span>
+                    <?php elseif (!empty($runData['message'])): ?>
+                        <br><span class="muted"><?= htmlspecialchars((string)$runData['message']) ?></span>
+                    <?php endif; ?>
+                <?php elseif ($runResult !== ''): ?>
+                    <br><code><?= htmlspecialchars(mb_substr($runResult, 0, 300)) ?></code>
+                <?php endif; ?>
                 <br><span class="muted">Detailed log on the worker: <code>data/openintel/logs/run-*.log</code>.</span>
             </div>
         </div>
+    <?php else: ?>
+        <p class="muted">No OpenINTEL run yet.</p>
     <?php endif; ?>
+    </div>
     <?php endif; ?>
 
     <?php if (empty($tlds)): ?>
