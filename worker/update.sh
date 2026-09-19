@@ -83,10 +83,9 @@ else
 fi
 
 if "${PYTHON_BIN}" -c "import pyarrow" 2>/dev/null; then
-    echo "[+] pyarrow available (OpenINTEL ccTLD import)."
-elif ! "${PYTHON_BIN}" -m pip install "pyarrow>=12.0.0" >/dev/null 2>&1; then
-    echo "[i] pyarrow missing and could not be installed (needed only for OpenINTEL)."
-    echo "    Run: bash ${SCRIPT_DIR}/setup_venv.sh && bash ${SCRIPT_DIR}/update.sh --restart"
+    echo "[+] pyarrow available (optional, for parquet OpenINTEL datasets)."
+else
+    echo "[i] pyarrow not installed (optional): OpenINTEL ccTLD lists are CSV gzip."
 fi
 
 NEW_VERSION="$(cat "${REPO_DIR}/VERSION" 2>/dev/null || echo unknown)"

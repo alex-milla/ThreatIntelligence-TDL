@@ -31,14 +31,10 @@ else
 fi
 
 if "${PYTHON_BIN}" -c "import pyarrow" 2>/dev/null; then
-    echo "[+] pyarrow available (OpenINTEL ccTLD import)."
+    echo "[+] pyarrow available (optional, for parquet OpenINTEL datasets)."
 else
-    echo "[*] Installing pyarrow (needed for the OpenINTEL ccTLD importer) ..."
-    if ! "${PYTHON_BIN}" -m pip install "pyarrow>=12.0.0"; then
-        echo "[!] Could not install pyarrow (PEP 668 externally-managed environment?)." >&2
-        echo "    Create a virtualenv and re-run install.sh:" >&2
-        echo "      bash ${SCRIPT_DIR}/setup_venv.sh && bash ${SCRIPT_DIR}/install.sh" >&2
-    fi
+    echo "[i] pyarrow not installed. Not required: OpenINTEL ccTLD lists are CSV gzip."
+    echo "    Install it only if you use parquet datasets: ${PYTHON_BIN} -m pip install pyarrow"
 fi
 
 if [ ! -f config.ini ]; then

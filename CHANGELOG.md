@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.4.2] - 2026-09-19
+
+### Fix
+
+- **OpenINTEL directory depth**: the ccTLD lists have an extra **`day=NN`** level (`tld=io/year=2026/month=09/day=14/...`). The parser now descends `day=` directories (falling back to files directly under the month) and picks the latest day.
+- **File format**: the lists are **`.csv.gz`** (one apex domain per line, no header), not parquet. `read_domains()` now dispatches by extension and reads CSV gzip natively.
+
+### Changed
+
+- **`pyarrow` is optional** (only needed if a dataset is served as parquet). It was removed from the required dependencies; `install.sh`/`update.sh` no longer force-install it. The PEP 668 virtualenv support remains available via `setup_venv.sh`.
+
 ## [v1.4.1] - 2026-09-19
 
 ### Fix

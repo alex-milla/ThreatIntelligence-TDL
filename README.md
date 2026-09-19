@@ -202,7 +202,7 @@ CZDS only covers gTLDs. For **country-code TLDs** (`.io`, `.es`, `.fr`, ...) the
 
 - **Separate process/database**: `worker/openintel.py` uses its own SQLite (`data/openintel.db`) and is launched by `tdl-openintel.timer` (Mondays) or on demand from **Admin → TLDs → ccTLD (OpenINTEL)** (`run_openintel`). It never touches the CZDS pipeline.
 - The **first run baselines** a ccTLD (caches everything, reports nothing). Later runs report only domains seen for the first time, matched against keywords; candidates are optionally confirmed with RDAP/WHOIS so old domains are filtered out.
-- Requires **`pyarrow`** to read `.parquet.gz`. Enable it in `config.ini`:
+- The weekly files are **`.csv.gz`** and are read without extra dependencies; `pyarrow` is only needed if a dataset is ever served as parquet. Enable the import in `config.ini`:
   ```ini
   [openintel]
   enabled = true

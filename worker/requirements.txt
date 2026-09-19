@@ -1,4 +1,5 @@
 requests>=2.31.0
 pyahocorasick>=2.0.0
-# Needed for the OpenINTEL ccTLD importer (reads .parquet.gz).
-pyarrow>=12.0.0
+# Optional: only needed if an OpenINTEL dataset is served as parquet. The ccTLD
+# name lists are .csv.gz and are read without extra dependencies.
+# pyarrow>=12.0.0

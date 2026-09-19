@@ -260,9 +260,10 @@ def test_openintel_parse_date() -> None:
 
 
 def test_openintel_resolve_latest() -> None:
-    # Simulate the real OpenINTEL index: unencoded '=' links and a
-    # 'tld=io' -> 'tld%3Dio/' redirect (the parser must follow links, not build URLs).
+    # Simulate the real OpenINTEL index: unencoded '=' links, a
+    # 'tld=io' -> 'tld%3Dio/' redirect, and an extra day= level.
     base = "https://www.openintel.nl/download/domain-lists/cctlds"
+    obj = "https://object.openintel.nl/seeseetld/lists"
 
     def fake_links(session, url, sleep):
         u = url.rstrip("/")
@@ -271,10 +272,15 @@ def test_openintel_resolve_latest() -> None:
         if u.endswith("/tld=io") or u.endswith("/tld%3Dio"):
             return [f"{base}/tld=io/year=2026"]
         if u.endswith("/year=2026") or u.endswith("/year%3D2026"):
-            return [f"{base}/tld=io/year=2026/month=09"]
+            return [f"{base}/tld=io/year=2026/month=09",
+                    f"{base}/tld=io/year=2026/month=08"]
         if u.endswith("/month=09") or u.endswith("/month%3D09"):
-            return [f"{base}/tld=io/year=2026/month=09/20260901_x.parquet.gz",
-                    f"{base}/tld=io/year=2026/month=09/20260908_y.parquet.gz"]
+            return [f"{base}/tld=io/year=2026/month=09/day=14",
+                    f"{base}/tld=io/year=2026/month=09/day=07"]
+        if u.endswith("/day=14"):
+            return [f"{obj}/tld=io/year=2026/month=09/day=14/ccTLD-domain-names-list.io.2026-09-14.csv.gz"]
+        if u.endswith("/day=07"):
+            return [f"{obj}/tld=io/year=2026/month=09/day=07/ccTLD-domain-names-list.io.2026-09-07.csv.gz"]
         return []
 
     original = openintel._links
@@ -284,9 +290,18 @@ def test_openintel_resolve_latest() -> None:
         previous = openintel.resolve_latest(None, "io", 1, 0)
     finally:
         openintel._links = original
-    assert latest["filename"] == "20260908_y.parquet.gz", latest
-    assert previous["filename"] == "20260901_x.parquet.gz", previous
+    assert latest["filename"] == "ccTLD-domain-names-list.io.2026-09-14.csv.gz", latest
+    assert previous["filename"] == "ccTLD-domain-names-list.io.2026-09-07.csv.gz", previous
     print("[PASS] test_openintel_resolve_latest")
+
+
+def test_openintel_csv_gz_read() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "ccTLD-domain-names-list.io.2026-09-14.csv.gz")
+        with gzip.open(path, "wt", encoding="utf-8") as fh:
+            fh.write("Alpha.IO\nbeta.io\n\ngamma.io,extra-column\n")
+        assert list(openintel.read_domains(path)) == ["alpha.io", "beta.io", "gamma.io"]
+    print("[PASS] test_openintel_csv_gz_read")
 
 
 def test_openintel_baseline_and_diff() -> None:
@@ -342,6 +357,7 @@ if __name__ == "__main__":
     test_openintel_version_key()
     test_openintel_parse_date()
     test_openintel_resolve_latest()
+    test_openintel_csv_gz_read()
     test_openintel_baseline_and_diff()
     test_openintel_parquet_read()
     print("\nAll tests passed.")

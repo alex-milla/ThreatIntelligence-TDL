@@ -162,9 +162,10 @@ def _links(session: requests.Session, url: str, sleep_http: float) -> list[str]:
 
 
 def _file_links(links: list[str]) -> list[str]:
-    """Keep data-file links (.parquet.gz / .parquet / .gz / .zip)."""
-    return [u for u in links if re.search(r"\.(parquet\.gz|parquet|gz|zip)$",
-                                          unquote(u), re.IGNORECASE)]
+    """Keep data-file links (OpenINTEL serves .csv.gz; parquet/zip also accepted)."""
+    return [u for u in links if re.search(
+        r"\.(csv\.gz|csv|parquet\.gz|parquet|json\.gz|txt\.gz|gz|zip)$",
+        unquote(u), re.IGNORECASE)]
 
 
 def _pick(files: list[str], index: int) -> dict | None:
@@ -228,7 +229,19 @@ def resolve_latest(session: requests.Session, tld: str, index: int,
             continue
         for month in sorted(months, reverse=True):
             month_links = _links(session, months[month], sleep_http)
-            collected = _file_links(month_links) + collected
+            files = _file_links(month_links)
+            if not files:
+                # The month level holds day=NN directories with the files inside.
+                days: dict[str, str] = {}
+                for link in month_links:
+                    m = re.search(r"day(?:%3D|=)(\d{2})", unquote(link), re.IGNORECASE)
+                    if m:
+                        days.setdefault(m.group(1), link)
+                for day in sorted(days, reverse=True):
+                    files.extend(_file_links(_links(session, days[day], sleep_http)))
+                    if len(collected) + len(files) > index:
+                        break
+            collected = files + collected
             if len(collected) > index:
                 break
         if len(collected) > index:
@@ -279,7 +292,7 @@ def download_file(session: requests.Session, url: str, dest: str,
 
 
 # --------------------------------------------------------------------------
-# Parquet reading
+# Domain list reading (OpenINTEL serves .csv.gz; parquet is also supported)
 # --------------------------------------------------------------------------
 
 def _parquet_source(path: str):
@@ -294,9 +307,8 @@ def _parquet_source(path: str):
     return tmp, tmp
 
 
-def read_domains(path: str, batch_size: int = BATCH_SIZE):
-    """Yield lowercased apex domains from a (possibly gzipped) parquet file."""
-    import pyarrow.parquet as pq
+def _read_parquet(path: str, batch_size: int = BATCH_SIZE):
+    import pyarrow.parquet as pq  # optional dependency, only for parquet datasets
 
     source, tmp = _parquet_source(path)
     try:
@@ -312,6 +324,41 @@ def read_domains(path: str, batch_size: int = BATCH_SIZE):
     finally:
         if tmp and os.path.exists(tmp):
             os.remove(tmp)
+
+
+def _is_gzip(path: str) -> bool:
+    with open(path, "rb") as fh:
+        return fh.read(2) == b"\x1f\x8b"
+
+
+def _read_text_domains(path: str):
+    """Yield domains from a plain or gzipped text/CSV file (one per line).
+
+    OpenINTEL ccTLD lists are ``ccTLD-domain-names-list.<tld>.<date>.csv.gz``
+    without a header; if a row has extra columns, the first one is used.
+    """
+    opener = gzip.open if _is_gzip(path) else open
+    with opener(path, "rt", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            field = re.split(r"[,\t;]", line, 1)[0].strip().strip('"').lower().rstrip(".")
+            if field and (field != "domain"):  # tolerate a 'domain' header
+                yield field
+
+
+def read_domains(path: str, batch_size: int = BATCH_SIZE):
+    """Yield lowercased apex domains from an OpenINTEL data file.
+
+    Parses parquet (optionally gzipped) when the file is parquet, and the
+    CSV/text format otherwise. The ccTLD name lists are CSV gzip, so pyarrow is
+    not required for them.
+    """
+    lower = path.lower()
+    if lower.endswith((".parquet", ".parquet.gz")):
+        return _read_parquet(path, batch_size)
+    return _read_text_domains(path)
 
 
 # --------------------------------------------------------------------------
