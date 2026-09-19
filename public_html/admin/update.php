@@ -105,30 +105,61 @@ function copyDir(string $src, string $dst): int {
     return $copied;
 }
 
+/**
+ * Copy a directory tree, skipping excluded top-level entries and file names.
+ */
+function copyTree(string $src, string $dst, array $excludeTop = [], array $excludeNames = []): int {
+    $copied = 0;
+    if (!is_dir($src)) {
+        return 0;
+    }
+    $rii = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($src, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::LEAVES_ONLY
+    );
+    foreach ($rii as $file) {
+        if (!$file->isFile()) {
+            continue;
+        }
+        $relative = str_replace('\\', '/', substr($file->getPathname(), strlen($src) + 1));
+        $top = explode('/', $relative)[0];
+        if (in_array($top, $excludeTop, true)) {
+            continue;
+        }
+        if (in_array(basename($relative), $excludeNames, true)) {
+            continue;
+        }
+        $target = rtrim($dst, '/\\') . '/' . $relative;
+        @mkdir(dirname($target), 0755, true);
+        if (@copy($file->getPathname(), $target)) {
+            $copied++;
+        }
+    }
+    return $copied;
+}
+
 function backupApp(string $backupBase): string {
     $timestamp = date('Ymd_His');
     $backupDir = $backupBase . '/backup_' . $timestamp;
     @mkdir($backupDir, 0755, true);
 
-    $appRoot = dirname(__DIR__);
+    $appRoot  = dirname(__DIR__);   // public_html (web root)
+    $repoRoot = dirname($appRoot);  // repository root (holds worker/)
 
-    // Backup all app directories except data
-    $dirsToBackup = ['admin', 'api', 'assets', 'includes', 'templates', 'worker'];
-    foreach ($dirsToBackup as $dir) {
-        $src = $appRoot . '/' . $dir;
-        if (is_dir($src)) {
-            copyDir($src, $backupDir . '/' . $dir);
-        }
+    // Back up the whole web root, excluding runtime data.
+    copyTree($appRoot, $backupDir . '/public_html', ['data', '.git', '.github']);
+
+    // Back up the worker source, never secrets/config/logs/zones/data.
+    $workerDir = $repoRoot . '/worker';
+    if (is_dir($workerDir)) {
+        copyTree(
+            $workerDir,
+            $backupDir . '/worker',
+            ['data', 'logs', 'zones', '__pycache__'],
+            ['config.ini']
+        );
     }
 
-    // Backup root files
-    $filesToBackup = ['index.php', 'install.php', 'keywords.php', 'login.php', 'logout.php', 'notifications.php', 'register.php', '.htaccess', 'VERSION'];
-    foreach ($filesToBackup as $file) {
-        $src = $appRoot . '/' . $file;
-        if (file_exists($src)) {
-            copy($src, $backupDir . '/' . $file);
-        }
-    }
     return $backupDir;
 }
 
@@ -205,12 +236,16 @@ function doUpdate(string $zipUrl, string $versionFile, string $backupBase): arra
         }
     }
 
-    // 5. Detect ZIP structure: legacy (has web/) or flat (modern)
-    $hasLegacyWeb = is_dir($sourceDir . '/web');
-    $hasWorker = is_dir($sourceDir . '/worker');
-    $hasFlatApp = is_dir($sourceDir . '/admin') || is_dir($sourceDir . '/includes');
+    // 5. Detect ZIP structure:
+    //    - public_html/ (v1.3.55+): web root is public_html/, worker/ at repo root
+    //    - web/  : legacy layout
+    //    - flat  : admin/ and includes/ at ZIP root (pre-public_html)
+    $hasPublicHtml = is_dir($sourceDir . '/public_html');
+    $hasLegacyWeb  = is_dir($sourceDir . '/web');
+    $hasWorker     = is_dir($sourceDir . '/worker');
+    $hasFlatApp    = is_dir($sourceDir . '/admin') || is_dir($sourceDir . '/includes');
 
-    if (!$hasLegacyWeb && !$hasFlatApp && !$hasWorker) {
+    if (!$hasPublicHtml && !$hasLegacyWeb && !$hasFlatApp && !$hasWorker) {
         rrmdir($extractDir);
         @unlink($tempZip);
         return ['success' => false, 'error' => 'Release ZIP does not contain recognizable application files. Aborting.', 'backup' => $backupDir];
@@ -219,7 +254,22 @@ function doUpdate(string $zipUrl, string $versionFile, string $backupBase): arra
     // 6. Copy files
     $copied = 0;
 
-    if ($hasLegacyWeb) {
+    if ($hasPublicHtml) {
+        // Modern layout: copy public_html/* into the web root and worker/* next to it.
+        $copied += copyTree(
+            $sourceDir . '/public_html',
+            $appRoot,
+            ['data', '.git', '.github']
+        );
+        if ($hasWorker) {
+            $copied += copyTree(
+                $sourceDir . '/worker',
+                dirname($appRoot) . '/worker',
+                ['data', 'logs', 'zones', '__pycache__'],
+                ['config.ini']
+            );
+        }
+    } elseif ($hasLegacyWeb) {
         // Legacy mode: copy web/ → root, worker/ → worker/
         foreach (['web', 'worker'] as $dir) {
             $src = $sourceDir . '/' . $dir;
