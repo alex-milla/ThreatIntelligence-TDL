@@ -260,23 +260,30 @@ def test_openintel_parse_date() -> None:
 
 
 def test_openintel_resolve_latest() -> None:
-    def fake_hrefs(session, url, sleep):
-        if url.endswith("/tld%3Dio/"):
-            return ['/download/.../tld%3Dio/year%3D2026/']
-        if url.endswith("year%3D2026/"):
-            return ['/download/.../tld%3Dio/year%3D2026/month%3D09/']
-        if url.endswith("month%3D09/"):
-            return ["/download/.../20260901_x.parquet.gz",
-                    "/download/.../20260908_y.parquet.gz"]
+    # Simulate the real OpenINTEL index: unencoded '=' links and a
+    # 'tld=io' -> 'tld%3Dio/' redirect (the parser must follow links, not build URLs).
+    base = "https://www.openintel.nl/download/domain-lists/cctlds"
+
+    def fake_links(session, url, sleep):
+        u = url.rstrip("/")
+        if u == openintel.BASE_URL:
+            return [f"{base}/tld=io", f"{base}/tld=fr"]
+        if u.endswith("/tld=io") or u.endswith("/tld%3Dio"):
+            return [f"{base}/tld=io/year=2026"]
+        if u.endswith("/year=2026") or u.endswith("/year%3D2026"):
+            return [f"{base}/tld=io/year=2026/month=09"]
+        if u.endswith("/month=09") or u.endswith("/month%3D09"):
+            return [f"{base}/tld=io/year=2026/month=09/20260901_x.parquet.gz",
+                    f"{base}/tld=io/year=2026/month=09/20260908_y.parquet.gz"]
         return []
 
-    original = openintel._hrefs
-    openintel._hrefs = fake_hrefs
+    original = openintel._links
+    openintel._links = fake_links
     try:
         latest = openintel.resolve_latest(None, "io", 0, 0)
         previous = openintel.resolve_latest(None, "io", 1, 0)
     finally:
-        openintel._hrefs = original
+        openintel._links = original
     assert latest["filename"] == "20260908_y.parquet.gz", latest
     assert previous["filename"] == "20260901_x.parquet.gz", previous
     print("[PASS] test_openintel_resolve_latest")

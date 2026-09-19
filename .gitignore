@@ -14,6 +14,10 @@ env/
 # Local documentation checkpoints (not published)
 md/
 
+# Python virtualenv
+.venv/
+worker/.venv/
+
 # Python bytecode
 __pycache__/
 *.pyc

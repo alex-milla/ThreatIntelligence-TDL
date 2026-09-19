@@ -28,6 +28,7 @@ import sqlite3
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote, urljoin
 
 try:
     import fcntl
@@ -146,44 +147,98 @@ def release_lock(handle) -> None:
 # OpenINTEL index / download
 # --------------------------------------------------------------------------
 
-def _hrefs(session: requests.Session, url: str, sleep_http: float) -> list[str]:
-    r = session.get(url, timeout=60)
+def _links(session: requests.Session, url: str, sleep_http: float) -> list[str]:
+    """GET a page (accepting the terms cookie and following redirects) and
+    return its hrefs absolutized against the final URL."""
+    r = session.get(url, timeout=60, cookies=COOKIES, allow_redirects=True)
     r.raise_for_status()
     time.sleep(max(0.0, sleep_http))
-    return re.findall(r'href="([^"]+)"', r.text)
+    links: list[str] = []
+    for href in re.findall(r'''href=["']([^"']+)["']''', r.text):
+        if href.startswith(("#", "javascript:", "mailto:", "data:")):
+            continue
+        links.append(urljoin(r.url, href))
+    return links
+
+
+def _file_links(links: list[str]) -> list[str]:
+    """Keep data-file links (.parquet.gz / .parquet / .gz / .zip)."""
+    return [u for u in links if re.search(r"\.(parquet\.gz|parquet|gz|zip)$",
+                                          unquote(u), re.IGNORECASE)]
+
+
+def _pick(files: list[str], index: int) -> dict | None:
+    files = sorted(files, key=lambda u: _version_key(os.path.basename(unquote(u))))
+    if len(files) <= index:
+        return None
+    target = files[-(index + 1)]
+    return {"url": target, "filename": os.path.basename(unquote(target))}
+
+
+def _find_tld_link(session: requests.Session, tld: str, sleep_http: float) -> str | None:
+    """Locate the TLD directory link in the root index (encoding-agnostic)."""
+    want = f"tld={tld.lower()}"
+    for link in _links(session, f"{BASE_URL}/", sleep_http):
+        segment = unquote(link).rstrip("/").rsplit("/", 1)[-1].lower()
+        if segment == want:
+            return link
+    return None
 
 
 def resolve_latest(session: requests.Session, tld: str, index: int,
                    sleep_http: float) -> dict | None:
-    """Return the {index}-th most recent weekly file for a TLD (0 = latest)."""
-    tld_seg = f"tld%3D{tld}"
-    hrefs = _hrefs(session, f"{BASE_URL}/{tld_seg}/", sleep_http)
-    years = sorted({m for h in hrefs for m in re.findall(r"year%3D(\d{4})", h)})
+    """Return the {index}-th most recent weekly file for a TLD (0 = latest).
+
+    Navigates the real index links (which use unencoded '=', e.g.
+    ``tld=io/year=2026/month=09``) instead of constructing URLs, so it is robust
+    to encoding changes and redirects (``tld=io`` -> ``tld%3Dio/``).
+    """
+    tld = tld.lower()
+    tld_url = _find_tld_link(session, tld, sleep_http) or f"{BASE_URL}/tld={tld}"
+    tld_links = _links(session, tld_url, sleep_http)
+
+    years: dict[str, str] = {}
+    for link in tld_links:
+        m = re.search(r"year(?:%3D|=)(\d{4})", unquote(link), re.IGNORECASE)
+        if m:
+            years.setdefault(m.group(1), link)
+
     if not years:
+        # Some layouts list files directly under the TLD.
+        files = _file_links(tld_links)
+        found = _pick(files, index)
+        if found:
+            return found
+        log.warning("OpenINTEL .%s: no year links found (%d links on the TLD page)",
+                    tld, len(tld_links))
         return None
 
     collected: list[str] = []
-    for year in reversed(years):
-        year_seg = f"year%3D{year}"
-        month_hrefs = _hrefs(session, f"{BASE_URL}/{tld_seg}/{year_seg}/", sleep_http)
-        months = sorted({m for h in month_hrefs for m in re.findall(r"month%3D(\d{2})", h)})
-        for month in reversed(months):
-            month_seg = f"month%3D{month}"
-            file_hrefs = _hrefs(session, f"{BASE_URL}/{tld_seg}/{year_seg}/{month_seg}/", sleep_http)
-            files = [f for f in file_hrefs if re.search(r"\.(gz|parquet)$", f)]
-            files.sort(key=lambda u: _version_key(os.path.basename(u)))
-            collected = files + collected
+    for year in sorted(years, reverse=True):
+        year_links = _links(session, years[year], sleep_http)
+        months: dict[str, str] = {}
+        for link in year_links:
+            m = re.search(r"month(?:%3D|=)(\d{2})", unquote(link), re.IGNORECASE)
+            if m:
+                months.setdefault(m.group(1), link)
+        if not months:
+            collected = _file_links(year_links) + collected
+            if len(collected) > index:
+                break
+            continue
+        for month in sorted(months, reverse=True):
+            month_links = _links(session, months[month], sleep_http)
+            collected = _file_links(month_links) + collected
             if len(collected) > index:
                 break
         if len(collected) > index:
             break
 
-    if len(collected) <= index:
-        return None
-
-    target = collected[-(index + 1)]
-    url = target if target.startswith("http") else SITE + target
-    return {"url": url, "filename": os.path.basename(target)}
+    found = _pick(collected, index)
+    if not found:
+        log.warning("OpenINTEL .%s: fewer than %d weekly file(s) found (%d)",
+                    tld, index + 1, len(collected))
+    return found
 
 
 def download_file(session: requests.Session, url: str, dest: str,
@@ -196,7 +251,8 @@ def download_file(session: requests.Session, url: str, dest: str,
             existing = os.path.getsize(part) if os.path.exists(part) else 0
             headers = {"Range": f"bytes={existing}-"} if existing else {}
             mode = "ab"
-            with session.get(url, headers=headers, stream=True, timeout=180) as r:
+            with session.get(url, headers=headers, stream=True, timeout=180,
+                             cookies=COOKIES) as r:
                 if existing and r.status_code == 200:
                     existing = 0
                     mode = "wb"
@@ -382,7 +438,9 @@ def run_tld(tld: str, session: requests.Session, conn: sqlite3.Connection,
             resolved = resolve_latest(session, tld, args.index, settings["sleep_http"])
             if not resolved:
                 report["status"] = "no_data"
-                record_run(conn, tld, None, "no_data", 0, 0, "no OpenINTEL data for this TLD")
+                report["error"] = "no OpenINTEL data for this TLD (check the index/cookie)"
+                log.warning("OpenINTEL .%s: no data found", tld)
+                record_run(conn, tld, None, "no_data", 0, 0, report["error"])
                 return report
             filename = resolved["filename"]
             source_path = os.path.join(settings["download_dir"], f"tld={tld}", filename)

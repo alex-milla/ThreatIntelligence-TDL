@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.4.1] - 2026-09-19
+
+### Fix
+
+- **OpenINTEL index parser**: the download index uses **unencoded** `=` links (`tld=io`, `year=2026`, `month=09`) and a `301` from `tld=io` to `tld%3Dio/`. The parser now navigates the **real hrefs** with `urljoin` + `unquote` and follows redirects, accepting `=` and `%3D` alike, instead of building `tld%3D…/year%3D…` URLs. This is why `.io` stayed at `No data`.
+- **OpenINTEL agreement cookie** is now sent on the index and file requests, and the `no_data` case is logged instead of failing silently.
+
+### Web UI
+
+- **Add ccTLD** form on the OpenINTEL tab, visible even when the list is empty (breaks the chicken-and-egg: you could not add the first ccTLD).
+- The last `run_openintel` command status/result is shown on the tab, with a pointer to the worker log.
+
+### Install / update
+
+- New `worker/setup_venv.sh` and virtualenv-aware `install.sh`/`update.sh` (Debian/Ubuntu block system-wide `pip` via PEP 668). `pyarrow` is installed explicitly; the systemd units use `worker/.venv/bin/python` when present. `.gitignore` now ignores `.venv/`.
+
 ## [v1.4.0] - 2026-09-19
 
 ### New data source: OpenINTEL ccTLD import (optional, weekly)

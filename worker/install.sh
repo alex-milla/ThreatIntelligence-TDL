@@ -13,23 +13,32 @@ if [ -z "${PYTHON_BIN}" ]; then
     exit 1
 fi
 
+# Prefer a virtualenv when present: Debian/Ubuntu block system-wide pip (PEP 668).
+VENV_PY="${SCRIPT_DIR}/.venv/bin/python"
+if [ -x "${VENV_PY}" ]; then
+    PYTHON_BIN="${VENV_PY}"
+    echo "[+] Using virtualenv: ${PYTHON_BIN}"
+fi
+
 if "${PYTHON_BIN}" -c "import requests, ahocorasick" 2>/dev/null; then
     echo "[+] Python dependencies already available."
 else
-    if ! "${PYTHON_BIN}" -m pip install -r requirements.txt; then
-        echo "[!] Could not install dependencies automatically (PEP 668 externally-managed environment?)." >&2
-        echo "    Required: requests. Optional accelerator: pyahocorasick." >&2
-        echo "    Debian/Ubuntu:  apt install python3-requests python3-ahocorasick" >&2
-        echo "    Or a venv:      python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
+    if ! "${PYTHON_BIN}" -m pip install -r "${SCRIPT_DIR}/requirements.txt"; then
+        echo "[!] Could not install dependencies (PEP 668 externally-managed environment?)." >&2
+        echo "    Recommended: create a virtualenv and re-run install.sh:" >&2
+        echo "      bash ${SCRIPT_DIR}/setup_venv.sh && bash ${SCRIPT_DIR}/install.sh" >&2
     fi
 fi
 
 if "${PYTHON_BIN}" -c "import pyarrow" 2>/dev/null; then
     echo "[+] pyarrow available (OpenINTEL ccTLD import)."
 else
-    echo "[i] pyarrow not installed: the CZDS worker runs fine, but the OpenINTEL"
-    echo "    ccTLD importer needs it. Install with: ${PYTHON_BIN} -m pip install pyarrow"
-    echo "    (or apt install python3-pyarrow on Debian/Ubuntu where available)."
+    echo "[*] Installing pyarrow (needed for the OpenINTEL ccTLD importer) ..."
+    if ! "${PYTHON_BIN}" -m pip install "pyarrow>=12.0.0"; then
+        echo "[!] Could not install pyarrow (PEP 668 externally-managed environment?)." >&2
+        echo "    Create a virtualenv and re-run install.sh:" >&2
+        echo "      bash ${SCRIPT_DIR}/setup_venv.sh && bash ${SCRIPT_DIR}/install.sh" >&2
+    fi
 fi
 
 if [ ! -f config.ini ]; then

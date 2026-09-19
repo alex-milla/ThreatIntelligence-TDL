@@ -19,8 +19,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-PYTHON_BIN="${PYTHON_BIN:-python3}"
 SERVICE_NAME="${SERVICE_NAME:-tdl-worker}"
+
+if [ -z "${PYTHON_BIN:-}" ]; then
+    if [ -x "${SCRIPT_DIR}/.venv/bin/python" ]; then
+        PYTHON_BIN="${SCRIPT_DIR}/.venv/bin/python"
+    else
+        PYTHON_BIN="python3"
+    fi
+fi
 RESTART=0
 
 for arg in "$@"; do
@@ -69,10 +76,17 @@ else
     if ! "${PYTHON_BIN}" -m pip install -r "${SCRIPT_DIR}/requirements.txt"; then
         echo "[!] Could not install dependencies automatically (PEP 668 externally-managed environment?)." >&2
         echo "    Required: requests. Optional accelerator: pyahocorasick." >&2
-        echo "    Debian/Ubuntu:  apt install python3-requests python3-ahocorasick" >&2
-        echo "    Or a venv:      python3 -m venv .venv && .venv/bin/pip install -r requirements.txt" >&2
+        echo "    Recommended: create a virtualenv and re-run update.sh:" >&2
+        echo "      bash ${SCRIPT_DIR}/setup_venv.sh && bash ${SCRIPT_DIR}/update.sh --restart" >&2
         echo "    The worker can still run if 'requests' is already installed." >&2
     fi
+fi
+
+if "${PYTHON_BIN}" -c "import pyarrow" 2>/dev/null; then
+    echo "[+] pyarrow available (OpenINTEL ccTLD import)."
+elif ! "${PYTHON_BIN}" -m pip install "pyarrow>=12.0.0" >/dev/null 2>&1; then
+    echo "[i] pyarrow missing and could not be installed (needed only for OpenINTEL)."
+    echo "    Run: bash ${SCRIPT_DIR}/setup_venv.sh && bash ${SCRIPT_DIR}/update.sh --restart"
 fi
 
 NEW_VERSION="$(cat "${REPO_DIR}/VERSION" 2>/dev/null || echo unknown)"

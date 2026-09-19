@@ -51,6 +51,14 @@ cd ThreatIntelligence-TDL/worker
 bash install.sh
 ```
 
+> **Debian/Ubuntu (PEP 668):** system-wide `pip install` is blocked. Create a
+> virtualenv and re-run the installer so the systemd units use it:
+> ```bash
+> sudo apt install python3-venv python3-full
+> bash setup_venv.sh
+> bash install.sh
+> ```
+
 Edit `config.ini`:
 
 ```ini

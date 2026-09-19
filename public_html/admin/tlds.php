@@ -56,6 +56,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? 'save_selection';
     $active = is_array($_POST['active'] ?? null) ? $_POST['active'] : [];
 
+    // Add a ccTLD manually (before the selection save, which would clear it).
+    if ($action === 'add_openintel_tld' && $source === 'openintel') {
+        $name = strtolower(trim((string)($_POST['name'] ?? '')));
+        if (!preg_match('/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/', $name)) {
+            $_SESSION['flash_message'] = 'Invalid ccTLD name. Use a single label like "io" or "co-uk" is not allowed.';
+            header('Location: /admin/tlds.php?source=openintel');
+            exit;
+        }
+        $exists = $db->prepare("SELECT source FROM tlds WHERE name = ? LIMIT 1");
+        $exists->execute([$name]);
+        $existingSource = $exists->fetchColumn();
+        if ($existingSource !== false && $existingSource !== 'openintel') {
+            $_SESSION['flash_message'] = ".{$name} already exists as an ICANN (CZDS) TLD.";
+        } else {
+            $db->prepare("INSERT OR IGNORE INTO tlds (name, source, is_active) VALUES (?, 'openintel', 0)")
+               ->execute([$name]);
+            $db->prepare("UPDATE tlds SET is_active = 1 WHERE name = ? AND source = 'openintel'")
+               ->execute([$name]);
+            $_SESSION['flash_message'] = ".{$name} added and activated. Run the import to baseline it.";
+        }
+        header('Location: /admin/tlds.php?source=openintel');
+        exit;
+    }
+
     // Persist the selection of THIS source only (never wipe the other source).
     $db->beginTransaction();
     $db->prepare("UPDATE tlds SET is_active = 0 WHERE source = ?")->execute([$source]);
@@ -115,6 +139,15 @@ $tldWatch = $source === 'openintel'
     ? hasPendingCommand($db, 'run_openintel')
     : ($workerRunning || $activity['commands_pending'] > 0 || $activity['commands_running'] > 0);
 
+// Last OpenINTEL command, to surface failures on the tab.
+$openintelLast = null;
+if ($source === 'openintel') {
+    $openintelLast = $db->query(
+        "SELECT status, result, created_at, executed_at FROM commands "
+        . "WHERE command = 'run_openintel' ORDER BY id DESC LIMIT 1"
+    )->fetch();
+}
+
 $summary = array_fill_keys(
     ['downloaded', 'not_modified', 'skipped_today', 'failed', 'updated', 'unchanged', 'baselined', 'no_data'],
     0
@@ -172,16 +205,46 @@ require __DIR__ . '/../templates/header.php';
     <p class="muted">
         Weekly apex-domain lists published by <a href="https://www.openintel.nl/data/domain-lists/cctld-names/" target="_blank" rel="noopener">OpenINTEL</a>
         (CC BY-NC-SA 4.0, non-commercial). The first run baselines each ccTLD; later runs report only domains seen for the first time.
-        Enable it in the worker <code>config.ini</code> (<code>[openintel] enabled = true</code>).
+        Enable it in the worker <code>config.ini</code> (<code>[openintel] enabled = true</code>, <code>accept_terms = true</code>).
     </p>
+
+    <form method="POST" class="filter-form" style="margin-bottom:14px;">
+        <?php csrfField(); ?>
+        <input type="hidden" name="source" value="openintel">
+        <input type="hidden" name="action" value="add_openintel_tld">
+        <div class="input-field">
+            <i class="material-icons prefix">add</i>
+            <input id="new-cctld" type="text" name="name" placeholder=" " pattern="[A-Za-z0-9-]{2,63}" autocomplete="off">
+            <label for="new-cctld">Add a ccTLD (e.g. io, es, fr)</label>
+        </div>
+        <button type="submit" class="btn waves-effect"><i class="material-icons left">add</i>Add ccTLD</button>
+    </form>
+
+    <?php if ($openintelLast): ?>
+        <?php
+            $runState = (string)$openintelLast['status'];
+            $runCls = in_array($runState, ['completed'], true) ? 'status-completed'
+                : (in_array($runState, ['failed', 'cancelled'], true) ? 'status-failed' : 'status-pending');
+        ?>
+        <div class="notice notice-info" style="margin-bottom:12px;">
+            <i class="material-icons">info</i>
+            <div>
+                Last OpenINTEL command:
+                <span class="status-badge <?= $runCls ?>"><?= htmlspecialchars(ucfirst($runState)) ?></span>
+                <?php if (!empty($openintelLast['executed_at'])): ?>at <?= htmlspecialchars(fmt_date($openintelLast['executed_at'])) ?><?php endif; ?>
+                <?php if (!empty($openintelLast['result'])): ?><br><code><?= htmlspecialchars(mb_substr((string)$openintelLast['result'], 0, 300)) ?></code><?php endif; ?>
+                <br><span class="muted">Detailed log on the worker: <code>data/openintel/logs/run-*.log</code>.</span>
+            </div>
+        </div>
+    <?php endif; ?>
     <?php endif; ?>
 
     <?php if (empty($tlds)): ?>
     <div class="alert alert-error">
         <i class="material-icons left">error</i>
         <?php if ($source === 'openintel'): ?>
-            No OpenINTEL ccTLDs yet. Set <code>[openintel] tlds</code> in the worker config and run an import;
-            the processed ccTLDs will appear here so you can activate them.
+            No OpenINTEL ccTLDs yet. Add one above (e.g. <code>io</code>), activate it and click
+            <strong>Run OpenINTEL</strong>; processed ccTLDs also appear here automatically after an import.
         <?php else: ?>
             No TLDs found. The worker must run at least once to populate this list from ICANN CZDS.
             <br>Go to <a href="/admin/"><strong>Admin Panel</strong></a> and click <strong>Run Worker Now</strong>.
