@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.61] - 2026-09-19
+
+### Web UI — warm "brown pastel" theme, icon spacing and sticky footer
+- **Light theme re-palette to warm brown pastels** (was too blue): background `#faf6f1`, primary brown `#7a5c51`, warm surfaces/borders, brown links and navbar. **Danger stays red**; success/warning keep muted green/ochre; `info` moved from blue to warm taupe.
+- **Dark theme warmed to match**: coffee-brown surfaces (`#241f1c`/`#2e2825`) with a tan accent (`#c9a48f`); danger stays red.
+- **Icon spacing** in menus increased: navbar links 10px, dropdowns 12px, row action menus 10px, sidenav 14px, and buttons now have 8px around their icons.
+- **Sticky footer**: the version bar stays at the bottom of the viewport when the content is short and moves down with longer content (body flex column + `main { flex: 1 0 auto }`).
+
 ## [v1.3.60] - 2026-09-19
 
 ### Fix

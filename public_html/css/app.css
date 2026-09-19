@@ -13,85 +13,85 @@ html[data-theme="light"] {
     color-scheme: light;
 
     /* Base */
-    --bg: #f7f9fb;
+    --bg: #faf6f1;
     --surface: #ffffff;
-    --surface-2: #f2f5f9;
-    --surface-3: #e9eef5;
-    --text: #2e3440;
-    --text-muted: #6b7280;
-    --border: #e3e8ef;
-    --border-strong: #d5dde8;
+    --surface-2: #f5efe8;
+    --surface-3: #ece3d9;
+    --text: #3d332b;
+    --text-muted: #7c6f63;
+    --border: #e8ddd1;
+    --border-strong: #d9cbbc;
 
     /* Brand */
-    --primary: #5e81ac;
-    --primary-hover: #4d6f99;
-    --primary-soft: #e8eef7;
-    --primary-soft-hover: #dbe6f4;
-    --primary-border: #c7d6ea;
+    --primary: #7a5c51;
+    --primary-hover: #674a40;
+    --primary-soft: #f2e9e2;
+    --primary-soft-hover: #ead9cf;
+    --primary-border: #ddcabd;
     --on-primary: #ffffff;
-    --link: #4d6f99;
+    --link: #6b4f45;
 
     /* Nav / footer */
-    --nav-bg: #eef2f7;
-    --nav-text: #2e3440;
-    --nav-muted: #5b6472;
-    --nav-active: #dce6f2;
-    --nav-border: #e3e8ef;
+    --nav-bg: #f0e7de;
+    --nav-text: #3d332b;
+    --nav-muted: #7c6f63;
+    --nav-active: #e4d6c8;
+    --nav-border: #e8ddd1;
 
-    /* Semantic (pastel) */
-    --success: #4c7a3f;
-    --success-bg: #edf5e8;
-    --success-border: #cfe4c2;
-    --warning: #8a6d1f;
-    --warning-bg: #fbf4e2;
-    --warning-border: #f0e0b8;
+    /* Semantic (pastel, warm; danger stays red) */
+    --success: #5b7a4f;
+    --success-bg: #eef3e8;
+    --success-border: #d4e3c9;
+    --warning: #8a6a1f;
+    --warning-bg: #f8f0dd;
+    --warning-border: #ecdcb4;
     --danger: #a3444d;
     --danger-bg: #fbeced;
     --danger-bg-hover: #f6dadd;
     --danger-border: #f1c9cd;
-    --info: #3f6d8c;
-    --info-bg: #e9f1f7;
-    --info-border: #c9ddec;
-    --neutral: #64707d;
-    --neutral-bg: #eef1f4;
-    --neutral-border: #dde3e9;
+    --info: #6f6257;
+    --info-bg: #f0eae3;
+    --info-border: #ddd2c6;
+    --neutral: #7a6f64;
+    --neutral-bg: #f1ece6;
+    --neutral-border: #e0d7cd;
 
     /* Solid action colours */
     --danger-solid: #bf616a;
     --danger-solid-hover: #ad525b;
-    --focus: #7aa2c9;
-    --unread-bg: #fbf4e2;
+    --focus: #b08a7a;
+    --unread-bg: #f8efdd;
 
     /* Materialize v2 (MD3) tokens → our palette */
-    --md-source: #5e81ac;
-    --md-sys-color-primary: #5e81ac;
+    --md-source: #7a5c51;
+    --md-sys-color-primary: #7a5c51;
     --md-sys-color-on-primary: #ffffff;
-    --md-sys-color-primary-container: #e8eef7;
-    --md-sys-color-on-primary-container: #23344a;
-    --md-sys-color-secondary: #6b7280;
+    --md-sys-color-primary-container: #f2e9e2;
+    --md-sys-color-on-primary-container: #3d2a24;
+    --md-sys-color-secondary: #7c6f63;
     --md-sys-color-on-secondary: #ffffff;
-    --md-sys-color-secondary-container: #eceff3;
-    --md-sys-color-on-secondary-container: #2e3440;
-    --md-sys-color-tertiary: #7d8a99;
+    --md-sys-color-secondary-container: #f0eae3;
+    --md-sys-color-on-secondary-container: #3d332b;
+    --md-sys-color-tertiary: #8a7a6a;
     --md-sys-color-on-tertiary: #ffffff;
-    --md-sys-color-tertiary-container: #eceff3;
-    --md-sys-color-on-tertiary-container: #2e3440;
+    --md-sys-color-tertiary-container: #f0eae3;
+    --md-sys-color-on-tertiary-container: #3d332b;
     --md-sys-color-error: #a3444d;
     --md-sys-color-on-error: #ffffff;
     --md-sys-color-error-container: #fbeced;
     --md-sys-color-on-error-container: #4a2227;
-    --md-sys-color-background: #f7f9fb;
-    --md-sys-color-on-background: #2e3440;
+    --md-sys-color-background: #faf6f1;
+    --md-sys-color-on-background: #3d332b;
     --md-sys-color-surface: #ffffff;
-    --md-sys-color-on-surface: #2e3440;
-    --md-sys-color-surface-variant: #eef2f7;
-    --md-sys-color-on-surface-variant: #5b6472;
-    --md-sys-color-inverse-surface: #2e3440;
-    --md-sys-color-inverse-on-surface: #e5e9f0;
-    --md-sys-color-inverse-primary: #a9c2de;
-    --md-sys-color-outline: #9aa4b2;
-    --md-sys-color-outline-variant: #d5dde8;
-    --md-sys-color-surface-tint: #5e81ac;
+    --md-sys-color-on-surface: #3d332b;
+    --md-sys-color-surface-variant: #f0e8e0;
+    --md-sys-color-on-surface-variant: #7c6f63;
+    --md-sys-color-inverse-surface: #3d332b;
+    --md-sys-color-inverse-on-surface: #f0e8e0;
+    --md-sys-color-inverse-primary: #d7bfb2;
+    --md-sys-color-outline: #a89a8c;
+    --md-sys-color-outline-variant: #d9cbbc;
+    --md-sys-color-surface-tint: #7a5c51;
     --md-sys-color-shadow: #000000;
     --md-sys-color-scrim: #000000;
 }
@@ -100,80 +100,80 @@ html[data-theme="light"] {
    DARK THEME
    ------------------------------------------------------------ */
 html[data-theme="dark"] {
-    --bg: #242933;
-    --surface: #2e3440;
-    --surface-2: #353c4a;
-    --surface-3: #3b4252;
-    --text: #e5e9f0;
-    --text-muted: #9aa4b2;
-    --border: #434c5e;
-    --border-strong: #4c566a;
+    --bg: #241f1c;
+    --surface: #2e2825;
+    --surface-2: #383130;
+    --surface-3: #423a37;
+    --text: #ece4dc;
+    --text-muted: #b3a79c;
+    --border: #473f3b;
+    --border-strong: #574d48;
 
-    --primary: #81a1c1;
-    --primary-hover: #8fadcb;
-    --primary-soft: #34424f;
-    --primary-soft-hover: #3b4a5c;
-    --primary-border: #40536a;
-    --on-primary: #1b2430;
-    --link: #8fbcbb;
+    --primary: #c9a48f;
+    --primary-hover: #d6b4a0;
+    --primary-soft: #3a302b;
+    --primary-soft-hover: #463a33;
+    --primary-border: #5a4a41;
+    --on-primary: #241c18;
+    --link: #d6b4a0;
 
-    --nav-bg: #2b313c;
-    --nav-text: #e5e9f0;
-    --nav-muted: #aab4c2;
-    --nav-active: #3b4252;
-    --nav-border: #3b4252;
+    --nav-bg: #2a2420;
+    --nav-text: #ece4dc;
+    --nav-muted: #b3a79c;
+    --nav-active: #3d332d;
+    --nav-border: #3a322d;
 
     --success: #a3be8c;
     --success-bg: #2f3a2e;
     --success-border: #40503c;
-    --warning: #ebcb8b;
-    --warning-bg: #3a3527;
+    --warning: #e6c98a;
+    --warning-bg: #3a3327;
     --warning-border: #55492f;
     --danger: #d99aa2;
     --danger-bg: #3a2b2e;
     --danger-bg-hover: #452f33;
     --danger-border: #563c40;
-    --info: #8fbcbb;
-    --info-bg: #28383a;
-    --info-border: #3c5150;
-    --neutral: #b8c0cc;
-    --neutral-bg: #343b46;
-    --neutral-border: #454f5d;
+    --info: #c2b3a6;
+    --info-bg: #38312b;
+    --info-border: #4d443c;
+    --neutral: #bdb2a7;
+    --neutral-bg: #37302c;
+    --neutral-border: #4a413b;
 
     --danger-solid: #bf616a;
     --danger-solid-hover: #cb7480;
-    --focus: #88c0d0;
-    --unread-bg: #3a3527;
+    --focus: #d6b4a0;
+    --unread-bg: #3a3327;
 
-    --md-source: #81a1c1;
-    --md-sys-color-primary: #81a1c1;
-    --md-sys-color-on-primary: #1b2430;
-    --md-sys-color-primary-container: #34424f;
-    --md-sys-color-on-primary-container: #d8e3ef;
-    --md-sys-color-secondary: #9aa4b2;
-    --md-sys-color-on-secondary: #20262f;
-    --md-sys-color-secondary-container: #3b4252;
-    --md-sys-color-on-secondary-container: #e5e9f0;
-    --md-sys-color-tertiary: #aab4c2;
-    --md-sys-color-on-tertiary: #20262f;
-    --md-sys-color-tertiary-container: #3b4252;
-    --md-sys-color-on-tertiary-container: #e5e9f0;
+    --md-source: #c9a48f;
+    --md-sys-color-primary: #c9a48f;
+    --md-sys-color-on-primary: #241c18;
+    --md-sys-color-primary-container: #3a302b;
+    --md-sys-color-on-primary-container: #ecd9cc;
+    --md-sys-color-secondary: #b3a79c;
+    --md-sys-color-on-secondary: #241f1c;
+    --md-sys-color-secondary-container: #423a37;
+    --md-sys-color-on-secondary-container: #ece4dc;
+    --md-sys-color-tertiary: #c2b3a6;
+    --md-sys-color-on-tertiary: #241f1c;
+    --md-sys-color-tertiary-container: #423a37;
+    --md-sys-color-on-tertiary-container: #ece4dc;
     --md-sys-color-error: #d99aa2;
     --md-sys-color-on-error: #3a1f22;
     --md-sys-color-error-container: #4a2e33;
     --md-sys-color-on-error-container: #f4dfe1;
-    --md-sys-color-background: #242933;
-    --md-sys-color-on-background: #e5e9f0;
-    --md-sys-color-surface: #2e3440;
-    --md-sys-color-on-surface: #e5e9f0;
-    --md-sys-color-surface-variant: #3b4252;
-    --md-sys-color-on-surface-variant: #c2cad6;
-    --md-sys-color-inverse-surface: #e5e9f0;
-    --md-sys-color-inverse-on-surface: #2e3440;
-    --md-sys-color-inverse-primary: #5e81ac;
-    --md-sys-color-outline: #6b7686;
-    --md-sys-color-outline-variant: #434c5e;
-    --md-sys-color-surface-tint: #81a1c1;
+    --md-sys-color-background: #241f1c;
+    --md-sys-color-on-background: #ece4dc;
+    --md-sys-color-surface: #2e2825;
+    --md-sys-color-on-surface: #ece4dc;
+    --md-sys-color-surface-variant: #423a37;
+    --md-sys-color-on-surface-variant: #c2b3a6;
+    --md-sys-color-inverse-surface: #ece4dc;
+    --md-sys-color-inverse-on-surface: #2e2825;
+    --md-sys-color-inverse-primary: #7a5c51;
+    --md-sys-color-outline: #8a7d72;
+    --md-sys-color-outline-variant: #473f3b;
+    --md-sys-color-surface-tint: #c9a48f;
     --md-sys-color-shadow: #000000;
     --md-sys-color-scrim: #000000;
 
@@ -194,6 +194,14 @@ select {
 body {
     background-color: var(--bg);
     color: var(--text);
+    /* Sticky footer: keep the version bar at the bottom of the viewport */
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1 0 auto;
 }
 
 a {
@@ -266,7 +274,7 @@ nav.app-nav {
 }
 
 .app-nav ul a .material-icons.left {
-    margin-right: 6px;
+    margin-right: 10px;
 }
 
 .app-nav .theme-toggle {
@@ -301,7 +309,7 @@ nav.app-nav {
     color: var(--text);
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
 }
 
 .dropdown-content li > a > .material-icons {
@@ -323,6 +331,10 @@ nav.app-nav {
 
 .sidenav .material-icons {
     color: var(--text-muted);
+}
+
+.sidenav li > a > .material-icons {
+    margin-right: 14px;
 }
 
 .sidenav a.active {
@@ -351,6 +363,7 @@ nav.app-nav {
     color: var(--nav-muted);
     padding: 14px 0;
     font-size: 0.88rem;
+    flex-shrink: 0;
 }
 
 .page-footer .footer-row {
@@ -540,6 +553,9 @@ h5 { font-size: 1.15rem; font-weight: 500; }
     background-color: var(--primary-soft-hover);
     color: var(--primary);
 }
+
+.btn .material-icons.left { margin-right: 8px; }
+.btn .material-icons.right { margin-left: 8px; }
 
 .btn-flat {
     background-color: transparent !important;
@@ -797,7 +813,7 @@ table.highlight > tbody > tr:hover {
 .action-menu-dropdown button {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     width: 100%;
     text-align: left;
     background: none;
