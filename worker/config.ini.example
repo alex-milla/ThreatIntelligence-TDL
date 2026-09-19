@@ -18,6 +18,9 @@ retry_delay_seconds = 300
 ; Maximum age in days for domains to be considered during recheck.
 ; Domains first_seen older than this will be skipped.
 max_domain_age_days = 30
+; Hard cap of domains checked per recheck run (0 = no cap). Protects against a
+; very long ICANN/CZDS recheck; the UI can override it per run.
+recheck_max_domains = 0
 
 ; --- Large zone handling (CZDS) ---
 ; Refuse to download a zone bigger than this (GB). 0 = no hard limit.

@@ -291,7 +291,10 @@ function renderLookupResults(data) {
     var q = qEl ? qEl.value.trim().toLowerCase() : '';
     if (list.length === 1 && list[0].domain === q) { showLookupPanel(list[0].domain); return; }
     var rows = list.map(function (r) {
-        var label = r.hash_cached ? ' <span class="muted">(hash-cached)</span>' : '';
+        var label = '';
+        if (r.source === 'ct') { label += ' <span class="muted">(ccTLD/CT)</span>'; }
+        else if (r.source === 'zone') { label += ' <span class="muted">(gTLD)</span>'; }
+        if (r.hash_cached) { label += ' <span class="muted">(hash-cached)</span>'; }
         var seen = r.first_seen ? String(r.first_seen).substring(0, 10) : '\u2014';
         return '<tr><td><a href="javascript:void(0)" class="domain-link" onclick="showLookupPanel(\''
             + htmlspecialchars(r.domain) + '\')">' + htmlspecialchars(r.domain) + '</a>' + label

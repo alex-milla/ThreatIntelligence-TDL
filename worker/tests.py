@@ -295,6 +295,33 @@ def test_openintel_resolve_latest() -> None:
     print("[PASS] test_openintel_resolve_latest")
 
 
+def test_search_cached_domains_with_cctld() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
+        db.execute("INSERT OR IGNORE INTO domains_cache (domain, tld, first_seen) "
+                   "VALUES ('brand-example.com', 'com', '2026-01-01')")
+        db.commit()
+
+        oi_path = os.path.join(tmpdir, "openintel.db")
+        oi = sqlite3.connect(oi_path)
+        oi.execute("CREATE TABLE cctld_seen (domain TEXT PRIMARY KEY, tld TEXT NOT NULL, "
+                   "first_seen TEXT NOT NULL) WITHOUT ROWID")
+        oi.execute("INSERT INTO cctld_seen VALUES ('cibersecurity.io', 'io', '2026-01-01')")
+        oi.commit()
+        oi.close()
+
+        r = scheduler.search_cached_domains(db, "cibersecurity.io", "exact", openintel_db_path=oi_path)
+        assert any(x["domain"] == "cibersecurity.io" and x["source"] == "ct" for x in r["results"]), r
+
+        r = scheduler.search_cached_domains(db, "brand-example.com", "exact", openintel_db_path=oi_path)
+        assert any(x["domain"] == "brand-example.com" and x["source"] == "zone" for x in r["results"]), r
+
+        r = scheduler.search_cached_domains(db, "cibersecurity", "contains", openintel_db_path=oi_path)
+        assert any(x["domain"] == "cibersecurity.io" for x in r["results"]), r
+        db.close()
+    print("[PASS] test_search_cached_domains_with_cctld")
+
+
 def test_openintel_json_available() -> None:
     # Regression: report() uses json.dumps; a missing import left commands
     # stuck in 'running' silently.
@@ -396,6 +423,7 @@ if __name__ == "__main__":
     test_openintel_parse_date()
     test_openintel_resolve_latest()
     test_openintel_csv_gz_read()
+    test_search_cached_domains_with_cctld()
     test_openintel_json_available()
     test_openintel_recheck_cached()
     test_openintel_baseline_and_diff()

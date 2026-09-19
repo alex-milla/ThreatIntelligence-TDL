@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.4.6] - 2026-09-19
+
+### Added / Changed - unified data across sources, scoped recheck
+
+- **Unified domain lookup**: the dashboard "Domain lookup" now searches **both** caches and shows them in one list: CZDS gTLDs (`domains_cache` + compact hash cache) **and** OpenINTEL ccTLDs (`cctld_seen`). Each result is tagged `(gTLD)` or `(ccTLD/CT)`. So a `.io` domain is found in the same place as a gTLD.
+- **One Recheck with selectable scope** (no more split tools):
+  - Command `recheck_keywords` accepts `{sources:[openintel|czds], tlds:[...], max_age_days, max_domains}`.
+  - **Default (quick) = ccTLD only**, so it never scans the whole ICANN/CZDS cache.
+  - The **ICANN part is skipped** unless you select its TLDs or set a `max_domains` cap, and can be limited by TLD and age.
+  - Runs in the daemon for a single unified progress; `recheck_status` now stores/display the `source`.
+- **Admin → Recheck tab**: origin checkboxes (ccTLD / ICANN), a TLD multi-select (grouped by source, with cached counts), `max_age_days`, `max_domains`, a live **estimated domain count**, and Stop. The status block (not the form) is the live-refreshed section, so selections are preserved.
+- New `[worker] recheck_max_domains` config (0 = no cap).
+
 ## [v1.4.5] - 2026-09-19
 
 ### Fixed

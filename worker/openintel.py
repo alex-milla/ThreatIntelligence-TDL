@@ -558,7 +558,8 @@ def run_tld(tld: str, session: requests.Session, conn: sqlite3.Connection,
 
 
 def recheck_cached(conn: sqlite3.Connection, tlds: list[str], host_url: str,
-                   api_key: str, settings: dict, progress_cb=None) -> dict:
+                   api_key: str, settings: dict, progress_cb=None,
+                   max_domains: int = 0) -> dict:
     """Match already-cached ccTLD domains against the current keywords.
 
     The cached domains are existing registrations, so the matches are flagged
@@ -621,7 +622,12 @@ def recheck_cached(conn: sqlite3.Connection, tlds: list[str], host_url: str,
             if progress_cb and stats["domains_checked"] - last_progress >= 50000:
                 last_progress = stats["domains_checked"]
                 progress_cb(stats["domains_checked"], stats["total_domains"], stats["matches_found"])
+            if max_domains and stats["domains_checked"] >= max_domains:
+                log.info("OpenINTEL recheck: reached the %d-domain cap", max_domains)
+                break
         log.info("OpenINTEL recheck .%s: checked=%d matches=%d", tld, checked, tld_matches)
+        if max_domains and stats["domains_checked"] >= max_domains:
+            break
 
     if progress_cb:
         progress_cb(stats["domains_checked"], stats["total_domains"], stats["matches_found"])

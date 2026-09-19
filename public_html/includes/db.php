@@ -304,6 +304,11 @@ class Database {
             $db->exec("ALTER TABLE tlds ADD COLUMN last_ok_sync TEXT");
         } catch (PDOException $e) { }
 
+        // Safe migration: which cache the recheck is scanning (czds/openintel).
+        try {
+            $db->exec("ALTER TABLE recheck_status ADD COLUMN source TEXT");
+        } catch (PDOException $e) { }
+
         // Safe migration: allow additional classification states (e.g. observing)
         // by dropping the old CHECK(tag IN ('good','bad')) constraint. SQLite
         // cannot alter a CHECK, so the table is rebuilt preserving its rows.

@@ -886,8 +886,14 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
     return stats
 
 
-def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max_age_days: int = 30) -> dict:
-    """Re-check cached domains against current keywords. Returns stats."""
+def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str,
+                        max_age_days: int = 30, tlds: list | None = None,
+                        max_domains: int = 0, source: str = "czds") -> dict:
+    """Re-check cached CZDS domains against current keywords. Returns stats.
+
+    `tlds` limits the scan to the given TLDs (None/empty = all) and
+    `max_domains` caps the number of domains checked (0 = no cap).
+    """
     stats = {
         "domains_checked": 0,
         "matches_found": 0,
@@ -916,20 +922,30 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
         log.warning("No active keywords. Nothing to recheck.")
         return stats
 
-    age_clause = ""
-    age_param = ()
+    tld_list = [str(t).lower() for t in (tlds or []) if t]
+    where_parts: list[str] = []
+    where_params: list = []
     if max_age_days > 0:
-        age_clause = " WHERE first_seen >= datetime('now', '-' || ? || ' days')"
-        age_param = (max_age_days,)
+        where_parts.append("first_seen >= datetime('now', '-' || ? || ' days')")
+        where_params.append(max_age_days)
+    if tld_list:
+        where_parts.append("tld IN (" + ",".join("?" for _ in tld_list) + ")")
+        where_params.extend(tld_list)
+    where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
 
-    total_domains = db.execute(f"SELECT COUNT(*) FROM domains_cache{age_clause}", age_param).fetchone()[0]
-    log.info(f"Cached domains to check (max {max_age_days} days): {total_domains:,}")
+    total_domains = db.execute(
+        f"SELECT COUNT(*) FROM domains_cache{where_sql}", tuple(where_params)
+    ).fetchone()[0]
+    if max_domains:
+        total_domains = min(total_domains, max_domains)
+    log.info(f"Cached domains to check (max {max_age_days} days, tlds={tld_list or 'all'}): {total_domains:,}")
     started_at = datetime.now(timezone.utc).isoformat()
 
     if total_domains == 0:
         log.warning("No cached domains found. Run the worker at least once to download zones before rechecking.")
         sync_client.send_recheck_status(host_url, api_key, {
             "is_running": 0,
+            "source": source,
             "total_domains": 0,
             "checked_domains": 0,
             "matches_found": 0,
@@ -941,6 +957,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
 
     sync_client.send_recheck_status(host_url, api_key, {
         "is_running": 1,
+        "source": source,
         "total_domains": total_domains,
         "checked_domains": 0,
         "matches_found": 0,
@@ -955,23 +972,13 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
     batches_since_stop_check = 0
     keyword_matcher = matcher.Matcher(keywords)
 
+    # Keyset pagination: WHERE domain > last ORDER BY domain avoids the O(n^2)
+    # cost of deep OFFSET scans on large caches.
+    batch_sql = ("SELECT domain, tld, first_seen FROM domains_cache WHERE "
+                 + " AND ".join(where_parts + ["domain > ?"]) + " ORDER BY domain LIMIT ?")
     while True:
         cursor = db.cursor()
-        if max_age_days > 0:
-            # Keyset pagination: WHERE domain > last ORDER BY domain avoids the
-            # O(n^2) cost of deep OFFSET scans on large caches.
-            cursor.execute(
-                "SELECT domain, tld, first_seen FROM domains_cache "
-                "WHERE first_seen >= datetime('now', '-' || ? || ' days') AND domain > ? "
-                "ORDER BY domain LIMIT ?",
-                (max_age_days, last_domain, batch_size)
-            )
-        else:
-            cursor.execute(
-                "SELECT domain, tld, first_seen FROM domains_cache "
-                "WHERE domain > ? ORDER BY domain LIMIT ?",
-                (last_domain, batch_size)
-            )
+        cursor.execute(batch_sql, tuple(where_params) + (last_domain, batch_size))
         rows = cursor.fetchall()
         if not rows:
             break
@@ -997,6 +1004,10 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
         stats["domains_checked"] += len(domains)
         batches_since_stop_check += 1
 
+        if max_domains and stats["domains_checked"] >= max_domains:
+            log.info(f"Recheck reached the {max_domains:,}-domain cap.")
+            break
+
         # Check for stop request every 3 batches (~150k domains)
         if batches_since_stop_check >= 3:
             batches_since_stop_check = 0
@@ -1008,6 +1019,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
                         log.warning("Recheck stopped by user request.")
                         sync_client.send_recheck_status(host_url, api_key, {
                             "is_running": 0,
+                            "source": source,
                             "total_domains": total_domains,
                             "checked_domains": stats["domains_checked"],
                             "matches_found": len(all_matches),
@@ -1031,6 +1043,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
             log.info(f"Checked {stats['domains_checked']:,} / {total_domains:,} domains ({pct:.1f}%)")
             sync_client.send_recheck_status(host_url, api_key, {
                 "is_running": 1,
+                "source": source,
                 "total_domains": total_domains,
                 "checked_domains": stats["domains_checked"],
                 "matches_found": len(all_matches),
@@ -1049,6 +1062,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
 
     sync_client.send_recheck_status(host_url, api_key, {
         "is_running": 0,
+        "source": source,
         "total_domains": total_domains,
         "checked_domains": stats["domains_checked"],
         "matches_found": stats["matches_found"],
@@ -1057,6 +1071,63 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
     })
 
     log.info(f"Recheck complete. Domains checked: {stats['domains_checked']:,}, Matches: {stats['matches_found']}")
+    return stats
+
+
+def recheck_cctld(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str,
+                  api_key: str, tlds: list | None = None, max_domains: int = 0) -> dict:
+    """Recheck the OpenINTEL ccTLD cache (cctld_seen) against current keywords."""
+    stats = {"domains_checked": 0, "matches_found": 0}
+    oi_db = get_openintel_db_path(cfg)
+    if not os.path.exists(oi_db):
+        log.warning("OpenINTEL cache not found (%s); skipping ccTLD recheck.", oi_db)
+        return stats
+    try:
+        import openintel
+    except Exception as e:
+        log.error("Could not import the openintel module: %s", e)
+        return stats
+
+    settings = openintel.load_settings()[1]
+    tld_list = [str(t).lower() for t in (tlds or []) if t]
+    conn = sqlite3.connect(oi_db)
+    try:
+        if not tld_list:
+            tld_list = [r[0] for r in conn.execute("SELECT DISTINCT tld FROM cctld_seen").fetchall()]
+        if not tld_list:
+            return stats
+
+        started_at = datetime.now(timezone.utc).isoformat()
+        total = 0
+        for t in tld_list:
+            total += int(conn.execute("SELECT COUNT(*) FROM cctld_seen WHERE tld = ?", (t,)).fetchone()[0])
+        if max_domains:
+            total = min(total, max_domains)
+
+        sync_client.send_recheck_status(host_url, api_key, {
+            "is_running": 1, "source": "openintel", "total_domains": total,
+            "checked_domains": 0, "matches_found": 0,
+            "started_at": started_at, "completed_at": None,
+        })
+
+        def progress(checked, total_, matches):
+            sync_client.send_recheck_status(host_url, api_key, {
+                "is_running": 1, "source": "openintel", "total_domains": total_,
+                "checked_domains": checked, "matches_found": matches,
+                "started_at": started_at, "completed_at": None,
+            })
+
+        r = openintel.recheck_cached(conn, tld_list, host_url, api_key, settings,
+                                     progress_cb=progress, max_domains=max_domains)
+        stats["domains_checked"] = r.get("domains_checked", 0)
+        stats["matches_found"] = r.get("matches_found", 0)
+        sync_client.send_recheck_status(host_url, api_key, {
+            "is_running": 0, "source": "openintel", "total_domains": total,
+            "checked_domains": stats["domains_checked"], "matches_found": stats["matches_found"],
+            "started_at": started_at, "completed_at": datetime.now(timezone.utc).isoformat(),
+        })
+    finally:
+        conn.close()
     return stats
 
 
@@ -1101,85 +1172,113 @@ HASH_SEARCH_NOTE = ("Prefix/contains search only covers text-cached TLDs; huge T
                     "cached as hashes (e.g. .com) are excluded. Exact search covers both.")
 
 
-def search_cached_domains(db: sqlite3.Connection, query: str, mode: str = "exact",
-                          limit: int = 100, timeout: float = 5.0) -> dict:
-    """Search the worker's local domain cache and return results.
+def get_openintel_db_path(cfg: configparser.ConfigParser) -> str:
+    """Resolve the OpenINTEL local cache path from the worker config."""
+    data_dir = cfg.get("openintel", "data_dir", fallback="./data/openintel")
+    db_path = cfg.get("openintel", "db_path", fallback="").strip()
+    return db_path or os.path.join(data_dir, "openintel.db")
 
-    exact: text cache by domain plus the compact hash cache by computed hash, so
-    it also finds domains in huge hash-cached TLDs. prefix/contains: text cache
-    only (the hash cache has no text). `contains` aborts after `timeout` seconds
-    through a SQLite progress handler and returns partial results, so a full scan
-    can never hang the worker.
+
+def _search_text_cache(conn: sqlite3.Connection, table: str, query: str, mode: str,
+                       limit: int, timeout: float) -> tuple[list[tuple], bool]:
+    """Search a (domain, tld, first_seen) table. Returns (rows, partial).
+
+    `table` is a fixed internal literal (never user input). `contains` is bounded
+    by a SQLite progress handler so a full scan cannot hang the worker.
     """
-    query = (query or "").strip().lower()
-    limit = max(1, min(int(limit or 100), 200))
-    results: list[dict] = []
-    partial = False
-    note = HASH_SEARCH_NOTE
-
-    if not query:
-        return {"results": [], "partial": False, "note": "Empty query."}
-    if mode not in ("exact", "prefix", "contains"):
-        mode = "exact"
-
     if mode == "exact":
-        row = db.execute(
-            "SELECT domain, tld, first_seen FROM domains_cache WHERE domain = ?",
-            (query,)
+        row = conn.execute(
+            f"SELECT domain, tld, first_seen FROM {table} WHERE domain = ?", (query,)
         ).fetchone()
-        if row:
-            results.append({"domain": row[0], "tld": row[1], "first_seen": row[2]})
-        else:
-            h = _domain_hash(query)
-            hrow = db.execute(
-                "SELECT tld, first_seen FROM domains_cache_hash WHERE domain_hash = ?",
-                (h,)
-            ).fetchone()
-            if hrow:
-                try:
-                    first_seen = datetime.fromtimestamp(int(hrow[1]), tz=timezone.utc).isoformat()
-                except (TypeError, ValueError, OSError):
-                    first_seen = None
-                results.append({"domain": query, "tld": hrow[0], "first_seen": first_seen,
-                                "hash_cached": True})
-        return {"results": results, "partial": False, "note": note}
-
-    # prefix / contains -> text cache only
-    if mode == "contains" and len(query) < 4:
-        return {"results": [], "partial": False,
-                "note": "Contains search requires at least 4 characters."}
+        return ([row] if row else []), False
 
     escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     pattern = escaped + "%" if mode == "prefix" else "%" + escaped + "%"
-
+    sql = f"SELECT domain, tld, first_seen FROM {table} WHERE domain LIKE ? ESCAPE '\\' LIMIT ?"
     if mode == "contains":
         deadline = time.perf_counter() + max(1.0, float(timeout))
 
         def _progress() -> int:
             return 1 if time.perf_counter() > deadline else 0
 
-        db.set_progress_handler(_progress, 10000)
+        conn.set_progress_handler(_progress, 10000)
         try:
-            rows = db.execute(
-                "SELECT domain, tld, first_seen FROM domains_cache "
-                "WHERE domain LIKE ? ESCAPE '\\' LIMIT ?",
-                (pattern, limit)
-            ).fetchall()
+            rows = conn.execute(sql, (pattern, limit)).fetchall()
         except sqlite3.OperationalError:
-            rows = []
-            partial = True
+            return [], True
         finally:
-            db.set_progress_handler(None, 0)
-    else:
-        rows = db.execute(
-            "SELECT domain, tld, first_seen FROM domains_cache "
-            "WHERE domain LIKE ? ESCAPE '\\' LIMIT ?",
-            (pattern, limit)
-        ).fetchall()
+            conn.set_progress_handler(None, 0)
+        return rows, False
+    return conn.execute(sql, (pattern, limit)).fetchall(), False
 
-    for r in rows:
-        results.append({"domain": r[0], "tld": r[1], "first_seen": r[2]})
-    return {"results": results, "partial": partial, "note": note}
+
+def search_cached_domains(db: sqlite3.Connection, query: str, mode: str = "exact",
+                          limit: int = 100, timeout: float = 5.0,
+                          openintel_db_path: str | None = None) -> dict:
+    """Search the worker's caches and return a unified result list.
+
+    Aggregates the CZDS gTLD cache (domains_cache + compact hash cache) and, when
+    `openintel_db_path` is given, the OpenINTEL ccTLD cache (cctld_seen). Results
+    carry a `source` of "zone" (CZDS) or "ct" (OpenINTEL). `contains` is bounded
+    by a timeout per cache so a full scan can never hang the worker.
+    """
+    query = (query or "").strip().lower()
+    limit = max(1, min(int(limit or 100), 200))
+    note = HASH_SEARCH_NOTE
+
+    if not query:
+        return {"results": [], "partial": False, "note": "Empty query."}
+    if mode not in ("exact", "prefix", "contains"):
+        mode = "exact"
+    if mode == "contains" and len(query) < 4:
+        return {"results": [], "partial": False,
+                "note": "Contains search requires at least 4 characters."}
+
+    results: list[dict] = []
+    seen: set[str] = set()
+    partial = False
+
+    def _add(domain, tld, first_seen, source, **extra):
+        if domain not in seen:
+            seen.add(domain)
+            entry = {"domain": domain, "tld": tld, "first_seen": first_seen, "source": source}
+            entry.update(extra)
+            results.append(entry)
+
+    # CZDS text cache
+    rows, p = _search_text_cache(db, "domains_cache", query, mode, limit, timeout)
+    partial = partial or p
+    for d, t, fs in rows:
+        _add(d, t, fs, "zone")
+
+    # CZDS compact hash cache (exact only: it stores no text)
+    if mode == "exact" and query not in seen:
+        hrow = db.execute(
+            "SELECT tld, first_seen FROM domains_cache_hash WHERE domain_hash = ?",
+            (_domain_hash(query),)
+        ).fetchone()
+        if hrow:
+            try:
+                fs = datetime.fromtimestamp(int(hrow[1]), tz=timezone.utc).isoformat()
+            except (TypeError, ValueError, OSError):
+                fs = None
+            _add(query, hrow[0], fs, "zone", hash_cached=True)
+
+    # OpenINTEL ccTLD cache (separate DB, read-only)
+    if openintel_db_path and os.path.exists(openintel_db_path):
+        try:
+            oi = sqlite3.connect(f"file:{openintel_db_path}?mode=ro", uri=True, timeout=10)
+            try:
+                orows, p = _search_text_cache(oi, "cctld_seen", query, mode, limit, timeout)
+            finally:
+                oi.close()
+            partial = partial or p
+            for d, t, fs in orows:
+                _add(d, t, fs, "ct", ccTLD=True)
+        except sqlite3.Error:
+            pass
+
+    return {"results": results[:limit], "partial": partial, "note": note}
 
 
 def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False, refresh: bool = False) -> tuple[list[dict], dict | None, bool, bool]:
@@ -1261,6 +1360,30 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 logs.append({"level": "info", "message": f"Worker cycle ({mode}) completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
 
             elif command == "recheck_keywords":
+                opts = {}
+                if payload:
+                    try:
+                        opts = json.loads(payload) if isinstance(payload, str) else {}
+                    except (ValueError, TypeError):
+                        opts = {}
+                sources = opts.get("sources")
+                if not isinstance(sources, list) or not sources:
+                    # Default to the fast ccTLD cache so a quick recheck never
+                    # scans the whole ICANN (CZDS) cache.
+                    sources = ["openintel"]
+                sources = [str(s).lower() for s in sources if str(s).lower() in ("openintel", "czds")]
+                tlds = opts.get("tlds") if isinstance(opts.get("tlds"), list) else []
+                try:
+                    max_age = int(opts.get("max_age_days",
+                                           cfg.getint("worker", "max_domain_age_days", fallback=30)))
+                except (TypeError, ValueError):
+                    max_age = 30
+                try:
+                    max_domains = int(opts.get("max_domains",
+                                               cfg.getint("worker", "recheck_max_domains", fallback=0)))
+                except (TypeError, ValueError):
+                    max_domains = 0
+
                 sync_client.send_heartbeat(host_url, api_key, {
                     "last_heartbeat": datetime.now(timezone.utc).isoformat(),
                     "is_running": 1,
@@ -1268,10 +1391,26 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                     "current_command": "recheck_keywords",
                     "current_command_id": cmd_id,
                 })
-                max_age = cfg.getint("worker", "max_domain_age_days", fallback=30)
-                stats = recheck_all_domains(db, host_url, api_key, max_age)
-                result = json.dumps(stats)
-                logs.append({"level": "info", "message": f"Recheck completed: {stats['domains_checked']:,} domains, {stats['matches_found']} matches"})
+
+                total = {"domains_checked": 0, "matches_found": 0, "sources": sources, "tlds": tlds}
+                if "openintel" in sources:
+                    s = recheck_cctld(db, cfg, host_url, api_key, tlds=tlds, max_domains=max_domains)
+                    total["domains_checked"] += int(s.get("domains_checked", 0))
+                    total["matches_found"] += int(s.get("matches_found", 0))
+                if "czds" in sources:
+                    if not tlds and not max_domains:
+                        logs.append({"level": "warning", "message":
+                                     "CZDS recheck skipped: select ICANN TLDs or set a max_domains cap "
+                                     "to avoid scanning the whole cache."})
+                    else:
+                        s = recheck_all_domains(db, host_url, api_key, max_age,
+                                                tlds=tlds, max_domains=max_domains, source="czds")
+                        total["domains_checked"] += int(s.get("domains_checked", 0))
+                        total["matches_found"] += int(s.get("matches_found", 0))
+                result = json.dumps(total)
+                logs.append({"level": "info", "message":
+                             f"Recheck done ({', '.join(sources) or 'none'}): "
+                             f"{total['domains_checked']:,} domains, {total['matches_found']} matches"})
 
             elif command == "update_whitelist":
                 if not cfg.has_section("tlds"):
@@ -1335,7 +1474,9 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                     limit = int(opts.get("limit", 100) or 100)
                 except (TypeError, ValueError):
                     limit = 100
-                search_result = search_cached_domains(db, q, mode=mode, limit=limit)
+                search_result = search_cached_domains(
+                    db, q, mode=mode, limit=limit,
+                    openintel_db_path=get_openintel_db_path(cfg))
                 result = json.dumps(search_result)
                 logs.append({"level": "info", "message":
                              f"Domain search '{q}' ({mode}): {len(search_result['results'])} result(s)"

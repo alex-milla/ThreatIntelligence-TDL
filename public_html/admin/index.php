@@ -76,10 +76,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (hasPendingCommand($db, 'recheck_keywords')) {
             $_SESSION['flash_message'] = 'A keyword recheck is already queued.';
         } else {
-            $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['recheck_keywords', '']);
-            $_SESSION['flash_message'] = 'Keyword recheck queued. The worker will scan all cached domains against current keywords.';
+            if (!empty($_POST['recheck_form'])) {
+                $sources = [];
+                if (!empty($_POST['source_openintel'])) $sources[] = 'openintel';
+                if (!empty($_POST['source_czds'])) $sources[] = 'czds';
+                if (!$sources) $sources[] = 'openintel';
+                $tlds = is_array($_POST['tlds'] ?? null)
+                    ? array_values(array_filter(array_map('strval', $_POST['tlds'])))
+                    : [];
+                $payload = json_encode([
+                    'sources' => $sources,
+                    'tlds' => $tlds,
+                    'max_age_days' => max(0, (int)($_POST['max_age_days'] ?? 30)),
+                    'max_domains' => max(0, (int)($_POST['max_domains'] ?? 0)),
+                ]);
+            } else {
+                // Quick action: the worker defaults to the fast ccTLD cache only.
+                $payload = '';
+            }
+            $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")->execute(['recheck_keywords', $payload]);
+            $_SESSION['flash_message'] = 'Keyword recheck queued.';
         }
-        header('Location: /admin/');
+        header('Location: /admin/#recheck');
         exit;
     }
 
@@ -161,6 +179,8 @@ $pendingCommandsList = $db->query("SELECT id, command, payload, created_at FROM 
 $recentCommands = $db->query("SELECT id, command, payload, status, result, created_at, executed_at, finished_at FROM commands ORDER BY id DESC LIMIT 20")->fetchAll();
 $versionMismatch = workerVersionMismatch($db);
 $activity = getWorkerActivity($db);
+$recheckCzdsTlds = $db->query("SELECT name, records_total FROM tlds WHERE source = 'czds' AND is_active = 1 ORDER BY name")->fetchAll();
+$recheckCcTlds = $db->query("SELECT name, records_total FROM tlds WHERE source = 'openintel' AND is_active = 1 ORDER BY name")->fetchAll();
 
 $pageTitle = 'Admin Panel';
 require __DIR__ . '/../templates/header.php';
@@ -254,7 +274,7 @@ require __DIR__ . '/../templates/header.php';
     <p><a href="/admin/tlds.php" class="btn waves-effect"><i class="material-icons left">public</i>Open TLD management</a></p>
 </div>
 
-<div class="card admin-pane" data-tab="recheck" id="live-recheck" data-live-section>
+<div class="card admin-pane" data-tab="recheck">
     <div class="card-head"><h2>Keyword Recheck Status</h2></div>
     <?php
     $recheckStatus = $db->query("SELECT * FROM recheck_status WHERE id = 1")->fetch();
@@ -264,7 +284,7 @@ require __DIR__ . '/../templates/header.php';
     $recheckMatches = (int)($recheckStatus['matches_found'] ?? 0);
     $recheckPct = $recheckTotal > 0 ? round($recheckChecked / $recheckTotal * 100, 1) : 0;
     ?>
-    <div id="recheck-container" data-running="<?= $recheckRunning ? '1' : '0' ?>">
+    <div id="recheck-status" data-live-section>
         <?php if ($recheckRunning): ?>
             <p><strong>Status:</strong> <span class="status-badge status-running">Running</span></p>
             <div class="progress">
@@ -285,26 +305,66 @@ require __DIR__ . '/../templates/header.php';
         <?php endif; ?>
         <?php
         $pendingRecheck = $db->query("SELECT COUNT(*) FROM commands WHERE command = 'recheck_keywords' AND status = 'pending'")->fetchColumn();
+        $recheckSource = (string)($recheckStatus['source'] ?? '');
         if ((int)$pendingRecheck > 0 && !$recheckRunning): ?>
             <p class="text-success"><strong><?= (int)$pendingRecheck ?></strong> recheck command(s) queued — waiting for worker.</p>
         <?php endif; ?>
-        <div class="section-actions">
-            <form method="POST">
-                <?php csrfField(); ?>
-                <input type="hidden" name="action" value="recheck_keywords">
-                <button type="submit" class="btn waves-effect" <?= ($recheckRunning || (int)$pendingRecheck > 0) ? 'disabled' : '' ?>>
-                    <i class="material-icons left">search</i><?= $recheckRunning ? 'Recheck in progress...' : ((int)$pendingRecheck > 0 ? 'Queued — waiting for worker' : 'Recheck All Cached Domains') ?>
-                </button>
-            </form>
-            <?php if ($recheckRunning): ?>
-            <form method="POST">
-                <?php csrfField(); ?>
-                <input type="hidden" name="action" value="stop_recheck">
-                <button type="submit" class="btn btn-danger waves-effect"><i class="material-icons left">stop</i>Stop Recheck</button>
-            </form>
-            <?php endif; ?>
-        </div>
+        <?php if ($recheckSource !== ''): ?>
+            <p class="muted">Source: <strong><?= htmlspecialchars($recheckSource) ?></strong></p>
+        <?php endif; ?>
     </div>
+
+        <?php if ($recheckRunning): ?>
+        <form method="POST" style="margin-bottom:8px;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="stop_recheck">
+            <button type="submit" class="btn btn-danger waves-effect"><i class="material-icons left">stop</i>Stop Recheck</button>
+        </form>
+        <?php endif; ?>
+
+        <form method="POST" id="recheck-form" style="margin-top:12px;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="recheck_keywords">
+            <input type="hidden" name="recheck_form" value="1">
+            <div class="section-actions" style="gap:18px;">
+                <label class="check-inline">
+                    <input type="checkbox" name="source_openintel" value="1" checked onchange="recheckEstimate()">
+                    <span>ccTLD cache (OpenINTEL)</span>
+                </label>
+                <label class="check-inline">
+                    <input type="checkbox" name="source_czds" value="1" onchange="recheckEstimate()">
+                    <span>ICANN cache (CZDS)</span>
+                </label>
+            </div>
+            <div class="input-field">
+                <label for="recheck-tlds" style="position:static;">TLDs to recheck (optional; empty = all configured)</label>
+                <select name="tlds[]" id="recheck-tlds" class="browser-default" multiple size="8" style="height:auto;" onchange="recheckEstimate()">
+                    <?php if ($recheckCcTlds): ?>
+                    <optgroup label="ccTLD (OpenINTEL)">
+                        <?php foreach ($recheckCcTlds as $t): ?>
+                        <option value="<?= htmlspecialchars($t['name']) ?>" data-origin="openintel" data-total="<?= (int)$t['records_total'] ?>"><?= htmlspecialchars($t['name']) ?> (<?= number_format((int)$t['records_total']) ?> cached)</option>
+                        <?php endforeach; ?>
+                    </optgroup>
+                    <?php endif; ?>
+                    <?php if ($recheckCzdsTlds): ?>
+                    <optgroup label="ICANN (CZDS)">
+                        <?php foreach ($recheckCzdsTlds as $t): ?>
+                        <option value="<?= htmlspecialchars($t['name']) ?>" data-origin="czds" data-total="<?= (int)$t['records_total'] ?>"><?= htmlspecialchars($t['name']) ?> (<?= number_format((int)$t['records_total']) ?> cached)</option>
+                        <?php endforeach; ?>
+                    </optgroup>
+                    <?php endif; ?>
+                </select>
+                <span class="helper-text">Leave TLDs empty to recheck the whole ccTLD cache. ICANN requires selected TLDs or a max-domains cap.</span>
+            </div>
+            <div class="section-actions">
+                <label class="nowrap">Max age (days) <input type="number" name="max_age_days" value="30" min="0" max="3650" class="browser-default compact num-input"></label>
+                <label class="nowrap">Max domains <input type="number" name="max_domains" value="0" min="0" class="browser-default compact num-input" title="0 = no cap"></label>
+                <span id="recheck-estimate" class="muted"></span>
+                <button type="submit" class="btn waves-effect" <?= ($recheckRunning || (int)$pendingRecheck > 0) ? 'disabled' : '' ?>>
+                    <i class="material-icons left">search</i><?= $recheckRunning ? 'Recheck in progress...' : ((int)$pendingRecheck > 0 ? 'Queued — waiting for worker' : 'Recheck selected') ?>
+                </button>
+            </div>
+        </form>
 </div>
 
 <?php
@@ -610,6 +670,26 @@ if (!empty($workerStatus['last_heartbeat'])) {
     const valid = ['overview','worker','commands','recheck','users','sync','system'];
     if (hash && valid.includes(hash)) activate(hash);
 })();
+
+// Estimate the number of cached domains a scoped recheck would scan.
+function recheckEstimate() {
+    const sel = document.getElementById('recheck-tlds');
+    const out = document.getElementById('recheck-estimate');
+    const czds = document.querySelector('input[name="source_czds"]');
+    if (!sel || !out) return;
+    let total = 0;
+    let selected = 0;
+    sel.querySelectorAll('option:checked').forEach(function (o) {
+        total += parseInt(o.dataset.total || '0', 10);
+        selected++;
+    });
+    let msg = selected ? (selected + ' TLD(s) selected · ~' + total.toLocaleString() + ' cached domains') : 'No TLDs selected';
+    if (czds && czds.checked && selected === 0) {
+        msg += ' — ICANN needs selected TLDs or a max-domains cap.';
+    }
+    out.textContent = msg;
+}
+document.addEventListener('DOMContentLoaded', recheckEstimate);
 </script>
 
 <?php require __DIR__ . '/../templates/footer.php'; ?>

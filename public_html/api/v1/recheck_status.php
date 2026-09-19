@@ -20,10 +20,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true) ?: [];
 
     $stmt = $db->prepare("INSERT OR REPLACE INTO recheck_status 
-        (id, is_running, total_domains, checked_domains, matches_found, started_at, completed_at) 
-        VALUES (1, ?, ?, ?, ?, ?, ?)");
+        (id, is_running, source, total_domains, checked_domains, matches_found, started_at, completed_at) 
+        VALUES (1, ?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([
         (int)($input['is_running'] ?? 0),
+        isset($input['source']) && $input['source'] !== '' ? substr((string)$input['source'], 0, 20) : null,
         (int)($input['total_domains'] ?? 0),
         (int)($input['checked_domains'] ?? 0),
         (int)($input['matches_found'] ?? 0),
