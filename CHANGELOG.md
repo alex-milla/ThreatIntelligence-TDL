@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.59] - 2026-09-19
+
+### Web UI — soft buttons + no forced dark mode
+- **Buttons are pastel/tinted, no solid fills**: primary is a soft blue tint with blue text and danger a soft red tint with red text, so no more loud solid red/blue buttons.
+- **Pagination, group chips and NEW badges** use the same soft tones.
+- **`color-scheme: light` declared** so browsers with "auto dark mode" (Chrome/Edge) no longer forcibly darken the light theme. Dark mode remains available through the toggle.
+
 ## [v1.3.58] - 2026-09-19
 
 ### Web UI — "Soft Corporate" theme + light/dark mode

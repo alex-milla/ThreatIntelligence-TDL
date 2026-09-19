@@ -10,6 +10,8 @@
    ------------------------------------------------------------ */
 :root,
 html[data-theme="light"] {
+    color-scheme: light;
+
     /* Base */
     --bg: #f7f9fb;
     --surface: #ffffff;
@@ -24,6 +26,8 @@ html[data-theme="light"] {
     --primary: #5e81ac;
     --primary-hover: #4d6f99;
     --primary-soft: #e8eef7;
+    --primary-soft-hover: #dbe6f4;
+    --primary-border: #c7d6ea;
     --on-primary: #ffffff;
     --link: #4d6f99;
 
@@ -43,6 +47,7 @@ html[data-theme="light"] {
     --warning-border: #f0e0b8;
     --danger: #a3444d;
     --danger-bg: #fbeced;
+    --danger-bg-hover: #f6dadd;
     --danger-border: #f1c9cd;
     --info: #3f6d8c;
     --info-bg: #e9f1f7;
@@ -107,6 +112,8 @@ html[data-theme="dark"] {
     --primary: #81a1c1;
     --primary-hover: #8fadcb;
     --primary-soft: #34424f;
+    --primary-soft-hover: #3b4a5c;
+    --primary-border: #40536a;
     --on-primary: #1b2430;
     --link: #8fbcbb;
 
@@ -124,6 +131,7 @@ html[data-theme="dark"] {
     --warning-border: #55492f;
     --danger: #d99aa2;
     --danger-bg: #3a2b2e;
+    --danger-bg-hover: #452f33;
     --danger-border: #563c40;
     --info: #8fbcbb;
     --info-bg: #28383a;
@@ -486,6 +494,7 @@ h5 { font-size: 1.15rem; font-weight: 500; }
 /* ------------------------------------------------------------
    Buttons
    ------------------------------------------------------------ */
+/* Soft/tinted buttons: no solid fills, only pastel tints + coloured text */
 .btn,
 .btn-large,
 .btn-small {
@@ -493,38 +502,37 @@ h5 { font-size: 1.15rem; font-weight: 500; }
     font-weight: 500;
     letter-spacing: 0;
     border-radius: 6px;
-}
-
-.btn,
-.btn-large,
-.btn-small {
-    background-color: var(--primary);
-    color: var(--on-primary);
+    box-shadow: none;
+    background-color: var(--primary-soft);
+    color: var(--primary);
+    border: 1px solid var(--primary-border);
 }
 
 .btn:hover,
 .btn:focus,
 .btn-large:hover,
 .btn-small:hover {
-    background-color: var(--primary-hover);
-    color: var(--on-primary);
+    background-color: var(--primary-soft-hover);
+    color: var(--primary);
 }
 
 .btn-flat {
     background-color: transparent !important;
+    border-color: transparent !important;
     color: var(--primary);
     box-shadow: none;
 }
 
 .btn-danger {
-    background-color: var(--danger-solid);
-    color: #fff;
+    background-color: var(--danger-bg);
+    color: var(--danger);
+    border-color: var(--danger-border);
 }
 
 .btn-danger:hover,
 .btn-danger:focus {
-    background-color: var(--danger-solid-hover);
-    color: #fff;
+    background-color: var(--danger-bg-hover);
+    color: var(--danger);
 }
 
 .btn-outline {
@@ -632,8 +640,9 @@ tr.unread {
 
 .badge-new {
     display: inline-block;
-    background: var(--danger-solid);
-    color: #fff;
+    background: var(--danger-bg);
+    color: var(--danger);
+    border: 1px solid var(--danger-border);
     font-size: 0.68rem;
     font-weight: 600;
     padding: 2px 7px;
@@ -835,8 +844,11 @@ table.highlight > tbody > tr:hover {
 
 .pager .pagination { margin: 0; }
 
-.pagination li.active { background-color: var(--primary); }
-.pagination li.active a { color: var(--on-primary); }
+.pagination li.active {
+    background-color: var(--primary-soft);
+    border: 1px solid var(--primary-border);
+}
+.pagination li.active a { color: var(--primary); }
 .pagination li a { color: var(--text); }
 
 /* ------------------------------------------------------------
@@ -1067,9 +1079,9 @@ table.highlight > tbody > tr:hover {
 }
 
 .group-tab.active {
-    background: var(--primary);
-    color: var(--on-primary);
-    border-color: var(--primary);
+    background: var(--primary-soft);
+    color: var(--primary);
+    border-color: var(--primary-border);
 }
 
 .group-tab.group-delete {
