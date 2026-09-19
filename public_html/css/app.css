@@ -228,12 +228,36 @@ nav.app-nav {
     color: var(--nav-text);
     box-shadow: none;
     border-bottom: 1px solid var(--nav-border);
+    height: 64px;
+}
+
+/* Materialize v2 paints .nav-wrapper with the surface colour, which would
+   hide our nav background; keep it transparent and let the flex layout work. */
+.app-nav .nav-wrapper {
+    background-color: transparent;
+    padding: 0 12px;
+}
+
+/* In v2 the menu is a flex row; push it to the right (float:right is ignored). */
+.app-nav .nav-wrapper > ul {
+    margin-left: auto;
+    gap: 0.35em;
 }
 
 .app-nav .brand-logo,
 .app-nav ul a,
 .app-nav .sidenav-trigger {
     color: var(--nav-text);
+}
+
+.app-nav .brand-logo {
+    font-weight: 500;
+    font-size: 1.25rem;
+    white-space: nowrap;
+}
+
+.app-nav ul a {
+    font-size: 0.95rem;
 }
 
 .app-nav ul.right > li > a.active {
@@ -245,23 +269,24 @@ nav.app-nav {
     margin-right: 6px;
 }
 
-nav .brand-logo {
-    font-weight: 500;
-    font-size: 1.3rem;
-    white-space: nowrap;
-}
-
-nav ul a {
-    font-size: 0.95rem;
-}
-
 .app-nav .theme-toggle {
     display: inline-flex;
     align-items: center;
 }
 
-@media only screen and (max-width: 992px) {
-    nav .brand-logo {
+/* Materialize v2 dropped the .sidenav-trigger styles, so show it only on mobile. */
+.app-nav .sidenav-trigger {
+    display: none;
+}
+
+@media only screen and (max-width: 992.98px) {
+    .app-nav .sidenav-trigger {
+        display: inline-flex;
+        align-items: center;
+        height: 64px;
+    }
+
+    .app-nav .brand-logo {
         font-size: 1.05rem;
     }
 }

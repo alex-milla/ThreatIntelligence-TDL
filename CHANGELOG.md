@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.60] - 2026-09-19
+
+### Fix
+- **Navbar layout with Materialize v2.3.3**: the header used the v1 markup (`<nav>` + `.nav-wrapper` + `.sidenav-trigger`), but v2 activates the component with the **`.navbar`** class. Without it the menu rendered as a vertical bulleted list and the mobile trigger showed on desktop. Added `navbar` to the `<nav>`, right-aligned the flex menu, made `.nav-wrapper` transparent so the brand background shows, and show the sidenav trigger only below 993 px.
+
 ## [v1.3.59] - 2026-09-19
 
 ### Web UI — soft buttons + no forced dark mode

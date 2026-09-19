@@ -44,7 +44,7 @@ $isAdminArea = strpos($curPath, '/admin') === 0;
 </head>
 <body>
     <header>
-        <nav class="app-nav">
+        <nav class="navbar app-nav">
             <div class="nav-wrapper container">
                 <a href="/" class="brand-logo">ThreatIntelligence-TDL</a>
                 <a href="#" data-target="mobile-nav" class="sidenav-trigger" aria-label="Open navigation menu"><i class="material-icons">menu</i></a>
