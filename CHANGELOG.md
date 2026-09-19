@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.4.7] - 2026-09-19
+
+### Fixed - Keywords page slow to load
+
+- **Missing index on `notifications(match_id)`**: the Keywords page computes each keyword's visible match count, which looked up notifications by `match_id` with no index, forcing a scan of `notifications` per match (`~matches × notifications`). Added a composite index `notifications(match_id, user_id)` (used as a covering index).
+- **Rewrote the Keywords query** from a correlated subquery per keyword to a **single-pass `LEFT JOIN` + `GROUP BY`**, so the whole list is one query. Semantics are identical (verified old vs new count for visible/hidden/watchlist/tagged/observing/old cases).
+- Added `matches(keyword_id, is_historical)` (skip historical matches quickly) and `matches(discovered_at)` (dashboard/notifications ordering) indexes.
+- `EXPLAIN QUERY PLAN` now shows `SEARCH n USING COVERING INDEX idx_notif_match_user (match_id=? AND user_id=?)`.
+
 ## [v1.4.6] - 2026-09-19
 
 ### Added / Changed - unified data across sources, scoped recheck

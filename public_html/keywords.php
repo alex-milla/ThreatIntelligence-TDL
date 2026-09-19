@@ -84,27 +84,36 @@ $kwOrderBy = $kwSortCols[$kwSort] . ' ' . strtoupper($kwDir);
 // List keywords with visible match count: only matches that still have an active
 // notification for this user, are not in the watchlist, and match the default
 // notifications visibility (good/bad/historical/old hidden; observing kept).
+// Single-pass aggregation (LEFT JOINs + GROUP BY) instead of a correlated
+// subquery per keyword: with the notifications(match_id) index this stays fast
+// even with many matches. Semantics are identical to the previous query.
 $newDomainDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
 $stmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.created_at,
-    (SELECT COUNT(*) FROM matches m WHERE m.keyword_id = k.id
-     AND EXISTS (SELECT 1 FROM notifications n WHERE n.match_id = m.id AND n.user_id = ?)
-     AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)
-     AND m.is_historical = 0
-     AND NOT EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain AND dt.tag IN ('good','bad'))
-     AND (
-         EXISTS (SELECT 1 FROM domain_tags dob WHERE dob.domain = m.domain AND dob.tag = 'observing')
-         OR NOT EXISTS (
-             SELECT 1 FROM domain_whois dw JOIN tlds t ON t.name = m.tld
-             WHERE dw.domain = m.domain AND t.last_ok_sync IS NOT NULL
-             AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) IS NOT NULL
-             AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) < datetime(t.last_ok_sync, '-' || ? || ' days')
-         )
-     )
-    ) AS visible_count
+    COUNT(CASE WHEN
+        n.id IS NOT NULL
+        AND w.user_id IS NULL
+        AND dt.domain IS NULL
+        AND (
+            dob.domain IS NOT NULL
+            OR NOT (
+                dw.domain IS NOT NULL AND t.name IS NOT NULL
+                AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) IS NOT NULL
+                AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) < datetime(t.last_ok_sync, '-' || ? || ' days')
+            )
+        )
+    THEN 1 END) AS visible_count
 FROM keywords k
+LEFT JOIN matches m ON m.keyword_id = k.id AND m.is_historical = 0
+LEFT JOIN notifications n ON n.match_id = m.id AND n.user_id = k.user_id
+LEFT JOIN watchlist w ON w.user_id = k.user_id AND w.domain = m.domain
+LEFT JOIN domain_tags dt ON dt.domain = m.domain AND dt.tag IN ('good','bad')
+LEFT JOIN domain_tags dob ON dob.domain = m.domain AND dob.tag = 'observing'
+LEFT JOIN domain_whois dw ON dw.domain = m.domain
+LEFT JOIN tlds t ON t.name = m.tld
 WHERE k.user_id = ?
+GROUP BY k.id
 ORDER BY $kwOrderBy");
-$stmt->execute([$userId, $userId, $newDomainDays, $userId]);
+$stmt->execute([$newDomainDays, $userId]);
 $keywords = $stmt->fetchAll();
 
 /**

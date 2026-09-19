@@ -330,5 +330,22 @@ class Database {
         } catch (PDOException $e) {
             // Leave the table as-is; callers still validate tag values in PHP.
         }
+
+        // Indexes that keep the keyword/dashboard queries fast on large data
+        // (they are created after the column migrations so the columns exist).
+        try {
+            // notifications are looked up by (match_id, user_id) when counting a
+            // keyword's visible matches (keywords.php). Composite so it can be a
+            // covering index; also serves match_id-only lookups.
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_notif_match_user ON notifications(match_id, user_id)");
+        } catch (PDOException $e) { }
+        try {
+            // Skip historical matches quickly when counting a keyword's matches.
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_matches_kw_hist ON matches(keyword_id, is_historical)");
+        } catch (PDOException $e) { }
+        try {
+            // Dashboard/notifications order by discovery date.
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_matches_discovered ON matches(discovered_at)");
+        } catch (PDOException $e) { }
     }
 }
