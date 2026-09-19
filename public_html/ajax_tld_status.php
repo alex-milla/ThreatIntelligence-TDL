@@ -9,10 +9,16 @@ if (empty($_SESSION['user_id']) || empty($_SESSION['is_admin'])) {
 }
 
 $db = Database::get();
-$rows = $db->query(
+$source = $_GET['source'] ?? 'czds';
+if (!in_array($source, ['czds', 'openintel'], true)) {
+    $source = 'czds';
+}
+$stmt = $db->prepare(
     "SELECT name, is_active, last_sync, status, records_total, records_new, zone_size, "
-    . "last_error, retry_attempts, next_retry FROM tlds ORDER BY is_active DESC, name"
-)->fetchAll();
+    . "last_error, retry_attempts, next_retry FROM tlds WHERE source = ? ORDER BY is_active DESC, name"
+);
+$stmt->execute([$source]);
+$rows = $stmt->fetchAll();
 
 $tlds = [];
 foreach ($rows as $r) {

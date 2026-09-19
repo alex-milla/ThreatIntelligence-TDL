@@ -215,6 +215,13 @@ class Database {
             // Column already exists
         }
 
+        // Safe migration: match origin ('czds' zone files or 'ct' OpenINTEL).
+        try {
+            $db->exec("ALTER TABLE matches ADD COLUMN source TEXT DEFAULT 'czds'");
+        } catch (PDOException $e) {
+            // Column already exists
+        }
+
         // Safe migration: add group_id to watchlist
         try {
             $db->exec("ALTER TABLE watchlist ADD COLUMN group_id INTEGER DEFAULT NULL");
@@ -265,6 +272,10 @@ class Database {
         } catch (PDOException $e) { }
         try {
             $db->exec("ALTER TABLE tlds ADD COLUMN next_retry TEXT");
+        } catch (PDOException $e) { }
+        // TLD origin: 'czds' (ICANN gTLDs) or 'openintel' (ccTLDs).
+        try {
+            $db->exec("ALTER TABLE tlds ADD COLUMN source TEXT DEFAULT 'czds'");
         } catch (PDOException $e) { }
 
         // Safe migration: extend domain_whois with nameservers + lookup metadata

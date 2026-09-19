@@ -7,6 +7,13 @@ $db = Database::get();
 $message = $_SESSION['flash_message'] ?? '';
 unset($_SESSION['flash_message']);
 
+// Two independent TLD sources: ICANN CZDS (gTLDs) and OpenINTEL (ccTLDs).
+$tldSources = ['czds' => 'ICANN (CZDS)', 'openintel' => 'ccTLD (OpenINTEL)'];
+$source = $_GET['source'] ?? $_POST['source'] ?? 'czds';
+if (!isset($tldSources[$source])) {
+    $source = 'czds';
+}
+
 function tldStatusBadge(?string $status): string {
     $map = [
         'downloaded'    => 'Downloaded',
@@ -20,6 +27,9 @@ function tldStatusBadge(?string $status): string {
         'retrying'      => 'Retrying',
         'parse_error'   => 'Parse error',
         'baselined'     => 'Baselined',
+        'updated'       => 'Updated',
+        'unchanged'     => 'Unchanged',
+        'no_data'       => 'No data',
     ];
     if ($status === null || $status === '' || !isset($map[$status])) {
         return '<span class="muted">&mdash;</span>';
@@ -44,21 +54,33 @@ function formatBytes(int $bytes): string {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
     $action = $_POST['action'] ?? 'save_selection';
-    $active = $_POST['active'] ?? [];
+    $active = is_array($_POST['active'] ?? null) ? $_POST['active'] : [];
 
-    // Always persist the current selection before queuing any worker command.
+    // Persist the selection of THIS source only (never wipe the other source).
     $db->beginTransaction();
-    $db->exec("UPDATE tlds SET is_active = 0");
-    $stmt = $db->prepare("UPDATE tlds SET is_active = 1 WHERE name = ?");
+    $db->prepare("UPDATE tlds SET is_active = 0 WHERE source = ?")->execute([$source]);
+    $stmt = $db->prepare("UPDATE tlds SET is_active = 1 WHERE name = ? AND source = ?");
     foreach ($active as $tld) {
-        $stmt->execute([$tld]);
+        $stmt->execute([$tld, $source]);
     }
     $db->commit();
 
-    if ($action === 'run_worker_refresh' || $action === 'run_worker_force') {
+    if ($source === 'openintel' && $action === 'run_openintel') {
+        if (hasPendingCommand($db, 'run_openintel')) {
+            $_SESSION['flash_message'] = 'An OpenINTEL import is already queued or running.';
+        } else {
+            $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")
+               ->execute(['run_openintel', json_encode(['tlds' => array_values($active)])]);
+            $_SESSION['flash_message'] = 'OpenINTEL import queued for the selected ccTLD(s). It will run in the background on the worker.';
+        }
+        header('Location: /admin/tlds.php?source=openintel');
+        exit;
+    }
+
+    if ($source === 'czds' && ($action === 'run_worker_refresh' || $action === 'run_worker_force')) {
         if (hasPendingCommand($db, 'run_worker')) {
             $_SESSION['flash_message'] = 'A worker run is already queued or running. Wait for it to finish.';
-            header('Location: /admin/tlds.php');
+            header('Location: /admin/tlds.php?source=czds');
             exit;
         }
         $refresh = $action === 'run_worker_refresh';
@@ -68,27 +90,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['flash_message'] = $refresh
             ? 'Refresh queued for the selected TLD(s). The worker will download them only if they changed.'
             : 'Force re-download queued for the selected TLD(s). The worker will download them again regardless of cache.';
-        header('Location: /admin/tlds.php');
+        header('Location: /admin/tlds.php?source=czds');
         exit;
     }
 
     $_SESSION['flash_message'] = 'TLD selection saved. The worker will use these on next run.';
-    header('Location: /admin/tlds.php');
+    header('Location: /admin/tlds.php?source=' . urlencode($source));
     exit;
 }
 
-$tlds = $db->query(
+$stmt = $db->prepare(
     "SELECT id, name, is_active, last_sync, status, records_total, records_new, "
-    . "zone_size, zone_file_mtime, last_error, retry_attempts, next_retry FROM tlds ORDER BY is_active DESC, name"
-)->fetchAll();
+    . "zone_size, zone_file_mtime, last_error, retry_attempts, next_retry FROM tlds "
+    . "WHERE source = ? ORDER BY is_active DESC, name"
+);
+$stmt->execute([$source]);
+$tlds = $stmt->fetchAll();
 $workerStatus = $db->query("SELECT is_running FROM worker_status WHERE id = 1")->fetch();
 $workerRunning = !empty($workerStatus['is_running']);
 $versionMismatch = workerVersionMismatch($db);
 $activity = getWorkerActivity($db);
-// Keep polling the table while the worker is downloading or a run is queued.
-$tldWatch = $workerRunning || $activity['commands_pending'] > 0 || $activity['commands_running'] > 0;
+// Keep polling the table while work is queued/running for this source.
+$tldWatch = $source === 'openintel'
+    ? hasPendingCommand($db, 'run_openintel')
+    : ($workerRunning || $activity['commands_pending'] > 0 || $activity['commands_running'] > 0);
 
-$summary = ['downloaded' => 0, 'not_modified' => 0, 'skipped_today' => 0, 'failed' => 0];
+$summary = array_fill_keys(
+    ['downloaded', 'not_modified', 'skipped_today', 'failed', 'updated', 'unchanged', 'baselined', 'no_data'],
+    0
+);
 foreach ($tlds as $t) {
     if ($t['is_active'] && isset($summary[$t['status']])) {
         $summary[$t['status']]++;
@@ -126,28 +156,58 @@ require __DIR__ . '/../templates/header.php';
       data-active="<?= $activity['active'] ? '1' : '0' ?>"
       data-version="<?= htmlspecialchars($activity['worker_version']) ?>"></span>
 
+<nav class="admin-tabs" style="margin-bottom:12px;">
+    <?php foreach ($tldSources as $src => $label): ?>
+    <a href="/admin/tlds.php?source=<?= urlencode($src) ?>" class="<?= $source === $src ? 'active' : '' ?>"><?= htmlspecialchars($label) ?></a>
+    <?php endforeach; ?>
+</nav>
+
 <div class="card">
     <div class="card-head">
-        <h2>Approved TLDs (<?= count($tlds) ?>)</h2>
+        <h2><?= htmlspecialchars($tldSources[$source]) ?> TLDs (<?= count($tlds) ?>)</h2>
         <span class="muted">Check the TLDs you want the worker to monitor. Unchecked TLDs will be ignored.</span>
     </div>
+
+    <?php if ($source === 'openintel'): ?>
+    <p class="muted">
+        Weekly apex-domain lists published by <a href="https://www.openintel.nl/data/domain-lists/cctld-names/" target="_blank" rel="noopener">OpenINTEL</a>
+        (CC BY-NC-SA 4.0, non-commercial). The first run baselines each ccTLD; later runs report only domains seen for the first time.
+        Enable it in the worker <code>config.ini</code> (<code>[openintel] enabled = true</code>).
+    </p>
+    <?php endif; ?>
 
     <?php if (empty($tlds)): ?>
     <div class="alert alert-error">
         <i class="material-icons left">error</i>
-        No TLDs found. The worker must run at least once to populate this list from ICANN CZDS.
-        <br>Go to <a href="/admin/"><strong>Admin Panel</strong></a> and click <strong>Run Worker Now</strong>.
+        <?php if ($source === 'openintel'): ?>
+            No OpenINTEL ccTLDs yet. Set <code>[openintel] tlds</code> in the worker config and run an import;
+            the processed ccTLDs will appear here so you can activate them.
+        <?php else: ?>
+            No TLDs found. The worker must run at least once to populate this list from ICANN CZDS.
+            <br>Go to <a href="/admin/"><strong>Admin Panel</strong></a> and click <strong>Run Worker Now</strong>.
+        <?php endif; ?>
     </div>
     <?php else: ?>
 
     <div class="status-summary" id="live-tld-summary" data-live-section>
         <span><strong><?= $activeCount ?></strong> active</span>
+        <?php if ($source === 'openintel'): ?>
+        <span class="text-success"><strong><?= $summary['updated'] ?></strong> updated</span>
+        <span><strong><?= $summary['unchanged'] ?></strong> unchanged</span>
+        <span><strong><?= $summary['baselined'] ?></strong> baselined</span>
+        <span class="muted"><strong><?= $summary['no_data'] ?></strong> no data</span>
+        <span class="text-danger"><strong><?= $summary['failed'] ?></strong> failed</span>
+        <?php if ($tldWatch): ?>
+        <span class="text-warning"><i class="material-icons tiny">autorenew</i> import queued/running&hellip;</span>
+        <?php endif; ?>
+        <?php else: ?>
         <span class="text-success"><strong><?= $summary['downloaded'] ?></strong> downloaded</span>
         <span><strong><?= $summary['not_modified'] ?></strong> unchanged</span>
         <span class="muted"><strong><?= $summary['skipped_today'] ?></strong> skipped today</span>
         <span class="text-danger"><strong><?= $summary['failed'] ?></strong> failed</span>
         <?php if ($workerRunning): ?>
         <span class="text-warning"><i class="material-icons tiny">autorenew</i> worker running&hellip;</span>
+        <?php endif; ?>
         <?php endif; ?>
     </div>
 
@@ -159,10 +219,18 @@ require __DIR__ . '/../templates/header.php';
 
     <form method="POST" id="tld-form">
         <?php csrfField(); ?>
+        <input type="hidden" name="source" value="<?= htmlspecialchars($source) ?>">
         <div class="section-actions">
             <button type="button" class="btn btn-small waves-effect" onclick="selectAllTlds(true)"><i class="material-icons left">check_box</i>Select All</button>
             <button type="button" class="btn btn-small waves-effect" onclick="selectAllTlds(false)"><i class="material-icons left">check_box_outline_blank</i>Deselect All</button>
             <button type="submit" class="btn waves-effect" name="action" value="save_selection"><i class="material-icons left">save</i>Save Selection</button>
+            <?php if ($source === 'openintel'): ?>
+            <button type="submit" class="btn waves-effect" name="action" value="run_openintel"
+                    title="Download and import the latest weekly lists for the selected ccTLDs (runs in the background on the worker)"
+                    onclick="return confirm('Run the OpenINTEL import for the selected ccTLD(s) in the background?')">
+                <i class="material-icons left">cloud_download</i>Run OpenINTEL
+            </button>
+            <?php else: ?>
             <button type="submit" class="btn waves-effect" name="action" value="run_worker_refresh"
                     title="Download the selected TLDs only if they changed (uses ETag/Last-Modified)"
                     onclick="return confirmLargeSelection()">
@@ -172,11 +240,17 @@ require __DIR__ . '/../templates/header.php';
                     onclick="return confirmLargeSelection() && confirm('Re-download the selected TLDs unconditionally? This ignores the local cache and the daily guard.')">
                 <i class="material-icons left">download</i>Force Re-download
             </button>
+            <?php endif; ?>
             <span id="tld-count"></span>
         </div>
         <p class="muted">
+            <?php if ($source === 'openintel'): ?>
+            <strong>Run OpenINTEL</strong> queues the weekly ccTLD import on the worker (it runs detached).
+            Save the selection first if you changed the checkboxes.
+            <?php else: ?>
             <strong>Refresh</strong> downloads only if the zone changed (conditional request).
             <strong>Force</strong> re-downloads the full zone files. Save the selection first if you changed the checkboxes.
+            <?php endif; ?>
         </p>
 
         <div class="tld-table-container">
@@ -284,7 +358,10 @@ updateTldCount();
         no_space:      'No space',
         retrying:      'Retrying',
         parse_error:   'Parse error',
-        baselined:     'Baselined'
+        baselined:     'Baselined',
+        updated:       'Updated',
+        unchanged:     'Unchanged',
+        no_data:       'No data'
     };
 
     function badge(status) {
@@ -303,7 +380,7 @@ updateTldCount();
     }
 
     function poll() {
-        fetch('/ajax_tld_status.php')
+        fetch('/ajax_tld_status.php?source=<?= urlencode($source) ?>')
             .then(r => r.json())
             .then(data => {
                 if (!data.success || !data.tlds) return;

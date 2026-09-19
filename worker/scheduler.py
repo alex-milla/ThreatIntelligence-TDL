@@ -1341,6 +1341,42 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                              f"Domain search '{q}' ({mode}): {len(search_result['results'])} result(s)"
                              + (" [partial]" if search_result.get("partial") else "")})
 
+            elif command == "run_openintel":
+                # Launch the OpenINTEL ccTLD importer as a detached background
+                # process so this long (weekly) job never blocks the daemon.
+                opts = {}
+                if payload:
+                    try:
+                        opts = json.loads(payload) if isinstance(payload, str) else {}
+                    except (ValueError, TypeError):
+                        opts = {}
+                tlds = opts.get("tlds")
+                script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "openintel.py")
+                if not os.path.exists(script):
+                    result = "openintel.py not found; update the worker."
+                    status = "failed"
+                    logs.append({"level": "error", "message": result})
+                else:
+                    data_dir = cfg.get("worker", "data_dir", fallback="./data")
+                    log_dir = os.path.join(data_dir, "openintel", "logs")
+                    os.makedirs(log_dir, exist_ok=True)
+                    out_path = os.path.join(
+                        log_dir, "run-" + datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S") + ".log")
+                    cmd = [sys.executable, script]
+                    if isinstance(tlds, list) and tlds:
+                        cmd += ["--tlds", ",".join(str(t).lower() for t in tlds if t)]
+                    try:
+                        with open(out_path, "a", encoding="utf-8") as out:
+                            subprocess.Popen(cmd, cwd=os.path.dirname(script),
+                                             stdout=out, stderr=out, start_new_session=True)
+                        result = json.dumps({"started": True, "tlds": tlds or "config"})
+                        logs.append({"level": "info", "message":
+                                     f"OpenINTEL import started in background ({', '.join(tlds) if tlds else 'config TLDs'})."})
+                    except Exception as e:
+                        result = f"Failed to start OpenINTEL import: {e}"
+                        status = "failed"
+                        logs.append({"level": "error", "message": result})
+
             elif command == "stop_recheck":
                 result = "Stop recheck command acknowledged. If a recheck is running it will stop at the next batch boundary."
                 logs.append({"level": "info", "message": result})

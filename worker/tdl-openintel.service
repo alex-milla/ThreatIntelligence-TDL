@@ -1,0 +1,12 @@
+[Unit]
+Description=ThreatIntelligence TDL OpenINTEL ccTLD weekly import
+Documentation=https://www.openintel.nl/data/domain-lists/cctld-names/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/ThreatIntelligence-TDL/worker
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /root/ThreatIntelligence-TDL/worker/openintel.py

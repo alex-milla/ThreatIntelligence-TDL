@@ -9,6 +9,7 @@ import tempfile
 import parser
 import matcher
 import scheduler
+import openintel
 
 
 def create_test_zone(filepath: str, records: list[str]) -> None:
@@ -243,6 +244,82 @@ def test_tld_meta_baseline_persistence() -> None:
     print("[PASS] test_tld_meta_baseline_persistence")
 
 
+def test_openintel_version_key() -> None:
+    files = ["20260901_x.parquet.gz", "20260908_y.parquet.gz", "20260825_z.parquet.gz"]
+    files.sort(key=openintel._version_key)
+    assert files[0] == "20260825_z.parquet.gz" and files[-1] == "20260908_y.parquet.gz", files
+    print("[PASS] test_openintel_version_key")
+
+
+def test_openintel_parse_date() -> None:
+    assert openintel._parse_date("2026-09-19T06:00:00Z") is not None
+    assert openintel._parse_date("2026-09-19") is not None
+    assert openintel._parse_date("") is None
+    assert openintel._parse_date("not a date") is None
+    print("[PASS] test_openintel_parse_date")
+
+
+def test_openintel_resolve_latest() -> None:
+    def fake_hrefs(session, url, sleep):
+        if url.endswith("/tld%3Dio/"):
+            return ['/download/.../tld%3Dio/year%3D2026/']
+        if url.endswith("year%3D2026/"):
+            return ['/download/.../tld%3Dio/year%3D2026/month%3D09/']
+        if url.endswith("month%3D09/"):
+            return ["/download/.../20260901_x.parquet.gz",
+                    "/download/.../20260908_y.parquet.gz"]
+        return []
+
+    original = openintel._hrefs
+    openintel._hrefs = fake_hrefs
+    try:
+        latest = openintel.resolve_latest(None, "io", 0, 0)
+        previous = openintel.resolve_latest(None, "io", 1, 0)
+    finally:
+        openintel._hrefs = original
+    assert latest["filename"] == "20260908_y.parquet.gz", latest
+    assert previous["filename"] == "20260901_x.parquet.gz", previous
+    print("[PASS] test_openintel_resolve_latest")
+
+
+def test_openintel_baseline_and_diff() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        conn = openintel.init_db(os.path.join(tmpdir, "oi.db"))
+        keyword_matcher = matcher.Matcher([{"id": 1, "keyword": "brand"}])
+
+        # First run: baseline, cache only.
+        matches: list[dict] = []
+        total, new = openintel.process_domains(
+            conn, "io", iter(["brand-a.io", "other.io"]), False, keyword_matcher, matches)
+        assert total == 2 and new == 2 and matches == [], (total, new, matches)
+        openintel.record_run(conn, "io", "f1", "baselined", total, new)
+        assert openintel.tld_baselined(conn, "io")
+
+        # Second run: only the genuine new domain is emitted.
+        matches = []
+        total, new = openintel.process_domains(
+            conn, "io", iter(["brand-a.io", "other.io", "brand-b.io"]),
+            True, keyword_matcher, matches)
+        assert total == 3 and new == 1, (total, new)
+        assert len(matches) == 1 and matches[0]["domain"] == "brand-b.io", matches
+        conn.close()
+    print("[PASS] test_openintel_baseline_and_diff")
+
+
+def test_openintel_parquet_read() -> None:
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+    except ImportError:
+        print("[SKIP] test_openintel_parquet_read (pyarrow not installed)")
+        return
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "week.parquet")
+        pq.write_table(pa.table({"domain": ["Brand-A.io", "other.io"]}), path)
+        assert list(openintel.read_domains(path)) == ["brand-a.io", "other.io"]
+    print("[PASS] test_openintel_parquet_read")
+
+
 if __name__ == "__main__":
     test_parser_basic()
     test_parser_origin_relative()
@@ -255,4 +332,9 @@ if __name__ == "__main__":
     test_baseline_decision()
     test_search_cached_domains()
     test_tld_meta_baseline_persistence()
+    test_openintel_version_key()
+    test_openintel_parse_date()
+    test_openintel_resolve_latest()
+    test_openintel_baseline_and_diff()
+    test_openintel_parquet_read()
     print("\nAll tests passed.")

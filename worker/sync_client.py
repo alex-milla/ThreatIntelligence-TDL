@@ -183,3 +183,31 @@ def send_recheck_status(host_url: str, api_key: str, status: dict) -> bool:
     }
     r = requests.post(url, headers=headers, json=status, timeout=30)
     return r.status_code == 200
+
+
+def send_cctld_sync(host_url: str, api_key: str, entries: list[dict]) -> bool:
+    """Report OpenINTEL per-ccTLD results so the web UI can show them."""
+    if not entries:
+        return True
+    url = f"{host_url}/api/v1/cctld_sync.php"
+    headers = {
+        "X-API-Key": api_key,
+        "Content-Type": "application/json",
+    }
+    r = requests.post(url, headers=headers, json={"entries": entries}, timeout=60)
+    if r.status_code == 200:
+        return True
+    print(f"[-] Failed to report ccTLD sync: HTTP {r.status_code} - {r.text}")
+    return False
+
+
+def get_openintel_tlds(host_url: str, api_key: str) -> list[str]:
+    """Fetch the active OpenINTEL (ccTLD) TLDs configured in the web panel."""
+    url = f"{host_url}/api/v1/tlds.php?source=openintel&active=1"
+    headers = {"X-API-Key": api_key}
+    r = requests.get(url, headers=headers, timeout=30)
+    r.raise_for_status()
+    data = r.json()
+    if data.get("success"):
+        return [row["name"] for row in data.get("tlds", [])]
+    return []

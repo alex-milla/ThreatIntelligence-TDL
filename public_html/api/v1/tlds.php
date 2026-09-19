@@ -20,8 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true) ?: [];
     $tlds = $input['tlds'] ?? [];
 
+    // CZDS worker imports the ICANN approved gTLDs.
     $db->beginTransaction();
-    $stmt = $db->prepare("INSERT OR IGNORE INTO tlds (name) VALUES (?)");
+    $stmt = $db->prepare("INSERT OR IGNORE INTO tlds (name, source) VALUES (?, 'czds')");
     foreach ($tlds as $tld) {
         $stmt->execute([$tld]);
     }
@@ -31,8 +32,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $onlyActive = isset($_GET['active']) && $_GET['active'] == '1';
+    $source = isset($_GET['source']) ? strtolower(trim((string)$_GET['source'])) : '';
+    if (!in_array($source, ['czds', 'openintel'], true)) {
+        $source = '';
+    }
     if ($onlyActive) {
-        $stmt = $db->query("SELECT name FROM tlds WHERE is_active = 1 ORDER BY name");
+        // Backward compatible: the CZDS worker's ?active=1 means the CZDS source.
+        $effective = $source !== '' ? $source : 'czds';
+        $stmt = $db->prepare("SELECT name FROM tlds WHERE is_active = 1 AND source = ? ORDER BY name");
+        $stmt->execute([$effective]);
+    } elseif ($source !== '') {
+        $stmt = $db->prepare("SELECT id, name, is_active, last_sync, status FROM tlds WHERE source = ? ORDER BY name");
+        $stmt->execute([$source]);
     } else {
         $stmt = $db->query("SELECT id, name, is_active, last_sync, status FROM tlds ORDER BY name");
     }

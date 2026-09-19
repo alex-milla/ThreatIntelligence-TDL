@@ -1,4 +1,11 @@
 <?php
+/**
+ * Per-ccTLD sync reports from the OpenINTEL importer.
+ *
+ * Creates missing ccTLD rows (source = 'openintel', inactive by default) and
+ * updates their status/last_sync. last_ok_sync is advanced only on a real
+ * successful run, so the "old validated domain" filter keeps working.
+ */
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 
@@ -26,22 +33,17 @@ if (!is_array($entries)) {
     jsonResponse(['success' => false, 'error' => 'Invalid entries payload'], 400);
 }
 
-$allowedStatus = [
-    'downloaded', 'not_modified', 'skipped_today', 'failed', 'pending',
-    'incomplete', 'skipped_large', 'no_space', 'retrying', 'parse_error',
-    'baselined',
-];
-// Only a real successful scan advances the reference used to hide validated
-// domains that were already registered before the previous scan.
-$okStatuses = ['downloaded', 'not_modified', 'baselined'];
+$allowedStatus = ['baselined', 'updated', 'unchanged', 'failed', 'no_data', 'pending'];
+$okStatuses = ['baselined', 'updated', 'unchanged'];
 $now = gmdate('c');
 $updated = 0;
 
+$insert = $db->prepare("INSERT OR IGNORE INTO tlds (name, source, is_active) VALUES (?, 'openintel', 0)");
 $stmt = $db->prepare(
     "UPDATE tlds SET last_sync = ?, "
     . "last_ok_sync = COALESCE(?, last_ok_sync), "
-    . "status = ?, records_total = ?, records_new = ?, "
-    . "zone_size = ?, zone_file_mtime = ?, last_error = ?, retry_attempts = ?, next_retry = ? WHERE name = ?"
+    . "status = ?, records_total = ?, records_new = ?, last_error = ? "
+    . "WHERE name = ? AND source = 'openintel'"
 );
 
 $db->beginTransaction();
@@ -59,22 +61,16 @@ try {
             $status = 'pending';
         }
         $error = isset($entry['error']) && $entry['error'] !== '' ? substr((string)$entry['error'], 0, 500) : null;
-
-        $nextRetry = isset($entry['next_retry']) && $entry['next_retry'] !== '' ? (string)$entry['next_retry'] : null;
-
         $isOk = in_array($status, $okStatuses, true);
 
+        $insert->execute([$tld]);
         $stmt->execute([
             $now,
             $isOk ? $now : null,
             $status,
             (int)($entry['records_total'] ?? 0),
             (int)($entry['records_new'] ?? 0),
-            (int)($entry['zone_size'] ?? 0),
-            $entry['zone_file_mtime'] ?? null,
             $error,
-            (int)($entry['attempts'] ?? 0),
-            $nextRetry,
             $tld,
         ]);
         $updated += $stmt->rowCount();
@@ -82,7 +78,7 @@ try {
     $db->commit();
 } catch (Exception $e) {
     $db->rollBack();
-    jsonResponse(['success' => false, 'error' => 'Failed to store TLD sync report'], 500);
+    jsonResponse(['success' => false, 'error' => 'Failed to store ccTLD sync report'], 500);
 }
 
 jsonResponse(['success' => true, 'updated' => $updated]);

@@ -33,7 +33,7 @@ $emailQueue = []; // [user_id => [email, username, matches[]]]
 $db->beginTransaction();
 
 try {
-    $insertMatch = $db->prepare("INSERT OR IGNORE INTO matches (keyword_id, domain, tld, discovered_at, first_seen, is_historical) VALUES (?, ?, ?, ?, ?, ?)");
+    $insertMatch = $db->prepare("INSERT OR IGNORE INTO matches (keyword_id, domain, tld, discovered_at, first_seen, is_historical, source) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $insertNotif = $db->prepare("INSERT INTO notifications (user_id, match_id) VALUES (?, ?)");
     $updateCount = $db->prepare("UPDATE keywords SET match_count = match_count + 1 WHERE id = ?");
     $getKeywordOwner = $db->prepare("SELECT k.user_id, k.keyword, u.email, u.username, u.email_notifications FROM keywords k JOIN users u ON k.user_id = u.id WHERE k.id = ? LIMIT 1");
@@ -58,7 +58,8 @@ try {
 
         $firstSeen = $m['first_seen'] ?? $discoveredAt;
         $isHistorical = !empty($m['is_historical']) ? 1 : 0;
-        $insertMatch->execute([$keywordId, $domain, $tld, $discoveredAt, $firstSeen, $isHistorical]);
+        $source = (isset($m['source']) && $m['source'] === 'ct') ? 'ct' : 'czds';
+        $insertMatch->execute([$keywordId, $domain, $tld, $discoveredAt, $firstSeen, $isHistorical, $source]);
         if ($insertMatch->rowCount() > 0) {
             $matchId = (int)$db->lastInsertId();
             $inserted++;

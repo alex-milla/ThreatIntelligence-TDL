@@ -54,3 +54,28 @@ rdap_only = false
 whois_fallback = true
 ; Seconds to wait between lookups (be polite to the registries).
 rate_delay = 1.0
+
+[openintel]
+; Weekly ccTLD apex-domain lists from OpenINTEL (see README).
+; Data license: CC BY-NC-SA 4.0 (non-commercial, attribution required).
+; You must read and accept the OpenINTEL terms before enabling this:
+;   https://www.openintel.nl/download/terms/
+enabled = false
+accept_terms = false
+; Comma-separated ccTLDs to process (e.g. io,es,fr). Leave empty to use the
+; active OpenINTEL TLDs selected in the web panel.
+tlds = io
+; Where the parquet files and the local seen-set database are stored.
+data_dir = ./data/openintel
+; Optional explicit DB path (defaults to <data_dir>/openintel.db).
+db_path =
+; Be gentle: seconds between index requests and between file downloads.
+sleep_http = 3
+sleep_between = 10
+; Keep the downloaded .parquet.gz after processing (false frees disk).
+keep_files = false
+; Confirm the WHOIS/RDAP creation date for keyword candidates before notifying.
+whois_confirm = true
+whois_max_age_days = 30
+; Cap the number of WHOIS confirmations per run (protects the registries).
+whois_max_lookups = 200

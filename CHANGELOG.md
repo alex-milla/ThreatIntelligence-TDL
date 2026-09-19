@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.4.0] - 2026-09-19
+
+### New data source: OpenINTEL ccTLD import (optional, weekly)
+
+- **ccTLD coverage**: CZDS only covers gTLDs, so the worker can now import the weekly **apex-domain lists** published by [OpenINTEL](https://www.openintel.nl/data/domain-lists/cctld-names/) (from CT logs) for country-code TLDs like `.io`, `.es`, `.fr`.
+- **Separate worker module** `worker/openintel.py` with its **own SQLite** (`data/openintel.db`): it never touches the CZDS pipeline. It is launched by `tdl-openintel.timer` (Mondays) or on demand from the admin (`run_openintel` command, run detached) and uses `pyarrow` to read the `.parquet.gz` files.
+- **Baseline + diff**: the first run of a ccTLD caches everything without reporting; later runs report only domains seen for the first time, matched against keywords. Candidates are optionally confirmed with RDAP/WHOIS (`whois_confirm`) so old domains are filtered out.
+- **Web separation of sources**: new `tlds.source` (`czds`/`openintel`) and `matches.source` (`czds`/`ct`). The TLDs admin page has tabs **ICANN (CZDS)** / **ccTLD (OpenINTEL)** with their own statuses and a **Run OpenINTEL** button; selection is scoped per source. New `api/v1/cctld_sync.php`.
+- **Attribution**: OpenINTEL data is **CC BY-NC-SA 4.0** (non-commercial); the footer and README show the required attribution. Enable it in `config.ini` (`[openintel] enabled = true`, `accept_terms = true`).
+
+### Fix
+
+- **`last_ok_sync` was never set**: `tld_sync.php` compared `? = 1` with a parameter that PDO binds as text (`'1' = 1` is false in SQLite), so the "old validated domain" filter introduced in v1.3.65 never had a reference. Both `tld_sync.php` and `cctld_sync.php` now use `last_ok_sync = COALESCE(?, last_ok_sync)`.
+
 ## [v1.3.67] - 2026-09-19
 
 ### Dashboard - domain lookup against the worker cache

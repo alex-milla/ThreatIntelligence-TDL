@@ -188,6 +188,23 @@ From any domain modal you can click **Fetch WHOIS (worker)**. The web queues a `
 - Lookups are spaced by `[whois] rate_delay` (config) to be gentle with registries.
 - Command latency depends on `[worker] poll_interval` (default 20 s).
 
+## OpenINTEL ccTLD import (optional, weekly)
+
+CZDS only covers gTLDs. For **country-code TLDs** (`.io`, `.es`, `.fr`, ...) the worker can additionally import the **weekly apex-domain lists** published by [OpenINTEL](https://www.openintel.nl/data/domain-lists/cctld-names/), extracted from Certificate Transparency logs.
+
+- **Separate process/database**: `worker/openintel.py` uses its own SQLite (`data/openintel.db`) and is launched by `tdl-openintel.timer` (Mondays) or on demand from **Admin → TLDs → ccTLD (OpenINTEL)** (`run_openintel`). It never touches the CZDS pipeline.
+- The **first run baselines** a ccTLD (caches everything, reports nothing). Later runs report only domains seen for the first time, matched against keywords; candidates are optionally confirmed with RDAP/WHOIS so old domains are filtered out.
+- Requires **`pyarrow`** to read `.parquet.gz`. Enable it in `config.ini`:
+  ```ini
+  [openintel]
+  enabled = true
+  accept_terms = true     # you must accept the OpenINTEL terms
+  tlds = io,es,fr         # empty = use the active ccTLDs selected in the web panel
+  ```
+- **License:** the OpenINTEL data is **CC BY-NC-SA 4.0** (non-commercial, attribution required). Commercial use requires a license from OpenINTEL. Attribution:
+  > The research leading to these results was made possible by OpenINTEL (https://www.openintel.nl/), a joint project of the University of Twente, SIDN, NLnet Labs and SURF.
+- The lists are "domains seen in a valid certificate", not a registry's registration date; the WHOIS confirmation (or the web "old validated domain" filter) is what decides whether a domain is genuinely new.
+
 ## Updates
 
 The admin panel includes a **System Update** page (`/admin/update.php`) that checks GitHub releases and updates the **web application** files automatically. Your SQLite database is never overwritten during updates.

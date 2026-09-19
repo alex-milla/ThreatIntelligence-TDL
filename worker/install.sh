@@ -24,6 +24,14 @@ else
     fi
 fi
 
+if "${PYTHON_BIN}" -c "import pyarrow" 2>/dev/null; then
+    echo "[+] pyarrow available (OpenINTEL ccTLD import)."
+else
+    echo "[i] pyarrow not installed: the CZDS worker runs fine, but the OpenINTEL"
+    echo "    ccTLD importer needs it. Install with: ${PYTHON_BIN} -m pip install pyarrow"
+    echo "    (or apt install python3-pyarrow on Debian/Ubuntu where available)."
+fi
+
 if [ ! -f config.ini ]; then
     cp config.ini.example config.ini
     echo "[+] Created config.ini from example. Please edit it with your credentials."
@@ -45,6 +53,19 @@ if [ -f "${SCRIPT_DIR}/tdl-worker.service" ] && command -v systemctl >/dev/null 
         systemctl daemon-reload
         systemctl enable "${SERVICE_NAME}" >/dev/null 2>&1 || true
         echo "[+] systemd service '${SERVICE_NAME}' installed and enabled."
+
+        # Optional weekly OpenINTEL ccTLD importer (enabled only if configured).
+        if [ -f "${SCRIPT_DIR}/tdl-openintel.timer" ] && [ -f "${SCRIPT_DIR}/tdl-openintel.service" ]; then
+            sed \
+                -e "s|WorkingDirectory=.*|WorkingDirectory=${SCRIPT_DIR}|" \
+                -e "s|ExecStart=.*|ExecStart=${PYTHON_BIN} ${SCRIPT_DIR}/openintel.py|" \
+                "${SCRIPT_DIR}/tdl-openintel.service" > "/etc/systemd/system/tdl-openintel.service"
+            cp "${SCRIPT_DIR}/tdl-openintel.timer" "/etc/systemd/system/tdl-openintel.timer"
+            systemctl daemon-reload
+            systemctl enable --now tdl-openintel.timer >/dev/null 2>&1 || true
+            echo "[+] systemd timer 'tdl-openintel.timer' installed (Mondays)."
+            echo "    Enable the import in config.ini ([openintel] enabled = true)."
+        fi
     else
         echo "[i] Not running as root: skipping systemd service installation."
         echo "    Install it manually with sudo if you want daemon mode + panel updates."
