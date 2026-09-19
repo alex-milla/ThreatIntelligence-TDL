@@ -108,6 +108,12 @@ In cron mode the next run picks up the new code automatically; in daemon mode us
 
 > **Zone file format:** CZDS zone files use lowercase rrtypes (`example.com. 3600 in ns ns1.example.net.`). The parser is case-insensitive for the record type, and a non-trivial zone that yields zero domains is flagged as `parse_error` (not marked as processed) so parser regressions are visible.
 
+### New-domain baseline (no historical floods)
+
+The first successful scan of a TLD is a **baseline**: the worker caches every domain but does not notify. From the next changed zone onwards it reports only delegations added since the previous successful scan of that TLD. This avoids flooding users with the whole zone on a fresh install, when a new TLD is activated, after clearing `worker.db`, or when a TLD changes between the text cache and the compact hash cache. The TLD is shown as **Baselined** on the TLDs page.
+
+Matches produced by the manual **Recheck** are stored with `is_historical=1`; the web UI hides them (and any domain already tagged good/bad) from the default "new" listings. Use the **Include tagged / historical** toggle on the Notifications page to review them, or **Admin → System → New-domain listing** to archive/restore the existing matches in bulk (reversible).
+
 ## Minimizing load on the ICANN CZDS API
 
 The worker is designed to query CZDS as little as possible:

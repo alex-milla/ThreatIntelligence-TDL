@@ -54,6 +54,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $qFilter = trim($_POST['q'] ?? '');
     $dateFilterPost = $_POST['date'] ?? 'all';
     $unreadFilterPost = isset($_POST['unread_only']) && $_POST['unread_only'] === '1';
+    $archivedFilterPost = isset($_POST['archived']) && $_POST['archived'] === '1';
+
+    if (!$archivedFilterPost) {
+        $delWhere .= " AND m.is_historical = 0 AND NOT EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain)";
+    }
 
     if ($qFilter !== '') {
         $delWhere .= " AND (m.domain LIKE ? OR m.tld LIKE ? OR k.keyword LIKE ?)";
@@ -82,11 +87,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 
     $redirect = '/notifications.php';
-    if ($qFilter !== '' || $dateFilterPost !== 'all' || $unreadFilterPost) {
+    if ($qFilter !== '' || $dateFilterPost !== 'all' || $unreadFilterPost || $archivedFilterPost) {
         $qs = [];
         if ($qFilter !== '') $qs['q'] = $qFilter;
         if ($dateFilterPost !== 'all') $qs['date'] = $dateFilterPost;
         if ($unreadFilterPost) $qs['unread_only'] = '1';
+        if ($archivedFilterPost) $qs['archived'] = '1';
         $redirect .= '?' . http_build_query($qs);
     }
     header('Location: ' . $redirect);
@@ -97,6 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 $search = trim($_GET['q'] ?? '');
 $unreadOnly = isset($_GET['unread_only']) && $_GET['unread_only'] === '1';
 $dateFilter = $_GET['date'] ?? 'all';
+$includeArchived = isset($_GET['archived']) && $_GET['archived'] === '1';
 $validDateFilters = ['24h' => '-1 day', '7d' => '-7 days', '30d' => '-30 days', 'all' => ''];
 
 // Configurable threshold for "new" badge/filter (default from admin setting)
@@ -111,6 +118,12 @@ $offset = ($page - 1) * $perPage;
 
 $where = "WHERE n.user_id = ? AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)";
 $params = [$userId, $userId];
+
+// By default hide historical (recheck) matches and domains already classified
+// (good/bad). They remain accessible with the "Include tagged / historical" toggle.
+if (!$includeArchived) {
+    $where .= " AND m.is_historical = 0 AND NOT EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain)";
+}
 
 if ($search !== '') {
     $where .= " AND (m.domain LIKE ? OR m.tld LIKE ? OR k.keyword LIKE ?)";
@@ -145,6 +158,19 @@ $totalPages = max(1, (int)ceil($total / $perPage));
 $hiddenCountStmt = $db->prepare("SELECT COUNT(*) FROM notifications n JOIN matches m ON n.match_id = m.id WHERE n.user_id = ? AND EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)");
 $hiddenCountStmt->execute([$userId, $userId]);
 $hiddenCount = (int)$hiddenCountStmt->fetchColumn();
+
+// Count how many are hidden because they are historical (recheck) or tagged.
+$archivedCount = 0;
+if (!$includeArchived) {
+    $archivedCountStmt = $db->prepare(
+        "SELECT COUNT(*) FROM notifications n JOIN matches m ON n.match_id = m.id "
+        . "WHERE n.user_id = ? AND (m.is_historical = 1 "
+        . "OR EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain))"
+    );
+    $archivedCountStmt->execute([$userId]);
+    $archivedCount = (int)$archivedCountStmt->fetchColumn();
+}
+
 $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
@@ -188,12 +214,13 @@ if (!empty($notifications)) {
 }
 
 // Helper to build pagination URLs preserving filters
-function notifUrl(int $p, string $search, string $date, bool $unread, ?int $newDays): string {
+function notifUrl(int $p, string $search, string $date, bool $unread, ?int $newDays, bool $archived = false): string {
     $q = ['page' => $p];
     if ($search !== '') $q['q'] = $search;
     if ($date !== 'all') $q['date'] = $date;
     if ($unread) $q['unread_only'] = '1';
     if ($newDays !== null) $q['new_days'] = (string)$newDays;
+    if ($archived) $q['archived'] = '1';
     return '/notifications.php?' . http_build_query($q);
 }
 
@@ -234,19 +261,24 @@ require __DIR__ . '/templates/header.php';
             <input type="number" name="new_days" value="<?= $newDays ?? $defaultNewDays ?>" min="1" max="365" class="browser-default compact num-input">
             <span class="muted">day(s)</span>
         </div>
+        <label class="check-inline" title="Show domains already tagged good/bad and matches from a recheck">
+            <input type="checkbox" name="archived" value="1" <?= $includeArchived ? 'checked' : '' ?>>
+            <span>Include tagged / historical</span>
+        </label>
         <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">search</i>Search</button>
-        <?php if ($search !== '' || $unreadOnly || $newDays !== null || $dateFilter !== 'all'): ?>
+        <?php if ($search !== '' || $unreadOnly || $newDays !== null || $dateFilter !== 'all' || $includeArchived): ?>
         <a href="/notifications.php" class="btn btn-small btn-danger waves-effect"><i class="material-icons left">clear</i>Clear</a>
         <?php endif; ?>
     </form>
 
-    <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all'): ?>
+    <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all' || $includeArchived): ?>
     <form method="POST" class="section-actions">
         <?php csrfField(); ?>
         <input type="hidden" name="action" value="delete_all_matching">
         <input type="hidden" name="q" value="<?= htmlspecialchars($search) ?>">
         <input type="hidden" name="date" value="<?= htmlspecialchars($dateFilter) ?>">
         <input type="hidden" name="unread_only" value="<?= $unreadOnly ? '1' : '0' ?>">
+        <input type="hidden" name="archived" value="<?= $includeArchived ? '1' : '0' ?>">
         <button type="submit" class="btn btn-danger waves-effect" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')"><i class="material-icons left">delete_sweep</i>Delete All Matching Results (<?= $total ?>)</button>
     </form>
     <?php endif; ?>
@@ -257,8 +289,14 @@ require __DIR__ . '/templates/header.php';
             <div><?= $hiddenCount ?> notification(s) hidden because the domain(s) are in your <a href="/watchlist.php"><strong>Watchlist</strong></a>.</div>
         </div>
     <?php endif; ?>
+    <?php if ($archivedCount > 0): ?>
+        <div class="notice notice-info">
+            <i class="material-icons">inventory_2</i>
+            <div><?= $archivedCount ?> notification(s) hidden because they were already tagged (good/bad) or come from a historical recheck. <a href="/notifications.php?archived=1"><strong>Show them</strong></a>.</div>
+        </div>
+    <?php endif; ?>
     <?php if (empty($notifications)): ?>
-        <p class="muted">No notifications to display.<?php if ($hiddenCount > 0): ?> The remaining <?= $hiddenCount ?> are in your <a href="/watchlist.php">Watchlist</a>.<?php endif; ?></p>
+        <p class="muted">No notifications to display.<?php if ($hiddenCount > 0): ?> The remaining <?= $hiddenCount ?> are in your <a href="/watchlist.php">Watchlist</a>.<?php endif; ?><?php if ($archivedCount > 0): ?> <?= $archivedCount ?> are tagged/historical (use the toggle above to show them).<?php endif; ?></p>
     <?php else: ?>
         <form method="POST" id="bulk-form">
             <?php csrfField(); ?>
@@ -270,15 +308,16 @@ require __DIR__ . '/templates/header.php';
                 </label>
                 <button type="submit" class="btn btn-small btn-danger waves-effect" onclick="return confirm('Delete selected notifications?')"><i class="material-icons left">delete</i>Delete Selected</button>
                 <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
-                <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all'): ?>
+                <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all' || $includeArchived): ?>
                 <button type="submit" formaction="/notifications.php" formmethod="POST" class="btn btn-small btn-danger waves-effect" name="action" value="delete_all_matching" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')"><i class="material-icons left">delete_sweep</i>Delete All Matching (<?= $total ?>)</button>
                 <?php endif; ?>
             </div>
             <!-- Hidden filter params for delete_all_matching -->
-            <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all'): ?>
+            <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all' || $includeArchived): ?>
             <input type="hidden" name="q" value="<?= htmlspecialchars($search) ?>">
             <input type="hidden" name="date" value="<?= htmlspecialchars($dateFilter) ?>">
             <input type="hidden" name="unread_only" value="<?= $unreadOnly ? '1' : '0' ?>">
+            <input type="hidden" name="archived" value="<?= $includeArchived ? '1' : '0' ?>">
             <?php endif; ?>
         </form>
         <table class="striped highlight responsive-table">
@@ -360,7 +399,7 @@ require __DIR__ . '/templates/header.php';
             </span>
             <ul class="pagination">
                 <?php if ($page > 1): ?>
-                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page - 1, $search, $dateFilter, $unreadOnly, $newDays)) ?>" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
+                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page - 1, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived)) ?>" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
                 <?php else: ?>
                     <li class="disabled"><a href="#!" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
                 <?php endif; ?>
@@ -369,14 +408,14 @@ require __DIR__ . '/templates/header.php';
                     <?php if ($p === $page): ?>
                         <li class="active"><a href="#!"><?= $p ?></a></li>
                     <?php elseif ($p === 1 || $p === $totalPages || abs($p - $page) <= 2): ?>
-                        <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($p, $search, $dateFilter, $unreadOnly, $newDays)) ?>"><?= $p ?></a></li>
+                        <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($p, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived)) ?>"><?= $p ?></a></li>
                     <?php elseif (abs($p - $page) === 3): ?>
                         <li class="disabled"><a href="#!">…</a></li>
                     <?php endif; ?>
                 <?php endfor; ?>
 
                 <?php if ($page < $totalPages): ?>
-                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page + 1, $search, $dateFilter, $unreadOnly, $newDays)) ?>" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
+                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page + 1, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived)) ?>" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
                 <?php else: ?>
                     <li class="disabled"><a href="#!" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
                 <?php endif; ?>

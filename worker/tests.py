@@ -3,10 +3,12 @@
 
 import gzip
 import os
+import sqlite3
 import tempfile
 
 import parser
 import matcher
+import scheduler
 
 
 def create_test_zone(filepath: str, records: list[str]) -> None:
@@ -133,6 +135,80 @@ def test_matcher_case_insensitive() -> None:
     print("[PASS] test_matcher_case_insensitive")
 
 
+def test_baseline_no_matches() -> None:
+    # First scan of a TLD must cache the domains but not emit matches, otherwise
+    # the whole zone floods the users as "new domains".
+    conn = sqlite3.connect(":memory:")
+    conn.executescript("""
+        CREATE TABLE domains_cache (domain TEXT PRIMARY KEY, tld TEXT, first_seen TEXT);
+        CREATE TABLE domains_cache_hash (domain_hash INTEGER PRIMARY KEY, tld TEXT, first_seen INTEGER) WITHOUT ROWID;
+        CREATE TEMP TABLE zone_batch (domain TEXT PRIMARY KEY);
+        CREATE TEMP TABLE zone_batch_hash (domain_hash INTEGER PRIMARY KEY);
+    """)
+    cursor = conn.cursor()
+    keyword_matcher = matcher.Matcher([{"id": 1, "keyword": "santander"}])
+
+    matches: list[dict] = []
+    new_count = scheduler._stage_and_diff_batch(
+        cursor, "xyz", "now", ["santander-bank.xyz"], keyword_matcher, matches,
+        emit_matches=False,
+    )
+    assert new_count == 1, new_count
+    assert matches == [], f"baseline must not emit matches: {matches}"
+    assert conn.execute("SELECT COUNT(*) FROM domains_cache").fetchone()[0] == 1
+
+    # A later scan only reports the genuinely new delegation.
+    matches = []
+    new_count = scheduler._stage_and_diff_batch(
+        cursor, "xyz", "later", ["santander-bank.xyz", "santander-new.xyz"],
+        keyword_matcher, matches, emit_matches=True,
+    )
+    assert new_count == 1, new_count
+    assert len(matches) == 1 and matches[0]["domain"] == "santander-new.xyz", matches
+    print("[PASS] test_baseline_no_matches")
+
+
+def test_baseline_decision() -> None:
+    # Never scanned -> baseline.
+    is_baseline, mode_changed, mode = scheduler._baseline_decision(
+        {"baselined": 0, "cache_mode": None}, use_hash=False)
+    assert is_baseline and not mode_changed and mode == "text", (is_baseline, mode_changed, mode)
+
+    # Already baselined, same mode -> emit.
+    is_baseline, mode_changed, mode = scheduler._baseline_decision(
+        {"baselined": 1, "cache_mode": "text"}, use_hash=False)
+    assert not is_baseline and not mode_changed, (is_baseline, mode_changed)
+
+    # Baslined but cache mode changed (text -> hash) -> suppress this run.
+    is_baseline, mode_changed, mode = scheduler._baseline_decision(
+        {"baselined": 1, "cache_mode": "text"}, use_hash=True)
+    assert not is_baseline and mode_changed and mode == "hash", (is_baseline, mode_changed, mode)
+
+    # Legacy TLD with no recorded mode -> treat as same mode (emit).
+    is_baseline, mode_changed, mode = scheduler._baseline_decision(
+        {"baselined": 1, "cache_mode": None}, use_hash=False)
+    assert not is_baseline and not mode_changed, (is_baseline, mode_changed)
+    print("[PASS] test_baseline_decision")
+
+
+def test_tld_meta_baseline_persistence() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
+        scheduler.update_tld_meta(db, "xyz", "etag1", "lm1", "2026-01-01", "ok",
+                                  baselined=1, cache_mode="text")
+        meta = scheduler.get_tld_meta(db, "xyz")
+        assert meta["baselined"] == 1, meta
+        assert meta["cache_mode"] == "text", meta
+
+        # Updating only the run date must preserve the baseline state.
+        scheduler.update_tld_meta(db, "xyz", "etag1", "lm1", "2026-01-02", "ok")
+        meta = scheduler.get_tld_meta(db, "xyz")
+        assert meta["baselined"] == 1, meta
+        assert meta["cache_mode"] == "text", meta
+        db.close()
+    print("[PASS] test_tld_meta_baseline_persistence")
+
+
 if __name__ == "__main__":
     test_parser_basic()
     test_parser_origin_relative()
@@ -141,4 +217,7 @@ if __name__ == "__main__":
     test_parser_mixed_case_rrtype()
     test_matcher_basic()
     test_matcher_case_insensitive()
+    test_baseline_no_matches()
+    test_baseline_decision()
+    test_tld_meta_baseline_persistence()
     print("\nAll tests passed.")

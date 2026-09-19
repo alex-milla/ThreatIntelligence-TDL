@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.63] - 2026-09-19
+
+### Worker - TLD baseline (only new delegations since the last validation)
+- **First scan of a TLD is a baseline**: the worker populates `domains_cache` but does **not** emit matches, so a fresh install, a new TLD, a cleared `worker.db` or a force re-download no longer floods old domains as "new".
+- **Cache-mode guard**: if a TLD switches between the text cache and the compact hash cache, that run only repopulates the cache and does not emit matches (the anti-join would otherwise run against an empty table).
+- New `tld_meta.baselined` / `tld_meta.cache_mode` columns (additive, safe migration). The TLDs page/admin panel shows a `Baselined` status.
+- **Recheck matches are flagged `is_historical=1`** so they no longer appear as new domains.
+
+### Web - hide tagged and historical domains from the "new" listings
+- New `matches.is_historical` column (additive, safe migration); `api/v1/matches.php` stores the worker flag.
+- **Notifications**: by default hides historical matches and domains already tagged good/bad. New **Include tagged / historical** toggle, hidden-count notice, and filter-aware bulk delete.
+- **Dashboard**: recent matches, KPIs and the 30-day sparkline exclude tagged/historical matches so they agree with the Notifications page.
+- **Admin → System → New-domain listing**: one-off, reversible **Archive all current matches** / **Restore archived** action to clean the listing of matches that predate the baseline rule.
+
 ## [v1.3.62] - 2026-09-19
 
 ### Fix

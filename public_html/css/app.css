@@ -672,6 +672,7 @@ h5 { font-size: 1.15rem; font-weight: 500; }
 .status-skipped_today,
 .status-skipped_large { background: var(--neutral-bg); color: var(--neutral); border-color: var(--neutral-border); }
 .status-not_modified  { background: var(--info-bg);    color: var(--info);    border-color: var(--info-border); }
+.status-baselined     { background: var(--info-bg);    color: var(--info);    border-color: var(--info-border); }
 .status-incomplete    { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
 
 table.striped > tbody > tr.unread,

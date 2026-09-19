@@ -122,6 +122,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         setSetting($db, 'new_domain_days', (string)$days);
         $message = "New domain threshold updated to {$days} day(s).";
     }
+
+    if ($action === 'archive_historical') {
+        $db->exec("UPDATE matches SET is_historical = 1 WHERE is_historical = 0");
+        $message = 'Existing matches archived. They are hidden from the "new" listings until restored.';
+    }
+
+    if ($action === 'unarchive_historical') {
+        $db->exec("UPDATE matches SET is_historical = 0 WHERE is_historical = 1");
+        $message = 'Archived matches restored to the "new" listings.';
+    }
     
     if ($action === 'cancel_command') {
         $cmdId = (int)($_POST['command_id'] ?? 0);
@@ -145,6 +155,7 @@ $users = $db->query("SELECT id, username, email, is_active, is_admin, api_key, m
 $syncLogs = $db->query("SELECT * FROM sync_logs ORDER BY created_at DESC LIMIT 20")->fetchAll();
 $workerStatus = $db->query("SELECT * FROM worker_status WHERE id = 1")->fetch();
 $workerLogs = $db->query("SELECT * FROM worker_logs ORDER BY created_at DESC LIMIT 20")->fetchAll();
+$historicalMatchCount = (int)$db->query("SELECT COUNT(*) FROM matches WHERE is_historical = 1")->fetchColumn();
 $pendingCommands = $db->query("SELECT COUNT(*) FROM commands WHERE status = 'pending'")->fetchColumn();
 $pendingCommandsList = $db->query("SELECT id, command, payload, created_at FROM commands WHERE status = 'pending' ORDER BY created_at ASC")->fetchAll();
 $recentCommands = $db->query("SELECT id, command, payload, status, result, created_at, executed_at, finished_at FROM commands ORDER BY id DESC LIMIT 20")->fetchAll();
@@ -521,6 +532,29 @@ if (!empty($workerStatus['last_heartbeat'])) {
     <div class="section-actions">
         <a href="/admin/update.php" class="btn waves-effect"><i class="material-icons left">system_update</i>Check for Updates / Update Web App</a>
         <a href="/admin/cleanup.php" class="btn btn-danger waves-effect"><i class="material-icons left">cleaning_services</i>Cleanup False Matches</a>
+    </div>
+
+    <div class="divider"></div>
+
+    <h5>New-domain listing</h5>
+    <p class="muted">
+        Domains already tagged good/bad and matches produced by a <strong>recheck</strong> are hidden from the
+        "new" listings by default. Use this to archive every match that predates the new baseline rule
+        (one-off, reversible): <strong><?= number_format($historicalMatchCount) ?></strong> match(es) archived.
+    </p>
+    <div class="section-actions">
+        <form method="POST" style="margin:0;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="archive_historical">
+            <button type="submit" class="btn waves-effect" onclick="return confirm('Archive all current matches? They will be hidden from the new listings. You can restore them later.')"><i class="material-icons left">inventory_2</i>Archive all current matches</button>
+        </form>
+        <?php if ($historicalMatchCount > 0): ?>
+        <form method="POST" style="margin:0;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="unarchive_historical">
+            <button type="submit" class="btn btn-outline waves-effect" onclick="return confirm('Restore all archived matches to the new listings?')"><i class="material-icons left">unarchive</i>Restore archived</button>
+        </form>
+        <?php endif; ?>
     </div>
 
     <div class="divider"></div>

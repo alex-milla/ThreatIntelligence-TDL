@@ -19,6 +19,7 @@ function tldStatusBadge(?string $status): string {
         'no_space'      => 'No space',
         'retrying'      => 'Retrying',
         'parse_error'   => 'Parse error',
+        'baselined'     => 'Baselined',
     ];
     if ($status === null || $status === '' || !isset($map[$status])) {
         return '<span class="muted">&mdash;</span>';
@@ -272,7 +273,8 @@ updateTldCount();
         skipped_large: 'Skipped (large)',
         no_space:      'No space',
         retrying:      'Retrying',
-        parse_error:   'Parse error'
+        parse_error:   'Parse error',
+        baselined:     'Baselined'
     };
 
     function badge(status) {

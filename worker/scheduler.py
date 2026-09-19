@@ -110,6 +110,26 @@ def init_local_db(db_path: str, cache_mb: int = 2048) -> sqlite3.Connection:
         conn.execute("DROP INDEX IF EXISTS idx_cache_hash_tld")
     except sqlite3.OperationalError:
         pass
+
+    # Migration: per-TLD baseline state. A TLD is not emitted until its first
+    # successful scan has populated the cache; from then on only delegations
+    # added since the previous validation produce matches. cache_mode records
+    # whether the TLD was cached as text or as hashes, so a mode switch does not
+    # anti-join against an empty table and re-flood old domains.
+    try:
+        conn.execute("ALTER TABLE tld_meta ADD COLUMN baselined INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE tld_meta ADD COLUMN cache_mode TEXT")
+    except sqlite3.OperationalError:
+        pass
+    # TLDs already processed successfully were baselined by an earlier version.
+    try:
+        conn.execute("UPDATE tld_meta SET baselined = 1 WHERE baselined = 0 AND last_run_status = 'ok'")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     return conn
 
@@ -125,9 +145,23 @@ def _timing_add(timing: dict | None, key: str, seconds: float) -> None:
         timing[key] = timing.get(key, 0.0) + seconds
 
 
+def _baseline_decision(meta: dict, use_hash: bool) -> tuple[bool, bool, str]:
+    """Decide whether a TLD run may emit matches.
+
+    Returns (is_baseline, mode_changed, cache_mode). A TLD that never completed a
+    scan is a baseline (cache only). A change of cache mode also suppresses
+    matches for that run, because the anti-join would otherwise run against an
+    empty table and re-report the whole zone as new.
+    """
+    is_baseline = int(meta.get("baselined") or 0) != 1
+    cache_mode = "hash" if use_hash else "text"
+    mode_changed = (not is_baseline) and meta.get("cache_mode") not in (None, cache_mode)
+    return is_baseline, mode_changed, cache_mode
+
+
 def _stage_and_diff_batch(cursor: sqlite3.Cursor, tld: str, now: str, batch: list[str],
                           keyword_matcher, matches: list[dict], use_hash: bool = False,
-                          timing: dict | None = None) -> int:
+                          timing: dict | None = None, emit_matches: bool = True) -> int:
     """Stage a parsed batch, insert genuinely new domains and match them.
 
     Uses a TEMP table plus a SQL anti-join so the full known-domain set is never
@@ -137,7 +171,9 @@ def _stage_and_diff_batch(cursor: sqlite3.Cursor, tld: str, now: str, batch: lis
 
     When `timing` is given, accumulates wall time per phase under the keys
     "stage" (dedupe + temp insert + anti-join), "insert" (new rows) and "match".
-    Returns the number of new domains found.
+    When `emit_matches` is False the domains are still cached but not matched
+    (used for the first baseline scan of a TLD so historical domains are not
+    reported as new). Returns the number of new domains found.
     """
     t0 = time.perf_counter()
     if use_hash:
@@ -166,7 +202,7 @@ def _stage_and_diff_batch(cursor: sqlite3.Cursor, tld: str, now: str, batch: lis
         )
         t_insert = time.perf_counter()
         _timing_add(timing, "insert", t_insert - t_stage)
-        if keyword_matcher is not None:
+        if emit_matches and keyword_matcher is not None:
             matches.extend(keyword_matcher.match(mapping[h] for h in new_hashes))
         _timing_add(timing, "match", time.perf_counter() - t_insert)
         return len(new_hashes)
@@ -192,7 +228,7 @@ def _stage_and_diff_batch(cursor: sqlite3.Cursor, tld: str, now: str, batch: lis
     )
     t_insert = time.perf_counter()
     _timing_add(timing, "insert", t_insert - t_stage)
-    if keyword_matcher is not None:
+    if emit_matches and keyword_matcher is not None:
         matches.extend(keyword_matcher.match(new_domains))
     _timing_add(timing, "match", time.perf_counter() - t_insert)
     return len(new_domains)
@@ -235,23 +271,36 @@ def get_tld_meta(db: sqlite3.Connection, tld: str) -> dict:
     """Return the stored download/run metadata for a TLD."""
     cursor = db.cursor()
     cursor.execute(
-        "SELECT etag, last_modified, last_run_date, last_run_status FROM tld_meta WHERE tld = ?",
+        "SELECT etag, last_modified, last_run_date, last_run_status, baselined, cache_mode "
+        "FROM tld_meta WHERE tld = ?",
         (tld,)
     )
     row = cursor.fetchone()
     if not row:
-        return {"etag": None, "last_modified": None, "last_run_date": None, "last_run_status": None}
-    return {"etag": row[0], "last_modified": row[1], "last_run_date": row[2], "last_run_status": row[3]}
+        return {"etag": None, "last_modified": None, "last_run_date": None,
+                "last_run_status": None, "baselined": 0, "cache_mode": None}
+    return {"etag": row[0], "last_modified": row[1], "last_run_date": row[2],
+            "last_run_status": row[3], "baselined": row[4], "cache_mode": row[5]}
 
 
 def update_tld_meta(db: sqlite3.Connection, tld: str, etag: str | None,
-                    last_modified: str | None, run_date: str | None, status: str) -> None:
-    """Persist download validators and the last successful run date for a TLD."""
+                    last_modified: str | None, run_date: str | None, status: str,
+                    baselined: int | None = None, cache_mode: str | None = None) -> None:
+    """Persist download validators and the last successful run date for a TLD.
+
+    `baselined` / `cache_mode` are preserved when not supplied, so callers that
+    only update the run date (e.g. not_modified) do not wipe the baseline state.
+    """
+    current = get_tld_meta(db, tld)
+    if baselined is None:
+        baselined = current.get("baselined", 0)
+    if cache_mode is None:
+        cache_mode = current.get("cache_mode")
     cursor = db.cursor()
     cursor.execute(
-        "INSERT OR REPLACE INTO tld_meta (tld, etag, last_modified, last_run_date, last_run_status) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (tld, etag, last_modified, run_date, status)
+        "INSERT OR REPLACE INTO tld_meta (tld, etag, last_modified, last_run_date, last_run_status, baselined, cache_mode) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (tld, etag, last_modified, run_date, status, int(baselined or 0), cache_mode)
     )
     db.commit()
 
@@ -347,6 +396,17 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
     if use_hash:
         print(f"[*] .{tld}: large zone ({content_length / (1 << 30):.2f} GB) -> compact hash cache.", flush=True)
 
+    # Only emit matches when the TLD was already baselined and the cache mode did
+    # not change. A mode switch (text <-> hash) would otherwise anti-join against
+    # an empty table and re-report the whole zone as new.
+    is_baseline, mode_changed, cache_mode = _baseline_decision(meta, use_hash)
+    emit_matches = not is_baseline and not mode_changed
+    if is_baseline:
+        print(f"[*] .{tld}: first scan -> caching only, no notifications (baseline).", flush=True)
+    elif mode_changed:
+        print(f"[*] .{tld}: cache mode changed ({meta.get('cache_mode')} -> {cache_mode}); "
+              f"re-populating without notifications to avoid a flood.", flush=True)
+
     # 4. Conditional, resumable download with immediate retries.
     prev_etag = None if force else meta["etag"]
     prev_last_modified = None if force else meta["last_modified"]
@@ -406,7 +466,8 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
             batch.append(domain)
             if len(batch) >= batch_size:
                 new_count += _stage_and_diff_batch(cursor, tld, now, batch, keyword_matcher,
-                                                   matches, use_hash=use_hash, timing=timing)
+                                                   matches, use_hash=use_hash, timing=timing,
+                                                   emit_matches=emit_matches)
                 batch = []
                 batches_since_commit += 1
                 if progress_callback and time.time() - last_progress >= 5:
@@ -430,7 +491,8 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
                         break
         if batch and not space_abort:
             new_count += _stage_and_diff_batch(cursor, tld, now, batch, keyword_matcher,
-                                               matches, use_hash=use_hash, timing=timing)
+                                               matches, use_hash=use_hash, timing=timing,
+                                               emit_matches=emit_matches)
         t_commit = time.perf_counter()
         db.commit()
         _timing_add(timing, "commit", time.perf_counter() - t_commit)
@@ -488,7 +550,9 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
 
     # Zone parsed and cached successfully: persist validators + today's date so
     # subsequent runs can skip this TLD via a conditional request / daily guard.
-    update_tld_meta(db, tld, etag, last_modified, today_date, "ok")
+    # baselined=1 enables notifications from the next changed zone onwards.
+    update_tld_meta(db, tld, etag, last_modified, today_date, "ok",
+                    baselined=1, cache_mode=cache_mode)
     clear_tld_retry(db, tld)
 
     if matches:
@@ -496,8 +560,8 @@ def process_tld(tld: str, token: str, download_dir: str, db: sqlite3.Connection,
             m["first_seen"] = now
         print(f"[+] {len(matches)} matches found for .{tld}.", flush=True)
 
-    report = _tld_report(tld, "downloaded", filepath=filepath,
-                         records_total=total, records_new=new_count)
+    report = _tld_report(tld, "baselined" if not emit_matches else "downloaded",
+                         filepath=filepath, records_total=total, records_new=new_count)
 
     # Huge hash-cached TLDs: drop the multi-GB zone unless retention is enabled.
     if use_hash and not settings.get("retain_zone_hash_tlds", False):
@@ -925,6 +989,9 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str, max
         for m in matches:
             m["tld"] = tld_map.get(m["domain"], m["tld"])
             m["first_seen"] = first_seen_map.get(m["domain"], started_at)
+            # Recheck revisits already-cached (old) domains, so flag them as
+            # historical: the web UI hides them from the "new" listings by default.
+            m["is_historical"] = 1
             all_matches.append(m)
 
         stats["domains_checked"] += len(domains)

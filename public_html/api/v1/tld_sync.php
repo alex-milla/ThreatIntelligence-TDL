@@ -29,6 +29,7 @@ if (!is_array($entries)) {
 $allowedStatus = [
     'downloaded', 'not_modified', 'skipped_today', 'failed', 'pending',
     'incomplete', 'skipped_large', 'no_space', 'retrying', 'parse_error',
+    'baselined',
 ];
 $now = gmdate('c');
 $updated = 0;

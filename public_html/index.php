@@ -19,17 +19,21 @@ if (!empty($validPeriods[$period])) {
     $periodParams[] = $validPeriods[$period];
 }
 
+// Hide historical (recheck) matches and domains already classified (good/bad)
+// from the "new" dashboard view, matching the notifications page default.
+$archiveSql = " AND m.is_historical = 0 AND NOT EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain)";
+
 // Stats
 $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE user_id = ?");
 $stmt->execute([$userId]);
 $keywordCount = (int)$stmt->fetchColumn();
 
-$matchSql = "SELECT COUNT(*) FROM matches m JOIN keywords k ON m.keyword_id = k.id WHERE k.user_id = ?" . $periodSql;
+$matchSql = "SELECT COUNT(*) FROM matches m JOIN keywords k ON m.keyword_id = k.id WHERE k.user_id = ?" . $archiveSql . $periodSql;
 $stmt = $db->prepare($matchSql);
 $stmt->execute(array_merge([$userId], $periodParams));
 $matchCount = (int)$stmt->fetchColumn();
 
-$stmt = $db->prepare("SELECT COUNT(*) FROM notifications n JOIN matches m ON n.match_id = m.id WHERE n.user_id = ? AND n.is_read = 0 AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)");
+$stmt = $db->prepare("SELECT COUNT(*) FROM notifications n JOIN matches m ON n.match_id = m.id WHERE n.user_id = ? AND n.is_read = 0 AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)" . $archiveSql);
 $stmt->execute([$userId, $userId]);
 $unreadCount = (int)$stmt->fetchColumn();
 
@@ -37,7 +41,7 @@ $unreadCount = (int)$stmt->fetchColumn();
 $stmt = $db->prepare("SELECT m.id, m.domain, m.tld, m.discovered_at, m.first_seen, k.keyword 
     FROM matches m 
     JOIN keywords k ON m.keyword_id = k.id 
-    WHERE k.user_id = ? $periodSql
+    WHERE k.user_id = ? $archiveSql $periodSql
     ORDER BY m.discovered_at DESC 
     LIMIT 20");
 $stmt->execute(array_merge([$userId], $periodParams));
@@ -56,12 +60,12 @@ if (!empty($recentMatches)) {
 }
 
 // New matches in the last 24h (trend KPI)
-$stmt = $db->prepare("SELECT COUNT(*) FROM matches m JOIN keywords k ON m.keyword_id = k.id WHERE k.user_id = ? AND m.discovered_at >= datetime('now','-1 day')");
+$stmt = $db->prepare("SELECT COUNT(*) FROM matches m JOIN keywords k ON m.keyword_id = k.id WHERE k.user_id = ?" . $archiveSql . " AND m.discovered_at >= datetime('now','-1 day')");
 $stmt->execute([$userId]);
 $new24h = (int)$stmt->fetchColumn();
 
 // Matches per day for the last 30 days (sparkline)
-$stmt = $db->prepare("SELECT date(m.discovered_at) AS d, COUNT(*) AS c FROM matches m JOIN keywords k ON m.keyword_id = k.id WHERE k.user_id = ? AND m.discovered_at >= datetime('now','-30 days') GROUP BY date(m.discovered_at) ORDER BY d ASC");
+$stmt = $db->prepare("SELECT date(m.discovered_at) AS d, COUNT(*) AS c FROM matches m JOIN keywords k ON m.keyword_id = k.id WHERE k.user_id = ?" . $archiveSql . " AND m.discovered_at >= datetime('now','-30 days') GROUP BY date(m.discovered_at) ORDER BY d ASC");
 $stmt->execute([$userId]);
 $matchesPerDay = $stmt->fetchAll();
 

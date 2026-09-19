@@ -205,6 +205,14 @@ class Database {
             // Column already exists
         }
 
+        // Safe migration: flag recheck/archived matches. They are hidden from
+        // the "new" listings by default (see notifications.php / index.php).
+        try {
+            $db->exec("ALTER TABLE matches ADD COLUMN is_historical INTEGER DEFAULT 0");
+        } catch (PDOException $e) {
+            // Column already exists
+        }
+
         // Safe migration: add group_id to watchlist
         try {
             $db->exec("ALTER TABLE watchlist ADD COLUMN group_id INTEGER DEFAULT NULL");
