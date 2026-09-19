@@ -225,7 +225,7 @@ require __DIR__ . '/templates/header.php';
                             <button type="submit" class="btn btn-small">Save</button>
                         </form>
                     </td>
-                    <td><?= htmlspecialchars($item['created_at']) ?></td>
+                    <td><?= htmlspecialchars(fmt_date($item['created_at'])) ?></td>
                     <td>
                         <form method="POST" style="margin: 0;" onsubmit="return confirm('Remove this domain from your watchlist?')">
                             <?php csrfField(); ?>

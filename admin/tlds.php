@@ -196,12 +196,12 @@ require __DIR__ . '/../templates/header.php';
                             <input type="checkbox" name="active[]" value="<?= htmlspecialchars($t['name']) ?>" <?= $t['is_active'] ? 'checked' : '' ?> onchange="updateTldCount()">
                         </td>
                         <td><?= htmlspecialchars($t['name']) ?></td>
-                        <td class="tld-last-sync"><?= htmlspecialchars($t['last_sync'] ?? '') ?: '<span style="color:#999;">&mdash;</span>' ?></td>
+                        <td class="tld-last-sync"><?= htmlspecialchars(fmt_date($t['last_sync'])) ?></td>
                         <td class="tld-status"><?= tldStatusBadge($t['status']) ?></td>
                         <td class="tld-domains"><?= (int)$t['records_total'] > 0 ? number_format((int)$t['records_total']) : '<span style="color:#999;">&mdash;</span>' ?></td>
                         <td class="tld-new"><?= (int)$t['records_new'] > 0 ? '<strong>' . number_format((int)$t['records_new']) . '</strong>' : '<span style="color:#999;">&mdash;</span>' ?></td>
                         <td class="tld-size"><?= formatBytes((int)$t['zone_size']) ?></td>
-                        <td class="tld-retry" style="font-size:0.82rem;"><?= (int)($t['retry_attempts'] ?? 0) > 0 ? '#' . (int)$t['retry_attempts'] . (empty($t['next_retry']) ? '' : ' @ ' . htmlspecialchars(substr((string)$t['next_retry'], 11, 8))) : '<span style="color:#999;">&mdash;</span>' ?></td>
+                        <td class="tld-retry" style="font-size:0.82rem;"><?= (int)($t['retry_attempts'] ?? 0) > 0 ? '#' . (int)$t['retry_attempts'] . (empty($t['next_retry']) ? '' : ' @ ' . htmlspecialchars(substr(fmt_date($t['next_retry']), 11, 8))) : '<span style="color:#999;">&mdash;</span>' ?></td>
                         <td class="tld-error" style="color:#c0392b; font-size:0.85rem;"><?= htmlspecialchars($t['last_error'] ?? '') ?></td>
                     </tr>
                     <?php endforeach; ?>

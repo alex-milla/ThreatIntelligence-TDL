@@ -309,7 +309,7 @@ require __DIR__ . '/templates/header.php';
                             $isNew = $createdTs && $createdTs > strtotime("-{$defaultNewDays} days");
                         } catch (Exception $e) { $isNew = false; }
                     }
-                    $creationDisplay = $creationDate ? date('Y-m-d', strtotime($creationDate)) : '—';
+                    $creationDisplay = $creationDate ? substr(fmt_date($creationDate), 0, 10) : '—';
                 ?>
                 <tr class="<?= $n['is_read'] ? '' : 'unread' ?>" data-domain="<?= htmlspecialchars($n['domain']) ?>">
                     <td><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form"></td>
@@ -317,9 +317,9 @@ require __DIR__ . '/templates/header.php';
                     <td><a href="javascript:void(0)" onclick="openDomainModal('<?= htmlspecialchars(addslashes($n['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($n['domain']) ?></a><?= $tagBadge ?></td>
                     <td><?= htmlspecialchars($n['tld']) ?></td>
                     <td><?= htmlspecialchars($n['keyword']) ?></td>
-                    <td><?= htmlspecialchars($n['first_seen'] ?? '-') ?></td>
+                    <td><?= htmlspecialchars(fmt_date($n['first_seen'])) ?></td>
                     <td><?= htmlspecialchars($creationDisplay) ?><?php if ($isNew): ?> <span class="badge-new">🆕 New</span><?php endif; ?></td>
-                    <td><?= htmlspecialchars($n['discovered_at']) ?></td>
+                    <td><?= htmlspecialchars(fmt_date($n['discovered_at'])) ?></td>
                     <td>
                         <div class="action-menu">
                             <button type="button" class="action-menu-btn" onclick="toggleMenu(this)">⋮</button>

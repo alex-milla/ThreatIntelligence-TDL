@@ -23,5 +23,8 @@ $checked = (int)($status['checked_domains'] ?? 0);
 $pct = $total > 0 ? round($checked / $total * 100, 1) : 0;
 
 $status['progress_pct'] = $pct;
+if (!empty($status['completed_at'])) {
+    $status['completed_at'] = fmt_date($status['completed_at']);
+}
 
 echo json_encode(['success' => true, 'status' => $status]);

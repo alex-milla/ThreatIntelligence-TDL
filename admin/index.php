@@ -264,7 +264,7 @@ require __DIR__ . '/../templates/header.php';
             <p><strong>Status:</strong> <span style="color: #c0392b;">No cached domains</span></p>
             <p style="color: #c0392b;">The worker has not downloaded any zones yet. Run the worker first to build the domain cache.</p>
         <?php elseif ($recheckStatus && $recheckStatus['completed_at']): ?>
-            <p><strong>Status:</strong> <span style="color: #27ae60;">Completed</span> at <?= htmlspecialchars($recheckStatus['completed_at']) ?></p>
+            <p><strong>Status:</strong> <span style="color: #27ae60;">Completed</span> at <?= htmlspecialchars(fmt_date($recheckStatus['completed_at'])) ?></p>
             <p>Checked <strong><?= number_format($recheckChecked) ?></strong> domains — <strong><?= number_format($recheckMatches) ?></strong> matches found</p>
         <?php else: ?>
             <p><strong>Status:</strong> <span style="color: #7f8c8d;">Idle</span></p>
@@ -324,8 +324,8 @@ if (!empty($workerStatus['last_heartbeat'])) {
         <?php endif; ?>
 
         <table>
-            <tr><td>Last Heartbeat</td><td><?= htmlspecialchars($workerStatus['last_heartbeat'] ?? 'Never') ?></td></tr>
-            <tr><td>Last Run</td><td><?= htmlspecialchars($workerStatus['last_run'] ?? 'Never') ?></td></tr>
+            <tr><td>Last Heartbeat</td><td><?= htmlspecialchars(fmt_date($workerStatus['last_heartbeat'])) ?></td></tr>
+            <tr><td>Last Run</td><td><?= htmlspecialchars(fmt_date($workerStatus['last_run'])) ?></td></tr>
             <tr><td>TLDs Processed</td><td><?= (int)($workerStatus['tlds_processed'] ?? 0) ?></td></tr>
             <tr><td>Domains Processed</td><td><?= (int)($workerStatus['domains_processed'] ?? 0) ?></td></tr>
             <tr><td>Matches Found</td><td><?= (int)($workerStatus['matches_found'] ?? 0) ?></td></tr>
@@ -353,8 +353,8 @@ if (!empty($workerStatus['last_heartbeat'])) {
                     <td><?= (int)$cmd['id'] ?></td>
                     <td><?= htmlspecialchars($cmd['command']) ?></td>
                     <td><?= commandStatusBadge((string)$cmd['status']) ?></td>
-                    <td><?= htmlspecialchars($cmd['created_at'] ?? '-') ?></td>
-                    <td><?= htmlspecialchars($cmd['executed_at'] ?? '-') ?></td>
+                    <td><?= htmlspecialchars(fmt_date($cmd['created_at'])) ?></td>
+                    <td><?= htmlspecialchars(fmt_date($cmd['executed_at'])) ?></td>
                     <td><?= humanDuration($cmd['executed_at'], $cmd['finished_at']) ?></td>
                     <td style="font-size:0.82rem; max-width:340px; word-break:break-word;"><?= htmlspecialchars(mb_substr((string)($cmd['result'] ?? ''), 0, 300)) ?></td>
                     <td>
@@ -402,7 +402,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
                     <td><?= (int)$cmd['id'] ?></td>
                     <td><?= htmlspecialchars($cmd['command']) ?></td>
                     <td><?= htmlspecialchars($cmd['payload'] ?? '—') ?></td>
-                    <td><?= htmlspecialchars($cmd['created_at']) ?></td>
+                    <td><?= htmlspecialchars(fmt_date($cmd['created_at'])) ?></td>
                     <td><?= $queuedStr ?></td>
                     <td>
                         <form method="POST" style="display: inline; margin: 0;">
@@ -431,7 +431,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
             <tbody>
                 <?php foreach ($workerLogs as $log): ?>
                 <tr>
-                    <td><?= htmlspecialchars($log['created_at']) ?></td>
+                    <td><?= htmlspecialchars(fmt_date($log['created_at'])) ?></td>
                     <td><?= htmlspecialchars($log['level']) ?></td>
                     <td><?= htmlspecialchars($log['message']) ?></td>
                 </tr>
@@ -503,7 +503,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
         <tbody>
             <?php foreach ($syncLogs as $log): ?>
             <tr>
-                <td><?= htmlspecialchars($log['created_at']) ?></td>
+                <td><?= htmlspecialchars(fmt_date($log['created_at'])) ?></td>
                 <td><?= htmlspecialchars($log['source']) ?></td>
                 <td><?= (int)$log['records_received'] ?></td>
                 <td><?= (int)$log['records_inserted'] ?></td>

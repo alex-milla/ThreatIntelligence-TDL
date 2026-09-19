@@ -151,7 +151,7 @@ require __DIR__ . '/templates/header.php';
                 <tr>
                     <td><?= htmlspecialchars($k['keyword']) ?></td>
                     <td><a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <span style="color: #999; font-size: 0.8rem;">(<?= (int)$k['match_count'] ?> total)</span><?php endif; ?></td>
-                    <td><?= htmlspecialchars($k['created_at']) ?></td>
+                    <td><?= htmlspecialchars(fmt_date($k['created_at'])) ?></td>
                     <td>
                         <form method="POST" style="display: inline;">
                             <?php csrfField(); ?>

@@ -196,8 +196,8 @@ $sparkNonZero = count(array_filter($sparkDays));
                     <td><a href="javascript:void(0)" onclick="openDomainModal('<?= htmlspecialchars(addslashes($m['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($m['domain']) ?></a><?= $tagBadge ?></td>
                     <td><?= htmlspecialchars($m['tld']) ?></td>
                     <td><?= htmlspecialchars($m['keyword']) ?></td>
-                    <td><?= htmlspecialchars($m['first_seen'] ?? '-') ?></td>
-                    <td><?= htmlspecialchars($m['discovered_at']) ?></td>
+                    <td><?= htmlspecialchars(fmt_date($m['first_seen'])) ?></td>
+                    <td><?= htmlspecialchars(fmt_date($m['discovered_at'])) ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>

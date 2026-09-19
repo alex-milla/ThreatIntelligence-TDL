@@ -7,6 +7,31 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+/* ---------- Date formatting (UTC → local) ---------- */
+
+/**
+ * Convert a UTC timestamp (ISO 8601 or SQLite format) to Europe/Madrid local time.
+ * All timestamps in the DB are stored in UTC; this helper is used for display.
+ */
+function fmt_date(?string $utc): string {
+    if (!$utc || $utc === '' || $utc === '0000-00-00 00:00:00') {
+        return '—';
+    }
+    static $tzLocal = null;
+    static $tzUtc = null;
+    if ($tzLocal === null) {
+        $tzUtc = new DateTimeZone('UTC');
+        $tzLocal = new DateTimeZone('Europe/Madrid');
+    }
+    try {
+        $dt = new DateTime($utc, $tzUtc);
+        $dt->setTimezone($tzLocal);
+        return $dt->format('Y-m-d H:i:s');
+    } catch (Throwable $e) {
+        return $utc;
+    }
+}
+
 function requireAuth(): void {
     if (empty($_SESSION['user_id'])) {
         header('Location: /login.php');

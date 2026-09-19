@@ -19,14 +19,14 @@ foreach ($rows as $r) {
     $tlds[] = [
         'name'           => $r['name'],
         'is_active'      => (int)$r['is_active'],
-        'last_sync'      => $r['last_sync'],
+        'last_sync'      => fmt_date($r['last_sync']),
         'status'         => $r['status'],
         'records_total'  => (int)$r['records_total'],
         'records_new'    => (int)$r['records_new'],
         'zone_size'      => (int)$r['zone_size'],
         'last_error'     => $r['last_error'],
         'retry_attempts' => (int)($r['retry_attempts'] ?? 0),
-        'next_retry'     => $r['next_retry'],
+        'next_retry'     => $r['next_retry'] ? fmt_date($r['next_retry']) : null,
     ];
 }
 
