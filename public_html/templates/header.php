@@ -1,6 +1,18 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 sendSecurityHeaders();
+
+$loggedIn = !empty($_SESSION['user_id']);
+$isAdmin = !empty($_SESSION['is_admin']);
+$username = $_SESSION['username'] ?? '';
+
+// Current page (for active nav state)
+$curPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$current = basename($curPath);
+if ($curPath === '' || $curPath === '/') {
+    $current = 'index.php';
+}
+$isAdminArea = strpos($curPath, '/admin') === 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -9,70 +21,94 @@ sendSecurityHeaders();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(csrfToken()) ?>">
     <title><?= htmlspecialchars($pageTitle ?? 'ThreatIntelligence-TDL') ?></title>
-    <link rel="stylesheet" href="/assets/css/main.css">
-    <script src="/assets/whois.js"></script>
+    <link rel="stylesheet" href="/css/fonts.css">
+    <link rel="stylesheet" href="/css/materialize.min.css">
+    <link rel="stylesheet" href="/css/materialize.colors.min.css">
+    <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="navbar-left">
-            <a href="/" class="brand">ThreatIntelligence-TDL</a>
-            <?php if (!empty($_SESSION['user_id'])): ?>
-                <a href="/">Dashboard</a>
-                <a href="/keywords.php">Keywords</a>
-                <a href="/notifications.php">Notifications</a>
-                <a href="/watchlist.php">Watchlist</a>
-                <?php if (!empty($_SESSION['is_admin'])): ?>
-                <span class="nav-sep"></span>
-                <a href="/admin/tlds.php">TLDs</a>
-                <div class="nav-dropdown">
-                    <button class="nav-toggle" type="button">Admin <span class="caret">&#9660;</span></button>
-                    <div class="nav-dropdown-menu">
-                        <a href="/admin/#overview">Overview</a>
-                        <a href="/admin/#worker">Worker</a>
-                        <a href="/admin/#commands">Commands</a>
-                        <a href="/admin/#recheck">Recheck</a>
-                        <a href="/admin/#users">Users</a>
-                        <a href="/admin/#sync">Sync</a>
-                        <a href="/admin/#system">System</a>
-                    </div>
-                </div>
-                <?php endif; ?>
-            <?php endif; ?>
-        </div>
-        <div class="navbar-right">
-            <?php if (!empty($_SESSION['user_id'])): ?>
-                <div class="nav-dropdown">
-                    <button class="nav-toggle" type="button"><?= htmlspecialchars($_SESSION['username'] ?? '') ?> <span class="caret">&#9660;</span></button>
-                    <div class="nav-dropdown-menu">
-                        <div class="nav-section">Account</div>
-                        <a href="/account.php">Email preferences</a>
-                        <?php if (!empty($_SESSION['is_admin'])): ?>
-                            <a href="/admin/#users">API key</a>
+    <header>
+        <nav class="deep-purple darken-2">
+            <div class="nav-wrapper container">
+                <a href="/" class="brand-logo">ThreatIntelligence-TDL</a>
+                <a href="#" data-target="mobile-nav" class="sidenav-trigger" aria-label="Open navigation menu"><i class="material-icons">menu</i></a>
+                <ul class="right hide-on-med-and-down">
+                    <?php if ($loggedIn): ?>
+                        <li><a href="/" class="<?= ($current === 'index.php' && !$isAdminArea) ? 'active' : '' ?>" aria-current="<?= ($current === 'index.php' && !$isAdminArea) ? 'page' : 'false' ?>"><i class="material-icons left">dashboard</i>Dashboard</a></li>
+                        <li><a href="/keywords.php" class="<?= $current === 'keywords.php' ? 'active' : '' ?>" aria-current="<?= $current === 'keywords.php' ? 'page' : 'false' ?>"><i class="material-icons left">search</i>Keywords</a></li>
+                        <li><a href="/notifications.php" class="<?= $current === 'notifications.php' ? 'active' : '' ?>" aria-current="<?= $current === 'notifications.php' ? 'page' : 'false' ?>"><i class="material-icons left">notifications</i>Notifications</a></li>
+                        <li><a href="/watchlist.php" class="<?= $current === 'watchlist.php' ? 'active' : '' ?>" aria-current="<?= $current === 'watchlist.php' ? 'page' : 'false' ?>"><i class="material-icons left">visibility</i>Watchlist</a></li>
+                        <?php if ($isAdmin): ?>
+                            <li><a href="/admin/tlds.php" class="<?= $current === 'tlds.php' ? 'active' : '' ?>" aria-current="<?= $current === 'tlds.php' ? 'page' : 'false' ?>"><i class="material-icons left">public</i>TLDs</a></li>
+                            <li>
+                                <a class="dropdown-trigger<?= $isAdminArea ? ' active' : '' ?>" href="#!" data-target="admin-dropdown" aria-haspopup="true" aria-current="<?= $isAdminArea ? 'page' : 'false' ?>">
+                                    <i class="material-icons left">admin_panel_settings</i>Admin
+                                    <i class="material-icons right">arrow_drop_down</i>
+                                </a>
+                            </li>
                         <?php endif; ?>
-                        <hr>
-                        <a href="/logout.php">Cerrar sesi&oacute;n</a>
-                    </div>
-                </div>
-            <?php else: ?>
-                <a href="/login.php">Login</a>
-                <a href="/register.php">Register</a>
-            <?php endif; ?>
-        </div>
-    </nav>
-    <script>
-    document.querySelectorAll('.nav-dropdown').forEach(function(dd) {
-        var toggle = dd.querySelector('.nav-toggle');
-        toggle.addEventListener('click', function(e) {
-            e.preventDefault();
-            var wasOpen = dd.classList.contains('open');
-            document.querySelectorAll('.nav-dropdown.open').forEach(function(o) { o.classList.remove('open'); });
-            if (!wasOpen) dd.classList.add('open');
-        });
-    });
-    document.addEventListener('click', function(e) {
-        document.querySelectorAll('.nav-dropdown.open').forEach(function(dd) {
-            if (!dd.contains(e.target)) dd.classList.remove('open');
-        });
-    });
-    </script>
-    <div class="container">
+                        <li>
+                            <a class="dropdown-trigger" href="#!" data-target="account-dropdown" aria-haspopup="true">
+                                <i class="material-icons left">account_circle</i><?= htmlspecialchars($username) ?>
+                                <i class="material-icons right">arrow_drop_down</i>
+                            </a>
+                        </li>
+                    <?php else: ?>
+                        <li><a href="/login.php" class="<?= $current === 'login.php' ? 'active' : '' ?>"><i class="material-icons left">login</i>Login</a></li>
+                        <li><a href="/register.php" class="<?= $current === 'register.php' ? 'active' : '' ?>"><i class="material-icons left">person_add</i>Register</a></li>
+                    <?php endif; ?>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <?php if ($loggedIn): ?>
+    <ul class="sidenav" id="mobile-nav">
+        <li><div class="user-view deep-purple darken-3"><span class="white-text name"><?= htmlspecialchars($username) ?></span></div></li>
+        <li><a href="/" class="<?= ($current === 'index.php' && !$isAdminArea) ? 'active' : '' ?>"><i class="material-icons">dashboard</i>Dashboard</a></li>
+        <li><a href="/keywords.php" class="<?= $current === 'keywords.php' ? 'active' : '' ?>"><i class="material-icons">search</i>Keywords</a></li>
+        <li><a href="/notifications.php" class="<?= $current === 'notifications.php' ? 'active' : '' ?>"><i class="material-icons">notifications</i>Notifications</a></li>
+        <li><a href="/watchlist.php" class="<?= $current === 'watchlist.php' ? 'active' : '' ?>"><i class="material-icons">visibility</i>Watchlist</a></li>
+        <?php if ($isAdmin): ?>
+            <li><div class="divider"></div></li>
+            <li><a href="/admin/tlds.php" class="<?= $current === 'tlds.php' ? 'active' : '' ?>"><i class="material-icons">public</i>TLDs</a></li>
+            <li><a href="/admin/#overview" class="<?= $isAdminArea ? 'active' : '' ?>"><i class="material-icons">admin_panel_settings</i>Admin Panel</a></li>
+        <?php endif; ?>
+        <li><div class="divider"></div></li>
+        <li><a href="/account.php" class="<?= $current === 'account.php' ? 'active' : '' ?>"><i class="material-icons">mail</i>Account</a></li>
+        <li><a href="/logout.php"><i class="material-icons">logout</i>Logout</a></li>
+    </ul>
+    <?php else: ?>
+    <ul class="sidenav" id="mobile-nav">
+        <li><a href="/login.php" class="<?= $current === 'login.php' ? 'active' : '' ?>"><i class="material-icons">login</i>Login</a></li>
+        <li><a href="/register.php" class="<?= $current === 'register.php' ? 'active' : '' ?>"><i class="material-icons">person_add</i>Register</a></li>
+    </ul>
+    <?php endif; ?>
+
+    <?php if ($isAdmin): ?>
+    <ul id="admin-dropdown" class="dropdown-content">
+        <li><a href="/admin/#overview"><i class="material-icons">dashboard</i>Overview</a></li>
+        <li><a href="/admin/#worker"><i class="material-icons">memory</i>Worker</a></li>
+        <li><a href="/admin/#commands"><i class="material-icons">playlist_play</i>Commands</a></li>
+        <li><a href="/admin/#recheck"><i class="material-icons">restart_alt</i>Recheck</a></li>
+        <li><a href="/admin/tlds.php"><i class="material-icons">public</i>TLDs</a></li>
+        <li class="divider" tabindex="-1"></li>
+        <li><a href="/admin/#users"><i class="material-icons">people</i>Users</a></li>
+        <li><a href="/admin/#sync"><i class="material-icons">sync</i>Sync</a></li>
+        <li><a href="/admin/#system"><i class="material-icons">settings</i>System</a></li>
+    </ul>
+    <?php endif; ?>
+
+    <?php if ($loggedIn): ?>
+    <ul id="account-dropdown" class="dropdown-content">
+        <li><a href="/account.php"><i class="material-icons">mail</i>Email preferences</a></li>
+        <?php if ($isAdmin): ?>
+            <li><a href="/admin/#users"><i class="material-icons">vpn_key</i>API key</a></li>
+        <?php endif; ?>
+        <li class="divider" tabindex="-1"></li>
+        <li><a href="/logout.php"><i class="material-icons">logout</i>Logout</a></li>
+    </ul>
+    <?php endif; ?>
+
+    <main>
+        <div class="container">

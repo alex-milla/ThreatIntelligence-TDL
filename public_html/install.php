@@ -72,48 +72,59 @@ if ($step === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= htmlspecialchars(csrfToken()) ?>">
     <title>Install - ThreatIntelligence-TDL</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f5f5f5; }
-        .box { background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1 { margin-top: 0; }
-        label { display: block; margin-top: 15px; font-weight: bold; }
-        input[type="text"], input[type="email"], input[type="password"] { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { margin-top: 20px; padding: 12px 24px; background: #007bff; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
-        .error { color: #dc3545; margin-top: 15px; }
-        .success { color: #28a745; margin-top: 15px; }
-        .api-key { background: #e9ecef; padding: 15px; border-radius: 4px; font-family: monospace; word-break: break-all; margin-top: 10px; }
-    </style>
+    <link rel="stylesheet" href="/css/fonts.css">
+    <link rel="stylesheet" href="/css/materialize.min.css">
+    <link rel="stylesheet" href="/css/materialize.colors.min.css">
+    <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
-    <div class="box">
-        <h1>ThreatIntelligence-TDL Installation</h1>
-        
-        <?php if ($error): ?>
-            <div class="error"><?= htmlspecialchars($error) ?></div>
-        <?php endif; ?>
-        
-        <?php if ($success): ?>
-            <div class="success"><?= htmlspecialchars($success) ?></div>
-            <p><strong>API Key for Worker:</strong></p>
-            <div class="api-key"><?= htmlspecialchars($showKey) ?></div>
-            <p>Copy this key into your worker <code>config.ini</code> under <code>api_key</code>.</p>
-            <p><a href="/">Go to Dashboard</a></p>
-        <?php else: ?>
-            <form method="POST" action="install.php?step=create">
-                <?php csrfField(); ?>
-                <label>Admin Username</label>
-                <input type="text" name="username" required minlength="3">
-                
-                <label>Admin Email</label>
-                <input type="email" name="email" required>
-                
-                <label>Admin Password</label>
-                <input type="password" name="password" required minlength="8">
-                
-                <button type="submit">Create Admin & Install</button>
-            </form>
-        <?php endif; ?>
-    </div>
+    <main>
+        <div class="container">
+            <div class="card auth-card">
+                <div class="auth-logo">
+                    <i class="material-icons">security</i>
+                    <h2>Installation</h2>
+                </div>
+                <p class="muted">Create the first administrator account to finish setting up ThreatIntelligence-TDL.</p>
+
+                <?php if ($error): ?>
+                    <div class="alert alert-error"><i class="material-icons left">error</i><?= htmlspecialchars($error) ?></div>
+                <?php endif; ?>
+
+                <?php if ($success): ?>
+                    <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= htmlspecialchars($success) ?></div>
+                    <p><strong>API Key for Worker:</strong></p>
+                    <div class="api-key"><?= htmlspecialchars($showKey) ?></div>
+                    <p>Copy this key into your worker <code>config.ini</code> under <code>api_key</code>.</p>
+                    <p><a href="/" class="btn waves-effect"><i class="material-icons left">dashboard</i>Go to Dashboard</a></p>
+                <?php else: ?>
+                    <form method="POST" action="install.php?step=create">
+                        <?php csrfField(); ?>
+                        <div class="input-field">
+                            <i class="material-icons prefix">person</i>
+                            <input id="username" type="text" name="username" placeholder=" " required minlength="3">
+                            <label for="username">Admin Username</label>
+                        </div>
+                        <div class="input-field">
+                            <i class="material-icons prefix">email</i>
+                            <input id="email" type="email" name="email" placeholder=" " required>
+                            <label for="email">Admin Email</label>
+                        </div>
+                        <div class="input-field">
+                            <i class="material-icons prefix">lock</i>
+                            <input id="password" type="password" name="password" placeholder=" " required minlength="8">
+                            <label for="password">Admin Password</label>
+                        </div>
+                        <button type="submit" class="btn waves-effect" style="width:100%;"><i class="material-icons left">build</i>Create Admin &amp; Install</button>
+                    </form>
+                <?php endif; ?>
+            </div>
+        </div>
+    </main>
+    <script src="/js/materialize.min.js"></script>
+    <script src="/js/app.js"></script>
 </body>
 </html>

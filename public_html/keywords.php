@@ -98,46 +98,54 @@ require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="card">
-    <h2>My Keywords</h2>
-    
+    <div class="card-head">
+        <h2>My Keywords</h2>
+        <span class="muted"><?= count($keywords) ?> keyword(s)</span>
+    </div>
+
     <?php if ($message): ?>
-        <div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
+        <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= htmlspecialchars($message) ?></div>
     <?php endif; ?>
     <?php if ($error): ?>
-        <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
+        <div class="alert alert-error"><i class="material-icons left">error</i><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
-    
-    <form method="POST" style="display: flex; gap: 10px; margin-bottom: 20px;">
+
+    <form method="POST" class="keyword-add-form">
         <?php csrfField(); ?>
         <input type="hidden" name="action" value="add">
-        <input type="text" name="keyword" placeholder="e.g. santander, nasa, caixabank" required style="flex: 1;">
-        <button type="submit" class="btn">Add Keyword</button>
+        <div class="input-field">
+            <i class="material-icons prefix">search</i>
+            <input id="keyword" type="text" name="keyword" class="validate" placeholder=" " required>
+            <label for="keyword">Keyword</label>
+            <span class="helper-text">e.g. santander, nasa, caixabank</span>
+        </div>
+        <button type="submit" class="btn waves-effect"><i class="material-icons left">add</i>Add Keyword</button>
     </form>
-    
+
     <?php if ($isAdmin): ?>
-    <div style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-        <form method="POST" style="margin: 0;">
+    <div class="section-actions">
+        <form method="POST">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="recheck_keywords">
-            <button type="submit" class="btn btn-danger btn-small" <?= $recheckRunning ? 'disabled' : '' ?>>
-                <?= $recheckRunning ? '🔍 Recheck in progress...' : '🔍 Recheck All Cached Domains' ?>
+            <button type="submit" class="btn waves-effect amber darken-2" <?= $recheckRunning ? 'disabled' : '' ?>>
+                <i class="material-icons left">search</i><?= $recheckRunning ? 'Recheck in progress...' : 'Recheck All Cached Domains' ?>
             </button>
         </form>
         <?php if ($recheckRunning): ?>
-        <form method="POST" style="margin: 0;">
+        <form method="POST">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="stop_recheck">
-            <button type="submit" class="btn btn-danger btn-small">⏹ Stop Recheck</button>
+            <button type="submit" class="btn waves-effect btn-danger"><i class="material-icons left">stop</i>Stop Recheck</button>
         </form>
         <?php endif; ?>
-        <span style="color: #666; font-size: 0.85rem;">Scans all previously downloaded domains against current keywords (admin only)</span>
+        <span class="muted">Scans all previously downloaded domains against current keywords (admin only)</span>
     </div>
     <?php endif; ?>
-    
+
     <?php if (empty($keywords)): ?>
-        <p>No keywords yet. Add your first keyword above.</p>
+        <p class="muted">No keywords yet. Add your first keyword above.</p>
     <?php else: ?>
-        <table>
+        <table class="striped highlight responsive-table">
             <thead>
                 <tr>
                     <th>Keyword</th>
@@ -149,15 +157,15 @@ require __DIR__ . '/templates/header.php';
             <tbody>
                 <?php foreach ($keywords as $k): ?>
                 <tr>
-                    <td><?= htmlspecialchars($k['keyword']) ?></td>
-                    <td><a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <span style="color: #999; font-size: 0.8rem;">(<?= (int)$k['match_count'] ?> total)</span><?php endif; ?></td>
+                    <td><strong><?= htmlspecialchars($k['keyword']) ?></strong></td>
+                    <td><a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <span class="muted">(<?= (int)$k['match_count'] ?> total)</span><?php endif; ?></td>
                     <td><?= htmlspecialchars(fmt_date($k['created_at'])) ?></td>
                     <td>
                         <form method="POST" style="display: inline;">
                             <?php csrfField(); ?>
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
-                            <button type="submit" class="btn btn-danger btn-small" onclick="return confirm('Delete this keyword?')">Delete</button>
+                            <button type="submit" class="btn btn-small btn-danger waves-effect" onclick="return confirm('Delete this keyword?')"><i class="material-icons left">delete</i>Delete</button>
                         </form>
                     </td>
                 </tr>

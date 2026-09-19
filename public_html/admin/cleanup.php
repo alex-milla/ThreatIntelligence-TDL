@@ -50,20 +50,21 @@ require __DIR__ . '/../templates/header.php';
 ?>
 
 <div class="card">
-    <h2>Cleanup False-Positive Matches</h2>
+    <div class="card-head"><h2>Cleanup False-Positive Matches</h2></div>
     <p>This tool removes matches where the keyword only appeared in the TLD (e.g. <code>abcd1234.life</code> matching keyword <code>life</code>).</p>
-    
+
     <?php if ($message): ?>
-    <div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
+    <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= htmlspecialchars($message) ?></div>
     <?php endif; ?>
-    
+
     <?php if ($falseCount > 0): ?>
         <div class="alert alert-error">
+            <i class="material-icons left">warning</i>
             <strong><?= $falseCount ?></strong> false-positive match(es) found.
         </div>
-        
-        <h3>Examples (first 10):</h3>
-        <table>
+
+        <h5>Examples (first 10):</h5>
+        <table class="striped highlight responsive-table">
             <thead>
                 <tr><th>Domain</th><th>Keyword</th></tr>
             </thead>
@@ -76,16 +77,16 @@ require __DIR__ . '/../templates/header.php';
                 <?php endforeach; ?>
             </tbody>
         </table>
-        
-        <form method="POST" style="margin-top: 15px;">
+
+        <form method="POST" class="section-actions">
             <?php csrfField(); ?>
-            <button type="submit" class="btn btn-danger" onclick="return confirm('Delete <?= $falseCount ?> false match(es)? This cannot be undone.')">Delete False Matches</button>
+            <button type="submit" class="btn btn-danger waves-effect" onclick="return confirm('Delete <?= $falseCount ?> false match(es)? This cannot be undone.')"><i class="material-icons left">delete_sweep</i>Delete False Matches</button>
         </form>
     <?php else: ?>
-        <p>No false-positive matches found. Everything looks clean!</p>
+        <p class="text-success"><i class="material-icons left">check_circle</i>No false-positive matches found. Everything looks clean!</p>
     <?php endif; ?>
-    
-    <p style="margin-top: 15px;"><a href="/admin/" class="btn">Back to Admin Panel</a></p>
+
+    <p><a href="/admin/" class="btn waves-effect"><i class="material-icons left">arrow_back</i>Back to Admin Panel</a></p>
 </div>
 
 <?php require __DIR__ . '/../templates/footer.php'; ?>

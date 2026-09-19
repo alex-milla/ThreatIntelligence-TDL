@@ -43,24 +43,30 @@ $pageTitle = 'Login';
 require __DIR__ . '/templates/header.php';
 ?>
 
-<div class="card" style="max-width: 400px; margin: 60px auto;">
-    <h2>Login</h2>
+<div class="card auth-card">
+    <div class="auth-logo">
+        <i class="material-icons">security</i>
+        <h2>ThreatIntelligence-TDL</h2>
+    </div>
+    <p class="muted">Sign in to your account</p>
     <?php if ($error): ?>
-        <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
+        <div class="alert alert-error"><i class="material-icons left">error</i><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
     <form method="POST">
         <?php csrfField(); ?>
-        <div class="form-group">
-            <label>Username</label>
-            <input type="text" name="username" required autofocus>
+        <div class="input-field">
+            <i class="material-icons prefix">person</i>
+            <input id="username" type="text" name="username" placeholder=" " required autofocus>
+            <label for="username">Username</label>
         </div>
-        <div class="form-group">
-            <label>Password</label>
-            <input type="password" name="password" required>
+        <div class="input-field">
+            <i class="material-icons prefix">lock</i>
+            <input id="password" type="password" name="password" placeholder=" " required>
+            <label for="password">Password</label>
         </div>
-        <button type="submit" class="btn">Login</button>
+        <button type="submit" class="btn waves-effect" style="width:100%;"><i class="material-icons left">login</i>Login</button>
     </form>
-    <p style="margin-top: 15px;"><a href="/register.php">Create an account</a></p>
+    <p style="margin-top: 16px;">Don't have an account? <a href="/register.php">Create one</a></p>
 </div>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>

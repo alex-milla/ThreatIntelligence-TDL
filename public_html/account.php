@@ -28,36 +28,48 @@ require __DIR__ . '/templates/header.php';
 ?>
 
 <?php if ($message): ?>
-<div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
+<div class="alert alert-success"><i class="material-icons left">check_circle</i><?= htmlspecialchars($message) ?></div>
 <?php endif; ?>
 
-<div class="card" style="max-width: 520px;">
-    <h2>Email notifications</h2>
-    <p style="color: #666; font-size: 0.9rem; margin-top: 0;">
+<div class="card account-card">
+    <div class="card-head">
+        <h2>Email notifications</h2>
+    </div>
+    <p class="muted">
         When enabled, you will receive an email summary each time new domains match your keywords.
     </p>
-    <table style="margin-top: 10px;">
+    <table class="account-info">
         <tr>
-            <td style="color: #666; width: 140px;">Account email</td>
-            <td style="font-weight: 600;"><?= htmlspecialchars($userEmail) ?></td>
+            <td class="label-col">Account email</td>
+            <td class="value-col"><?= htmlspecialchars($userEmail) ?></td>
         </tr>
         <tr>
-            <td style="color: #666;">Status</td>
-            <td>
+            <td class="label-col">Status</td>
+            <td class="value-col">
                 <?php if ($emailNotifications): ?>
-                    <span style="color: #27ae60; font-weight: 600;">Enabled</span>
+                    <span class="text-success">Enabled</span>
                 <?php else: ?>
-                    <span style="color: #999; font-weight: 600;">Disabled</span>
+                    <span class="muted">Disabled</span>
                 <?php endif; ?>
             </td>
         </tr>
     </table>
-    <form method="POST" style="margin-top: 15px;">
+    <form method="POST">
         <?php csrfField(); ?>
         <input type="hidden" name="action" value="toggle_email">
-        <button type="submit" class="btn <?= $emailNotifications ? 'btn-danger' : '' ?>">
-            <?= $emailNotifications ? 'Disable notifications' : 'Enable notifications' ?>
-        </button>
+        <div class="switch">
+            <label>
+                Disabled
+                <input type="checkbox" <?= $emailNotifications ? 'checked' : '' ?> onchange="this.form.submit()">
+                <span class="lever"></span>
+                Enabled
+            </label>
+        </div>
+        <noscript>
+            <button type="submit" class="btn <?= $emailNotifications ? 'btn-danger' : '' ?>">
+                <?= $emailNotifications ? 'Disable notifications' : 'Enable notifications' ?>
+            </button>
+        </noscript>
     </form>
 </div>
 

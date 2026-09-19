@@ -137,44 +137,51 @@ require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="card">
-    <h2>⭐ Watchlist</h2>
-    <p style="color: #666; font-size: 0.9rem;">Private list of domains you are tracking for monitoring over time. Notes are personal and not shared with other users.</p>
+    <div class="card-head">
+        <h2><i class="material-icons left">star</i>Watchlist</h2>
+        <span class="muted"><?= $totalAll ?> domain(s)</span>
+    </div>
+    <p class="muted">Private list of domains you are tracking for monitoring over time. Notes are personal and not shared with other users.</p>
 
     <?php if (empty($items) && empty($groups)): ?>
-        <p>Your watchlist is empty. Add domains from the <a href="/notifications.php">Notifications</a> page or from any domain modal.</p>
+        <p class="muted">Your watchlist is empty. Add domains from the <a href="/notifications.php">Notifications</a> page or from any domain modal.</p>
     <?php else: ?>
 
         <!-- Group tabs -->
-        <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 15px 0;">
-            <a href="/watchlist.php" class="btn btn-small" style="<?= $groupFilter === '' || $groupFilter === '0' ? 'background:#3498db;color:#fff;' : 'background:#e9ecef;color:#333;' ?>">Ungrouped (<?= $ungroupedCount ?>)</a>
+        <div class="group-tabs">
+            <a href="/watchlist.php" class="group-tab <?= $groupFilter === '' || $groupFilter === '0' ? 'active' : '' ?>">Ungrouped (<?= $ungroupedCount ?>)</a>
             <?php foreach ($groups as $g): 
                 $gCount = $groupCounts[(string)$g['id']] ?? 0;
                 $isActive = $groupFilter === (string)$g['id'];
             ?>
-                <div style="display: flex; align-items: center;">
-                    <a href="/watchlist.php?group=<?= (int)$g['id'] ?>" class="btn btn-small" style="<?= $isActive ? 'background:#3498db;color:#fff;' : 'background:#e9ecef;color:#333;' ?> border-radius: 4px 0 0 4px;"><?= htmlspecialchars($g['name']) ?> (<?= $gCount ?>)</a>
-                    <form method="POST" style="margin: 0; display: inline;" onsubmit="return confirm('Delete group &quot;<?= htmlspecialchars(addslashes($g['name'])) ?>&quot;? Domains will become ungrouped.')">
+                <span class="group-chip">
+                    <a href="/watchlist.php?group=<?= (int)$g['id'] ?>" class="group-tab <?= $isActive ? 'active' : '' ?>"><?= htmlspecialchars($g['name']) ?> (<?= $gCount ?>)</a>
+                    <form method="POST" style="margin: 0; display: inline-flex;" onsubmit="return confirm('Delete group &quot;<?= htmlspecialchars(addslashes($g['name'])) ?>&quot;? Domains will become ungrouped.')">
                         <?php csrfField(); ?>
                         <input type="hidden" name="action" value="delete_group">
                         <input type="hidden" name="group_id" value="<?= (int)$g['id'] ?>">
-                        <button type="submit" class="btn btn-small" style="background:#e9ecef;color:#c0392b;border-radius: 0 4px 4px 0;padding: 4px 8px;line-height:1;" title="Delete group">×</button>
+                        <button type="submit" class="group-tab group-delete" title="Delete group"><i class="material-icons tiny">close</i></button>
                     </form>
-                </div>
+                </span>
             <?php endforeach; ?>
         </div>
 
         <!-- Create group form -->
-        <form method="POST" style="margin-bottom: 15px; display: flex; gap: 8px; align-items: center;">
+        <form method="POST" class="group-create-form">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="create_group">
-            <input type="text" name="group_name" placeholder="New group name..." required style="padding: 6px 10px; min-width: 160px; font-size: 0.9rem;">
-            <button type="submit" class="btn btn-small">Add Group</button>
+            <div class="input-field">
+                <i class="material-icons prefix">create_new_folder</i>
+                <input id="group_name" type="text" name="group_name" placeholder=" " required>
+                <label for="group_name">New group name</label>
+            </div>
+            <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">add</i>Add Group</button>
         </form>
 
         <?php if (empty($items)): ?>
             <p>No domains in this group.</p>
         <?php else: ?>
-        <table>
+        <table class="striped highlight responsive-table">
             <thead>
                 <tr>
                     <th>Domain</th>
@@ -193,14 +200,14 @@ require __DIR__ . '/templates/header.php';
                     $dtag = $domainTags[$item['domain']] ?? null;
                     $tagBadge = '';
                     if ($dtag) {
-                        $color = $dtag['tag'] === 'good' ? '#27ae60' : '#c0392b';
+                        $cls = $dtag['tag'] === 'good' ? 'good' : 'bad';
                         $label = $dtag['tag'] === 'good' ? 'GOOD' : 'BAD';
-                        $tagBadge = ' <span style="display:inline-block;background:'.$color.';color:#fff;font-size:0.7rem;padding:1px 5px;border-radius:3px;margin-left:4px;">'.$label.'</span>';
+                        $tagBadge = ' <span class="tag-chip ' . $cls . '">' . $label . '</span>';
                     }
                 ?>
                 <tr>
                     <td>
-                        <a href="javascript:void(0)" onclick="openDomainModal('<?= htmlspecialchars(addslashes($item['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($item['domain']) ?></a><?= $tagBadge ?>
+                        <a href="javascript:void(0)" class="domain-link" onclick="openDomainModal('<?= htmlspecialchars(addslashes($item['domain'])) ?>')"><?= htmlspecialchars($item['domain']) ?></a><?= $tagBadge ?>
                     </td>
                     <td><?= htmlspecialchars($creationDisplay) ?></td>
                     <td>
@@ -208,7 +215,7 @@ require __DIR__ . '/templates/header.php';
                             <?php csrfField(); ?>
                             <input type="hidden" name="action" value="set_group">
                             <input type="hidden" name="watch_id" value="<?= (int)$item['id'] ?>">
-                            <select name="group_id" onchange="this.form.submit()" style="padding: 4px 6px; font-size: 0.85rem; min-width: 100px;">
+                            <select name="group_id" class="browser-default compact" onchange="this.form.submit()">
                                 <option value="" <?= $item['group_id'] === null ? 'selected' : '' ?>>— Ungrouped</option>
                                 <?php foreach ($groups as $g): ?>
                                 <option value="<?= (int)$g['id'] ?>" <?= $item['group_id'] == $g['id'] ? 'selected' : '' ?>><?= htmlspecialchars($g['name']) ?></option>
@@ -221,8 +228,8 @@ require __DIR__ . '/templates/header.php';
                             <?php csrfField(); ?>
                             <input type="hidden" name="action" value="update_note">
                             <input type="hidden" name="watch_id" value="<?= (int)$item['id'] ?>">
-                            <input type="text" name="note" value="<?= htmlspecialchars($item['note'] ?? '') ?>" placeholder="Add a note..." style="flex: 1; min-width: 120px; padding: 6px; font-size: 0.9rem;">
-                            <button type="submit" class="btn btn-small">Save</button>
+                            <input type="text" name="note" value="<?= htmlspecialchars($item['note'] ?? '') ?>" placeholder="Add a note..." class="browser-default compact" style="flex: 1; min-width: 120px;">
+                            <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">save</i>Save</button>
                         </form>
                     </td>
                     <td><?= htmlspecialchars(fmt_date($item['created_at'])) ?></td>
@@ -231,7 +238,7 @@ require __DIR__ . '/templates/header.php';
                             <?php csrfField(); ?>
                             <input type="hidden" name="action" value="remove">
                             <input type="hidden" name="watch_id" value="<?= (int)$item['id'] ?>">
-                            <button type="submit" class="btn btn-small btn-danger">Remove</button>
+                            <button type="submit" class="btn btn-small btn-danger waves-effect"><i class="material-icons left">delete</i>Remove</button>
                         </form>
                     </td>
                 </tr>
@@ -239,71 +246,80 @@ require __DIR__ . '/templates/header.php';
             </tbody>
         </table>
 
-        <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <span style="color: #666; font-size: 0.9rem;">
+        <div class="pager">
+            <span class="pagination-info">
                 Showing <?= (($page - 1) * $perPage + 1) ?> - <?= min($page * $perPage, $total) ?> of <?= $total ?> domains
             </span>
-            <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+            <ul class="pagination">
                 <?php if ($page > 1): ?>
-                    <a href="/watchlist.php?page=<?= $page - 1 ?><?= $groupFilter !== '' ? '&group=' . urlencode($groupFilter) : '' ?>" class="btn btn-small">« Previous</a>
+                    <li class="waves-effect"><a href="/watchlist.php?page=<?= $page - 1 ?><?= $groupFilter !== '' ? '&group=' . urlencode($groupFilter) : '' ?>" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
+                <?php else: ?>
+                    <li class="disabled"><a href="#!" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
                 <?php endif; ?>
 
                 <?php for ($p = 1; $p <= $totalPages; $p++): ?>
                     <?php if ($p === $page): ?>
-                        <span class="btn btn-small" style="background: #3498db; color: white; cursor: default;"><?= $p ?></span>
+                        <li class="active"><a href="#!"><?= $p ?></a></li>
                     <?php elseif ($p === 1 || $p === $totalPages || abs($p - $page) <= 2): ?>
-                        <a href="/watchlist.php?page=<?= $p ?><?= $groupFilter !== '' ? '&group=' . urlencode($groupFilter) : '' ?>" class="btn btn-small"><?= $p ?></a>
+                        <li class="waves-effect"><a href="/watchlist.php?page=<?= $p ?><?= $groupFilter !== '' ? '&group=' . urlencode($groupFilter) : '' ?>"><?= $p ?></a></li>
                     <?php elseif (abs($p - $page) === 3): ?>
-                        <span style="padding: 5px;">…</span>
+                        <li class="disabled"><a href="#!">…</a></li>
                     <?php endif; ?>
                 <?php endfor; ?>
 
                 <?php if ($page < $totalPages): ?>
-                    <a href="/watchlist.php?page=<?= $page + 1 ?><?= $groupFilter !== '' ? '&group=' . urlencode($groupFilter) : '' ?>" class="btn btn-small">Next »</a>
+                    <li class="waves-effect"><a href="/watchlist.php?page=<?= $page + 1 ?><?= $groupFilter !== '' ? '&group=' . urlencode($groupFilter) : '' ?>" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
+                <?php else: ?>
+                    <li class="disabled"><a href="#!" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
                 <?php endif; ?>
-            </div>
+            </ul>
         </div>
         <?php endif; ?>
     <?php endif; ?>
 </div>
 
 <!-- Domain detail modal -->
-<div id="domain-modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); align-items: center; justify-content: center;">
-    <div style="background: white; padding: 25px; border-radius: 8px; max-width: 520px; width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto;">
-        <h3 id="modal-domain-title" style="margin-top: 0; word-break: break-all;"></h3>
-        <div id="modal-whois-box" style="margin: 15px 0;">
-            <button type="button" id="modal-whois-btn" class="btn" style="width: 100%;" onclick="fetchWhois()">🔍 Fetch WHOIS (worker)</button>
-            <div id="modal-whois-loading" style="display: none; color: #666; font-size: 0.9rem; margin-top: 10px;">Consultando whois...</div>
-            <div id="modal-whois-content" style="display: none; margin-top: 10px;">
-                <table style="width: 100%; font-size: 0.9rem;">
-                    <tr><td style="color: #666; padding: 4px 8px 4px 0;">Creation Date</td><td id="modal-creation" style="font-weight: 600;"></td></tr>
-                    <tr><td style="color: #666; padding: 4px 8px 4px 0;">Expiration Date</td><td id="modal-expiration" style="font-weight: 600;"></td></tr>
-                    <tr><td style="color: #666; padding: 4px 8px 4px 0;">Registrar</td><td id="modal-registrar" style="font-weight: 600;"></td></tr>
-                    <tr><td style="color: #666; padding: 4px 8px 4px 0; vertical-align: top;">Name Servers</td><td id="modal-ns" style="font-weight: 600;"></td></tr>
-                </table>
+<div id="domain-modal" class="custom-modal" role="dialog" aria-modal="true" aria-labelledby="modal-domain-title">
+    <div class="custom-modal-box">
+        <div class="dpanel">
+            <div class="dpanel-header">
+                <h3 id="modal-domain-title"></h3>
+                <button type="button" class="dpanel-close" aria-label="Close dialog" onclick="document.getElementById('domain-modal').style.display='none'"><i class="material-icons">close</i></button>
             </div>
-            <div id="modal-whois-error" style="display: none; color: #c0392b; font-size: 0.9rem; margin-top: 10px;"></div>
-        </div>
-        <div id="modal-watchlist-box" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; display: none;">
-            <div style="font-size: 0.85rem; color: #666; margin-bottom: 6px;">Watchlist</div>
-            <div id="modal-watchlist-current" style="font-weight: 600; margin-bottom: 8px;"></div>
-            <div id="modal-watchlist-actions" style="display: flex; gap: 8px;">
-                <button type="button" id="modal-watchlist-btn" class="btn btn-small" style="flex:1;" onclick="toggleWatchlist(_modalDomain)">⭐ Add to Watchlist</button>
+            <div class="dpanel-section" id="modal-whois-box">
+                <div class="dpanel-section-label">WHOIS Registry Data</div>
+                <button type="button" id="modal-whois-btn" class="btn btn-small waves-effect" style="width:100%; margin-bottom:8px;" onclick="fetchWhois()">Fetch WHOIS (worker)</button>
+                <div id="modal-whois-loading" class="muted" style="display:none; padding:4px 0;">Consultando whois...</div>
+                <div id="modal-whois-content" style="display:none;">
+                    <div class="dpanel-whois-grid">
+                        <div>Creation Date</div><div id="modal-creation"></div>
+                        <div>Expiration Date</div><div id="modal-expiration"></div>
+                        <div>Registrar</div><div id="modal-registrar"></div>
+                        <div>Name Servers</div><div id="modal-ns"></div>
+                    </div>
+                </div>
+                <div id="modal-whois-error" class="text-danger" style="display:none; padding:4px 0;"></div>
+            </div>
+            <div class="dpanel-section" id="modal-tag-box" style="display:none;">
+                <div class="dpanel-section-label">Domain classification</div>
+                <div id="modal-tag-current" class="status-value" style="margin-bottom:8px;">Loading...</div>
+                <div class="dpanel-btn-row">
+                    <button type="button" class="btn btn-small green waves-effect" onclick="tagDomain(_modalDomain, 'good')">Mark Good</button>
+                    <button type="button" class="btn btn-small red waves-effect" onclick="tagDomain(_modalDomain, 'bad')">Mark Bad</button>
+                    <button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain(_modalDomain, '')">Remove</button>
+                </div>
+            </div>
+            <div class="dpanel-section" id="modal-watchlist-box" style="display:none;">
+                <div class="dpanel-section-label">Watchlist</div>
+                <div id="modal-watchlist-current" class="status-value" style="margin-bottom:8px;">Loading...</div>
+                <div class="dpanel-btn-row">
+                    <button type="button" id="modal-watchlist-btn" class="btn btn-small waves-effect" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button>
+                </div>
+            </div>
+            <div class="dpanel-footer">
+                <a id="modal-vt" href="#" target="_blank" class="btn waves-effect indigo"><i class="material-icons left">shield</i>Open in VirusTotal</a>
             </div>
         </div>
-        <div id="modal-tag-box" style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 4px; display: none;">
-            <div style="font-size: 0.85rem; color: #666; margin-bottom: 6px;">Domain classification</div>
-            <div id="modal-tag-current" style="font-weight: 600; margin-bottom: 8px;"></div>
-            <div style="display: flex; gap: 8px;">
-                <button type="button" class="btn btn-small" style="background:#27ae60; flex:1;" onclick="tagDomain(_modalDomain, 'good')">Mark Good</button>
-                <button type="button" class="btn btn-small" style="background:#c0392b; flex:1;" onclick="tagDomain(_modalDomain, 'bad')">Mark Bad</button>
-                <button type="button" class="btn btn-small btn-danger" style="flex:1;" onclick="tagDomain(_modalDomain, '')">Remove</button>
-            </div>
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 15px;">
-            <a id="modal-vt" href="#" target="_blank" class="btn" style="text-align: center; background: #3949ab;">🛡️ Open in VirusTotal</a>
-        </div>
-        <button onclick="document.getElementById('domain-modal').style.display='none'" class="btn btn-danger" style="margin-top: 15px; width: 100%;">Close</button>
     </div>
 </div>
 
@@ -349,13 +365,13 @@ function loadWatchlistStatus(domain) {
             const box = document.getElementById('modal-watchlist-current');
             const btn = document.getElementById('modal-watchlist-btn');
             if (data.in_watchlist) {
-                box.innerHTML = '<span style="color: #f39c12;">⭐ In watchlist</span>' + (data.note ? ' — ' + htmlspecialchars(data.note) : '');
+                box.innerHTML = '<span style="color:#f39c12; font-weight:700;">In watchlist</span>' + (data.note ? ' — ' + htmlspecialchars(data.note) : '');
                 btn.textContent = 'Remove from Watchlist';
-                btn.style.background = '#e74c3c';
+                btn.classList.add('btn-danger');
             } else {
                 box.textContent = 'Not in watchlist';
-                btn.textContent = '⭐ Add to Watchlist';
-                btn.style.background = '';
+                btn.textContent = 'Add to Watchlist';
+                btn.classList.remove('btn-danger');
             }
         })
         .catch(() => {

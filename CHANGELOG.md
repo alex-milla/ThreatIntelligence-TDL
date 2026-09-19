@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.57] - 2026-09-19
+
+### Web UI — Materialize CSS integration
+- **Full UI migration to Materialize CSS v2.3.3** (already bundled in `public_html/css`). `main.css` replaced by `css/app.css`; new `js/app.js` initialises components.
+- **100% self-hosted, shared-hosting friendly**: Roboto + Material Icons are served locally from `public_html/fonts/` via `css/fonts.css` (no Google Fonts/CDN dependency). `.htaccess` declares the `.woff2` MIME type.
+- **Layout**: Materialize navbar (`deep-purple`) with mobile sidenav, native dropdowns for Admin/Account, active-page highlighting and a footer showing the version.
+- **Dashboard**: KPI stat-cards with icons, worker-health banner, 30-day sparkline, striped/hover tables and the inline domain-detail panel restyled.
+- **Keywords / Notifications / Watchlist / Account / Login / Register**: `input-field` with floating labels and icons, Materialize switches, status badges, tag chips, action menus with Material icons, Materialize pagination and group chips.
+- **Admin**: tabbed panel, Materialize progress bars for live worker/recheck, `status-*` badges, restyled users/commands/sync/tables, update and cleanup pages, and the standalone installer.
+- **Fase 7 polish**: active nav state + `aria-current`, `aria-label` on icon-only controls, keyboard focus outline, fixed-position row action menus (no clipping on small screens) and mobile responsive tweaks.
+- **Fixed**: created `public_html/VERSION` (was only at repo root) so `auth.php`/`update.php`/footer report the version correctly and worker version-mismatch detection works.
+- **CI**: GitHub Actions workflow (`.github/workflows/ci.yml`) runs `php -l` over all PHP files and the Python worker unit tests on every push/PR to `main`.
+
+## [v1.3.55] - 2026-09-19
+
+### Layout
+- **Web files migrated to `public_html/`**: all PHP, assets, `admin/`, `api/`, `templates/` moved under `public_html/` so the web DocumentRoot excludes `data/`, `worker/` and `env/`. PHP includes keep using `__DIR__`; absolute web paths are unchanged. `.htaccess` hardened.
+
+## [v1.3.54] - 2026-09-19
+
+### Web UI
+- **Domain detail as an expandable table row** (`toggleDomainDetail`): replaces the overlay modal with a `<tr class="dpanel-row">` inserted below the clicked row, one panel open at a time. New `.dpanel-*` styles; the old overlay modal was removed.
+
+## [v1.3.53] - 2026-09-19
+
+### Web UI
+- **Domain detail modal redesign** (index/notifications): structured header, labelled WHOIS grid, classification/watchlist sections and footer; CSS moved to the stylesheet; `style.display` toggling replaced by class toggle.
+
+## [v1.3.52] - 2026-09-19
+
+### Fix
+- **Timezone**: all DB timestamps are UTC; added `fmt_date()` (UTC → Europe/Madrid) and applied it to every date displayed in the dashboard, notifications, watchlist, keywords, admin (worker/commands/logs/sync/recheck/TLDs) and the AJAX status endpoints.
+
+## [v1.3.51] - 2026-09-19
+
+### Web UI
+- CSS extracted from `header.php` into an external stylesheet; navbar dropdowns switched from hover to click (no layout shift on load); **TLDs** promoted to a top-level navbar link; sticky navbar; **Email preferences** moved to `account.php`; responsive media queries for mobile.
+
 ## [v1.3.50] - 2026-09-19
 
 ### Fix

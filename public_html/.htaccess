@@ -11,3 +11,9 @@ RewriteRule ^\./ - [F,L]
 # RewriteCond %{REQUEST_FILENAME} !-f
 # RewriteCond %{REQUEST_FILENAME} !-d
 # RewriteRule ^(.*)$ index.php [QSA,L]
+
+# Correct MIME type for self-hosted web fonts (shared hosting)
+<IfModule mod_mime.c>
+    AddType font/woff2 .woff2
+    AddType font/woff .woff
+</IfModule>

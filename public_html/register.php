@@ -48,31 +48,38 @@ $pageTitle = 'Register';
 require __DIR__ . '/templates/header.php';
 ?>
 
-<div class="card" style="max-width: 400px; margin: 60px auto;">
-    <h2>Register</h2>
+<div class="card auth-card">
+    <div class="auth-logo">
+        <i class="material-icons">person_add</i>
+        <h2>Create account</h2>
+    </div>
+    <p class="muted">Register to start monitoring domains</p>
     <?php if ($error): ?>
-        <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
+        <div class="alert alert-error"><i class="material-icons left">error</i><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
     <?php if ($registrationClosed): ?>
-        <div class="alert alert-error">Registration is currently closed. Contact the administrator.</div>
+        <div class="alert alert-error"><i class="material-icons left">lock</i>Registration is currently closed. Contact the administrator.</div>
     <?php else: ?>
     <form method="POST">
         <?php csrfField(); ?>
-        <div class="form-group">
-            <label>Username</label>
-            <input type="text" name="username" required minlength="3">
+        <div class="input-field">
+            <i class="material-icons prefix">person</i>
+            <input id="username" type="text" name="username" class="validate" placeholder=" " required minlength="3">
+            <label for="username">Username</label>
         </div>
-        <div class="form-group">
-            <label>Email</label>
-            <input type="email" name="email" required>
+        <div class="input-field">
+            <i class="material-icons prefix">email</i>
+            <input id="email" type="email" name="email" class="validate" placeholder=" " required>
+            <label for="email">Email</label>
         </div>
-        <div class="form-group">
-            <label>Password</label>
-            <input type="password" name="password" required minlength="8">
+        <div class="input-field">
+            <i class="material-icons prefix">lock</i>
+            <input id="password" type="password" name="password" class="validate" placeholder=" " required minlength="8">
+            <label for="password">Password</label>
         </div>
-        <button type="submit" class="btn">Register</button>
+        <button type="submit" class="btn waves-effect" style="width:100%;"><i class="material-icons left">person_add</i>Register</button>
     </form>
-    <p style="margin-top: 15px;"><a href="/login.php">Already have an account?</a></p>
+    <p style="margin-top: 16px;">Already have an account? <a href="/login.php">Login</a></p>
     <?php endif; ?>
 </div>
 

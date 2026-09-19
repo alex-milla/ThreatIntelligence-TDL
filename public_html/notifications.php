@@ -202,72 +202,75 @@ require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="card-head">
         <h2>Notifications</h2>
         <?php if (!empty($notifications) || $hiddenCount > 0): ?>
-        <div style="display: flex; gap: 10px; align-items: center;">
-            <form method="POST" style="margin: 0;">
-                <?php csrfField(); ?>
-                <input type="hidden" name="action" value="mark_all_read">
-                <button type="submit" class="btn btn-small">Mark All Read</button>
-            </form>
-        </div>
+        <form method="POST" style="margin: 0;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="mark_all_read">
+            <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">done_all</i>Mark All Read</button>
+        </form>
         <?php endif; ?>
     </div>
 
-    <form method="GET" id="filter-form" style="margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-        <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Search domain, TLD or keyword..." style="flex: 1; min-width: 200px; padding: 8px;">
-        <select name="date" style="padding: 8px;">
+    <form method="GET" id="filter-form" class="filter-form">
+        <div class="input-field">
+            <i class="material-icons prefix">search</i>
+            <input id="q" type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder=" ">
+            <label for="q">Search domain, TLD or keyword</label>
+        </div>
+        <select name="date" class="browser-default compact">
             <option value="all" <?= $dateFilter === 'all' ? 'selected' : '' ?>>All time</option>
             <option value="24h" <?= $dateFilter === '24h' ? 'selected' : '' ?>>Last 24h</option>
             <option value="7d" <?= $dateFilter === '7d' ? 'selected' : '' ?>>Last 7 days</option>
             <option value="30d" <?= $dateFilter === '30d' ? 'selected' : '' ?>>Last 30 days</option>
         </select>
-        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+        <label class="check-inline">
             <input type="checkbox" name="unread_only" value="1" <?= $unreadOnly ? 'checked' : '' ?>>
-            Unread only
+            <span>Unread only</span>
         </label>
-        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-            <span style="color: #666; font-size: 0.9rem;">Created ≤</span>
-            <input type="number" name="new_days" value="<?= $newDays ?? $defaultNewDays ?>" min="1" max="365" style="width: 50px; padding: 4px;">
-            <span style="color: #666; font-size: 0.9rem;">day(s)</span>
-        </label>
-        <button type="submit" class="btn btn-small">Search</button>
+        <div class="check-inline">
+            <span class="muted">Created &le;</span>
+            <input type="number" name="new_days" value="<?= $newDays ?? $defaultNewDays ?>" min="1" max="365" class="browser-default compact num-input">
+            <span class="muted">day(s)</span>
+        </div>
+        <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">search</i>Search</button>
         <?php if ($search !== '' || $unreadOnly || $newDays !== null || $dateFilter !== 'all'): ?>
-        <a href="/notifications.php" class="btn btn-small btn-danger">Clear</a>
+        <a href="/notifications.php" class="btn btn-small btn-danger waves-effect"><i class="material-icons left">clear</i>Clear</a>
         <?php endif; ?>
     </form>
 
     <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all'): ?>
-    <form method="POST" style="margin-bottom: 15px;">
+    <form method="POST" class="section-actions">
         <?php csrfField(); ?>
         <input type="hidden" name="action" value="delete_all_matching">
         <input type="hidden" name="q" value="<?= htmlspecialchars($search) ?>">
         <input type="hidden" name="date" value="<?= htmlspecialchars($dateFilter) ?>">
         <input type="hidden" name="unread_only" value="<?= $unreadOnly ? '1' : '0' ?>">
-        <button type="submit" class="btn btn-danger" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')">Delete All Matching Results (<?= $total ?>)</button>
+        <button type="submit" class="btn btn-danger waves-effect" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')"><i class="material-icons left">delete_sweep</i>Delete All Matching Results (<?= $total ?>)</button>
     </form>
     <?php endif; ?>
-    
+
     <?php if ($hiddenCount > 0): ?>
-        <div style="margin-bottom: 12px; padding: 8px 12px; background: #fff3cd; border-radius: 4px; font-size: 0.9rem; color: #856404;">
-            ⭐ <?= $hiddenCount ?> notification(s) hidden because the domain(s) are in your <a href="/watchlist.php" style="color: #856404; text-decoration: underline;">Watchlist</a>.
+        <div class="card-panel amber lighten-4 amber-text text-darken-4">
+            <i class="material-icons left">star</i><?= $hiddenCount ?> notification(s) hidden because the domain(s) are in your <a href="/watchlist.php" class="amber-text text-darken-4"><strong>Watchlist</strong></a>.
         </div>
     <?php endif; ?>
     <?php if (empty($notifications)): ?>
-        <p>No notifications to display.<?php if ($hiddenCount > 0): ?> The remaining <?= $hiddenCount ?> are in your <a href="/watchlist.php">Watchlist</a>.<?php endif; ?></p>
+        <p class="muted">No notifications to display.<?php if ($hiddenCount > 0): ?> The remaining <?= $hiddenCount ?> are in your <a href="/watchlist.php">Watchlist</a>.<?php endif; ?></p>
     <?php else: ?>
         <form method="POST" id="bulk-form">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="delete_selected">
-            <div style="margin-bottom: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                <label style="display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
-                    <input type="checkbox" id="select-all"> <strong>Select all visible</strong>
+            <div class="section-actions">
+                <label class="check-inline">
+                    <input type="checkbox" id="select-all">
+                    <span><strong>Select all visible</strong></span>
                 </label>
-                <button type="submit" class="btn btn-small btn-danger" onclick="return confirm('Delete selected notifications?')">Delete Selected</button>
-                <button type="button" class="btn btn-small" onclick="fetchVisibleWhois()">Fetch WHOIS (worker)</button>
+                <button type="submit" class="btn btn-small btn-danger waves-effect" onclick="return confirm('Delete selected notifications?')"><i class="material-icons left">delete</i>Delete Selected</button>
+                <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
                 <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all'): ?>
-                <button type="submit" formaction="/notifications.php" formmethod="POST" class="btn btn-small btn-danger" name="action" value="delete_all_matching" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')">Delete All Matching (<?= $total ?>)</button>
+                <button type="submit" formaction="/notifications.php" formmethod="POST" class="btn btn-small btn-danger waves-effect" name="action" value="delete_all_matching" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')"><i class="material-icons left">delete_sweep</i>Delete All Matching (<?= $total ?>)</button>
                 <?php endif; ?>
             </div>
             <!-- Hidden filter params for delete_all_matching -->
@@ -277,7 +280,7 @@ require __DIR__ . '/templates/header.php';
             <input type="hidden" name="unread_only" value="<?= $unreadOnly ? '1' : '0' ?>">
             <?php endif; ?>
         </form>
-        <table>
+        <table class="striped highlight responsive-table">
             <thead>
                 <tr>
                     <th style="width: 30px;"></th>
@@ -296,9 +299,9 @@ require __DIR__ . '/templates/header.php';
                     $dtag = $domainTags[$n['domain']] ?? null;
                     $tagBadge = '';
                     if ($dtag) {
-                        $color = $dtag['tag'] === 'good' ? '#27ae60' : '#c0392b';
+                        $cls = $dtag['tag'] === 'good' ? 'good' : 'bad';
                         $label = $dtag['tag'] === 'good' ? 'GOOD' : 'BAD';
-                        $tagBadge = ' <span style="display:inline-block;background:'.$color.';color:#fff;font-size:0.7rem;padding:1px 5px;border-radius:3px;margin-left:4px;">'.$label.'</span>';
+                        $tagBadge = ' <span class="tag-chip ' . $cls . '">' . $label . '</span>';
                     }
                     $whoisRow = $domainWhois[$n['domain']] ?? null;
                     $creationDate = $whoisRow['creation_date'] ?? null;
@@ -312,35 +315,35 @@ require __DIR__ . '/templates/header.php';
                     $creationDisplay = $creationDate ? substr(fmt_date($creationDate), 0, 10) : '—';
                 ?>
                 <tr class="<?= $n['is_read'] ? '' : 'unread' ?>" data-domain="<?= htmlspecialchars($n['domain']) ?>">
-                    <td><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form"></td>
-                    <td><?= $n['is_read'] ? 'Read' : '<strong>Unread</strong>' ?></td>
-                    <td><a href="javascript:void(0)" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($n['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($n['domain']) ?></a><?= $tagBadge ?></td>
+                    <td><label><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form"><span></span></label></td>
+                    <td><?= $n['is_read'] ? '<span class="status-badge status-cancelled">Read</span>' : '<span class="status-badge status-pending">Unread</span>' ?></td>
+                    <td><a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><?= htmlspecialchars($n['domain']) ?></a><?= $tagBadge ?></td>
                     <td><?= htmlspecialchars($n['tld']) ?></td>
                     <td><?= htmlspecialchars($n['keyword']) ?></td>
                     <td><?= htmlspecialchars(fmt_date($n['first_seen'])) ?></td>
-                    <td><?= htmlspecialchars($creationDisplay) ?><?php if ($isNew): ?> <span class="badge-new">🆕 New</span><?php endif; ?></td>
+                    <td><?= htmlspecialchars($creationDisplay) ?><?php if ($isNew): ?> <span class="badge-new">NEW</span><?php endif; ?></td>
                     <td><?= htmlspecialchars(fmt_date($n['discovered_at'])) ?></td>
                     <td>
                         <div class="action-menu">
-                            <button type="button" class="action-menu-btn" onclick="toggleMenu(this)">⋮</button>
+                            <button type="button" class="action-menu-btn" aria-label="Row actions" aria-haspopup="true" onclick="toggleMenu(this)"><i class="material-icons">more_vert</i></button>
                             <div class="action-menu-dropdown">
                                 <?php if (!$n['is_read']): ?>
                                 <form method="POST" style="margin: 0;">
                                     <?php csrfField(); ?>
                                     <input type="hidden" name="action" value="mark_read">
                                     <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
-                                    <button type="submit">✉️ Mark as read</button>
+                                    <button type="submit"><i class="material-icons">mark_email_read</i>Mark as read</button>
                                 </form>
                                 <?php endif; ?>
-                                <button type="button" class="menu-good" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','good')">✅ Mark Good</button>
-                                <button type="button" class="menu-bad" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','bad')">❌ Mark Bad</button>
-                                <button type="button" onclick="toggleWatchlist('<?= htmlspecialchars(addslashes($n['domain'])) ?>')">⭐ Add to Watchlist</button>
+                                <button type="button" class="menu-good" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','good')"><i class="material-icons">thumb_up</i>Mark Good</button>
+                                <button type="button" class="menu-bad" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','bad')"><i class="material-icons">thumb_down</i>Mark Bad</button>
+                                <button type="button" onclick="toggleWatchlist('<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><i class="material-icons">star</i>Add to Watchlist</button>
                                 <hr>
                                 <form method="POST" style="margin: 0;" onsubmit="return confirm('Delete this notification?')">
                                     <?php csrfField(); ?>
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="notif_id" value="<?= (int)$n['id'] ?>">
-                                    <button type="submit" class="menu-danger">🗑️ Delete</button>
+                                    <button type="submit" class="menu-danger"><i class="material-icons">delete</i>Delete</button>
                                 </form>
                             </div>
                         </div>
@@ -350,29 +353,33 @@ require __DIR__ . '/templates/header.php';
             </tbody>
         </table>
 
-        <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <span style="color: #666; font-size: 0.9rem;">
+        <div class="pager">
+            <span class="pagination-info">
                 Showing <?= (($page - 1) * $perPage + 1) ?> - <?= min($page * $perPage, $total) ?> of <?= $total ?> notifications
             </span>
-            <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+            <ul class="pagination">
                 <?php if ($page > 1): ?>
-                    <a href="<?= htmlspecialchars(notifUrl($page - 1, $search, $dateFilter, $unreadOnly, $newDays)) ?>" class="btn btn-small">« Previous</a>
+                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page - 1, $search, $dateFilter, $unreadOnly, $newDays)) ?>" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
+                <?php else: ?>
+                    <li class="disabled"><a href="#!" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
                 <?php endif; ?>
 
                 <?php for ($p = 1; $p <= $totalPages; $p++): ?>
                     <?php if ($p === $page): ?>
-                        <span class="btn btn-small" style="background: #3498db; color: white; cursor: default;"><?= $p ?></span>
+                        <li class="active"><a href="#!"><?= $p ?></a></li>
                     <?php elseif ($p === 1 || $p === $totalPages || abs($p - $page) <= 2): ?>
-                        <a href="<?= htmlspecialchars(notifUrl($p, $search, $dateFilter, $unreadOnly, $newDays)) ?>" class="btn btn-small"><?= $p ?></a>
+                        <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($p, $search, $dateFilter, $unreadOnly, $newDays)) ?>"><?= $p ?></a></li>
                     <?php elseif (abs($p - $page) === 3): ?>
-                        <span style="padding: 5px;">…</span>
+                        <li class="disabled"><a href="#!">…</a></li>
                     <?php endif; ?>
                 <?php endfor; ?>
 
                 <?php if ($page < $totalPages): ?>
-                    <a href="<?= htmlspecialchars(notifUrl($page + 1, $search, $dateFilter, $unreadOnly, $newDays)) ?>" class="btn btn-small">Next »</a>
+                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page + 1, $search, $dateFilter, $unreadOnly, $newDays)) ?>" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
+                <?php else: ?>
+                    <li class="disabled"><a href="#!" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
                 <?php endif; ?>
-            </div>
+            </ul>
         </div>
 
         <script>
@@ -380,17 +387,41 @@ require __DIR__ . '/templates/header.php';
             document.querySelectorAll('.row-check').forEach(cb => cb.checked = e.target.checked);
         });
 
+        function closeActionMenus() {
+            document.querySelectorAll('.action-menu-dropdown.active').forEach(function (d) {
+                d.classList.remove('active');
+                d.style.position = '';
+                d.style.top = '';
+                d.style.left = '';
+            });
+        }
         function toggleMenu(btn) {
             const dropdown = btn.nextElementSibling;
             const isOpen = dropdown.classList.contains('active');
-            document.querySelectorAll('.action-menu-dropdown').forEach(d => d.classList.remove('active'));
-            if (!isOpen) dropdown.classList.add('active');
+            closeActionMenus();
+            if (isOpen) return;
+            // Fixed positioning escapes the table's overflow clipping on small screens.
+            dropdown.classList.add('active');
+            const r = btn.getBoundingClientRect();
+            const w = dropdown.offsetWidth || 200;
+            let left = r.right - w;
+            if (left < 8) left = 8;
+            const maxLeft = window.innerWidth - w - 8;
+            if (left > maxLeft) left = Math.max(8, maxLeft);
+            let top = r.bottom + 4;
+            const h = dropdown.offsetHeight || 0;
+            if (top + h > window.innerHeight - 8) {
+                top = Math.max(8, r.top - h - 4);
+            }
+            dropdown.style.position = 'fixed';
+            dropdown.style.top = top + 'px';
+            dropdown.style.left = left + 'px';
         }
         document.addEventListener('click', function(e) {
-            if (!e.target.closest('.action-menu')) {
-                document.querySelectorAll('.action-menu-dropdown').forEach(d => d.classList.remove('active'));
-            }
+            if (!e.target.closest('.action-menu')) closeActionMenus();
         });
+        window.addEventListener('scroll', closeActionMenus, true);
+        window.addEventListener('resize', closeActionMenus);
         </script>
     <?php endif; ?>
 </div>
@@ -401,12 +432,12 @@ function buildPanelHtml(domain) {
     return '<div class="dpanel">'
         + '<div class="dpanel-header">'
         +   '<h3 id="modal-domain-title"></h3>'
-        +   '<button type="button" class="dpanel-close" onclick="closeDomainDetail()">&#10005;</button>'
+        +   '<button type="button" class="dpanel-close" aria-label="Close panel" onclick="closeDomainDetail()"><i class="material-icons">close</i></button>'
         + '</div>'
         + '<div class="dpanel-section">'
         +   '<div class="dpanel-section-label">WHOIS Registry Data</div>'
-        +   '<button type="button" id="modal-whois-btn" class="btn btn-small" style="width:100%; margin-bottom:8px;" onclick="fetchWhois()">Fetch WHOIS via worker</button>'
-        +   '<div id="modal-whois-loading" style="display:none; color:#888; font-size:0.85rem; padding:4px 0;">Consultando WHOIS...</div>'
+        +   '<button type="button" id="modal-whois-btn" class="btn btn-small waves-effect" style="width:100%; margin-bottom:8px;" onclick="fetchWhois()">Fetch WHOIS via worker</button>'
+        +   '<div id="modal-whois-loading" class="muted" style="display:none; padding:4px 0;">Consultando WHOIS...</div>'
         +   '<div id="modal-whois-content" style="display:none;">'
         +     '<div class="dpanel-whois-grid">'
         +       '<div>Creation Date</div><div id="modal-creation"></div>'
@@ -415,23 +446,23 @@ function buildPanelHtml(domain) {
         +       '<div>Name Servers</div><div id="modal-ns"></div>'
         +     '</div>'
         +   '</div>'
-        +   '<div id="modal-whois-error" style="display:none; color:#c0392b; font-size:0.85rem; padding:4px 0;"></div>'
+        +   '<div id="modal-whois-error" class="text-danger" style="display:none; padding:4px 0;"></div>'
         + '</div>'
         + '<div class="dpanel-section" id="modal-tag-box">'
         +   '<div class="dpanel-section-label">Classification</div>'
-        +   '<div class="dpanel-status-row"><span style="color:#888;">Status:</span><span class="status-value" id="modal-tag-current">Loading...</span></div>'
+        +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-tag-current">Loading...</span></div>'
         +   '<div class="dpanel-btn-row">'
-        +     '<button type="button" class="btn btn-small" style="background:#27ae60;" onclick="tagDomain(_modalDomain, \'good\')">Mark Good</button>'
-        +     '<button type="button" class="btn btn-small" style="background:#c0392b;" onclick="tagDomain(_modalDomain, \'bad\')">Mark Bad</button>'
-        +     '<button type="button" class="btn btn-small btn-danger" onclick="tagDomain(_modalDomain, \'\')">Clear</button>'
+        +     '<button type="button" class="btn btn-small green waves-effect" onclick="tagDomain(_modalDomain, \'good\')">Mark Good</button>'
+        +     '<button type="button" class="btn btn-small red waves-effect" onclick="tagDomain(_modalDomain, \'bad\')">Mark Bad</button>'
+        +     '<button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain(_modalDomain, \'\')">Clear</button>'
         +   '</div>'
         + '</div>'
         + '<div class="dpanel-section" id="modal-watchlist-box">'
         +   '<div class="dpanel-section-label">Watchlist</div>'
-        +   '<div class="dpanel-status-row"><span style="color:#888;">Status:</span><span class="status-value" id="modal-watchlist-current">Loading...</span></div>'
-        +   '<div class="dpanel-btn-row"><button type="button" id="modal-watchlist-btn" class="btn btn-small" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button></div>'
+        +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-watchlist-current">Loading...</span></div>'
+        +   '<div class="dpanel-btn-row"><button type="button" id="modal-watchlist-btn" class="btn btn-small waves-effect" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button></div>'
         + '</div>'
-        + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn" style="background:#3949ab;">Open in VirusTotal</a></div>'
+        + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn waves-effect indigo"><i class="material-icons left">shield</i>Open in VirusTotal</a></div>'
         + '</div>';
 }
 function toggleDomainDetail(linkEl, domain) {
@@ -490,11 +521,11 @@ function loadWatchlistStatus(domain) {
                 if (data.note) html += ' &mdash; ' + htmlspecialchars(data.note);
                 box.innerHTML = html;
                 btn.textContent = 'Remove from Watchlist';
-                btn.style.background = '#e74c3c';
+                btn.classList.add('btn-danger');
             } else {
                 box.textContent = 'Not in watchlist';
                 btn.textContent = 'Add to Watchlist';
-                btn.style.background = '';
+                btn.classList.remove('btn-danger');
             }
         })
         .catch(() => {

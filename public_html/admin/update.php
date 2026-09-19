@@ -347,51 +347,56 @@ if (is_dir($backupBase)) {
 ?>
 
 <div class="card">
-    <h2>System Update</h2>
+    <div class="card-head"><h2>System Update</h2></div>
     <p>This checks the latest <strong>GitHub Release</strong> and updates the application files.</p>
     <p><strong>Repository:</strong> <?= htmlspecialchars("{$repoOwner}/{$repoName}") ?></p>
 
-    <table style="margin: 15px 0;">
+    <table class="striped">
+        <tbody>
         <tr><td><strong>Installed version:</strong></td><td>v<?= htmlspecialchars($currentVersion) ?></td></tr>
         <tr><td><strong>Latest release:</strong></td><td><?= $remoteVersion ? 'v' . htmlspecialchars($remoteVersion) : '<em>Unknown</em>' ?></td></tr>
         <?php if ($publishedAt): ?>
         <tr><td><strong>Published:</strong></td><td><?= htmlspecialchars($publishedAt) ?></td></tr>
         <?php endif; ?>
+        </tbody>
     </table>
 
     <?php if ($releaseNotes): ?>
-    <details style="margin-bottom: 15px;">
+    <details class="release-notes">
         <summary>Release Notes</summary>
-        <pre style="background: #f8f9fa; padding: 12px; border-radius: 4px; white-space: pre-wrap;"><?= htmlspecialchars($releaseNotes) ?></pre>
+        <pre><?= htmlspecialchars($releaseNotes) ?></pre>
     </details>
     <?php endif; ?>
 
     <?php if ($error): ?>
-        <div class="alert alert-error"><?= $error ?></div>
+        <div class="alert alert-error"><i class="material-icons left">error</i><?= $error ?></div>
     <?php endif; ?>
     <?php if ($info): ?>
-        <div class="alert alert-success"><?= $info ?></div>
+        <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= $info ?></div>
     <?php endif; ?>
 
     <?php if (!$githubToken && $release === null): ?>
-    <div class="alert alert-error" style="margin-bottom: 15px;">
+    <div class="alert alert-error">
+        <i class="material-icons left">vpn_key</i>
         <strong>Private repository detected or rate limited.</strong><br>
         Create a file <code>data/.github_token</code> with a GitHub Personal Access Token to access releases.
     </div>
     <?php endif; ?>
 
-    <form method="POST" style="margin-bottom: 10px;">
-        <?php csrfField(); ?>
-        <button type="submit" class="btn">Check & Install Latest Release</button>
-    </form>
+    <div class="section-actions">
+        <form method="POST">
+            <?php csrfField(); ?>
+            <button type="submit" class="btn waves-effect"><i class="material-icons left">system_update</i>Check &amp; Install Latest Release</button>
+        </form>
 
-    <form method="POST">
-        <?php csrfField(); ?>
-        <input type="hidden" name="force" value="1">
-        <button type="submit" class="btn btn-danger">Force Reinstall Latest Release</button>
-    </form>
+        <form method="POST">
+            <?php csrfField(); ?>
+            <input type="hidden" name="force" value="1">
+            <button type="submit" class="btn btn-danger waves-effect"><i class="material-icons left">restart_alt</i>Force Reinstall Latest Release</button>
+        </form>
+    </div>
 
-    <p style="margin-top: 15px; color: #666; font-size: 0.9rem;">
+    <p class="muted">
         <strong>Note:</strong> Your database (<code>data/app.db</code>) and config files will not be overwritten.<br>
         A full backup of application files and <code>worker/</code> is created automatically before every update.<br>
         <?php if ($release === null): ?><strong>Diagnosis:</strong> No GitHub release found. Create one at <code>https://github.com/alex-milla/ThreatIntelligence-TDL/releases</code> or check your token if the repo is private.<?php endif; ?>
@@ -400,9 +405,9 @@ if (is_dir($backupBase)) {
 
 <?php if (!empty($backups)): ?>
 <div class="card">
-    <h2>Backups</h2>
+    <div class="card-head"><h2>Backups</h2></div>
     <p>Stored in <code>data/backups/</code></p>
-    <table>
+    <table class="striped highlight">
         <thead>
             <tr><th>Backup</th><th>Size</th></tr>
         </thead>

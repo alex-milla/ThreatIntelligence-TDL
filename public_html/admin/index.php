@@ -9,15 +9,16 @@ unset($_SESSION['flash_message']);
 
 function commandStatusBadge(string $status): string {
     $map = [
-        'pending'   => ['#fff3cd', '#856404', 'Pending'],
-        'running'   => ['#cce5ff', '#004085', 'Running'],
-        'completed' => ['#d4edda', '#155724', 'Completed'],
-        'failed'    => ['#f8d7da', '#721c24', 'Failed'],
-        'cancelled' => ['#e2e3e5', '#383d41', 'Cancelled'],
+        'pending'   => 'Pending',
+        'running'   => 'Running',
+        'completed' => 'Completed',
+        'failed'    => 'Failed',
+        'cancelled' => 'Cancelled',
     ];
-    [$bg, $color, $label] = $map[$status] ?? ['#e2e3e5', '#383d41', htmlspecialchars($status)];
-    return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.78rem;'
-        . 'background:' . $bg . ';color:' . $color . ';white-space:nowrap;">' . $label . '</span>';
+    $known = isset($map[$status]);
+    $cls = $known ? $status : 'cancelled';
+    $label = $known ? $map[$status] : htmlspecialchars($status);
+    return '<span class="status-badge status-' . $cls . '">' . $label . '</span>';
 }
 
 function humanDuration(?string $from, ?string $to): string {
@@ -154,25 +155,28 @@ require __DIR__ . '/../templates/header.php';
 ?>
 
 <?php if ($message): ?>
-<div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
+<div class="alert alert-success"><i class="material-icons left">check_circle</i><?= htmlspecialchars($message) ?></div>
 <?php endif; ?>
 
 <?php if ($versionMismatch): ?>
 <div class="alert alert-error">
-    <strong>&#9888; Worker out of date.</strong>
+    <i class="material-icons left">warning</i>
+    <strong>Worker out of date.</strong>
     The web app is <strong>v<?= htmlspecialchars($versionMismatch['app']) ?></strong> but the worker is running
     <strong>v<?= htmlspecialchars($versionMismatch['worker']) ?></strong>.
     Queue an update below (or run <code>bash worker/update.sh --restart</code> on the worker host).
     <form method="POST" style="display: inline; margin-left: 8px;">
         <?php csrfField(); ?>
         <input type="hidden" name="action" value="update_worker">
-        <button type="submit" class="btn btn-small">Update Worker Now</button>
+        <button type="submit" class="btn btn-small waves-effect">Update Worker Now</button>
     </form>
 </div>
 <?php endif; ?>
 
 <div class="card <?= (($workerStatus['is_running'] ?? 0) && ($workerStatus['total_tlds'] ?? 0) > 0) ? '' : 'is-hidden' ?>" id="live-worker-card">
-    <h2>Live Worker Progress</h2>
+    <div class="card-head">
+        <h2><i class="material-icons left">memory</i>Live Worker Progress</h2>
+    </div>
     <div id="live-worker-container">
         <?php
         $lwTotal = (int)($workerStatus['total_tlds'] ?? 0);
@@ -182,8 +186,8 @@ require __DIR__ . '/../templates/header.php';
         <p><strong>Command:</strong> <span id="live-command"><?= htmlspecialchars($workerStatus['current_command'] ?? '—') ?></span></p>
         <p><strong>Action:</strong> <span id="live-action"><?= htmlspecialchars($workerStatus['current_action'] ?? '—') ?></span></p>
         <p><strong>Current TLD:</strong> <span id="live-tld"><?= htmlspecialchars($workerStatus['current_tld'] ?? '—') ?></span></p>
-        <div style="background: #f0f0f0; border-radius: 4px; height: 24px; margin: 10px 0; overflow: hidden;">
-            <div id="live-bar" style="background: #3498db; width: <?= $lwPct ?>%; height: 100%; transition: width 0.5s;"></div>
+        <div class="progress">
+            <div id="live-bar" class="determinate" style="width: <?= $lwPct ?>%;"></div>
         </div>
         <p id="live-text">
             Processed <strong id="live-done"><?= number_format($lwDone) ?></strong> of <strong id="live-total"><?= number_format($lwTotal) ?></strong> TLDs
@@ -192,15 +196,6 @@ require __DIR__ . '/../templates/header.php';
     </div>
 </div>
 
-<style>
-.admin-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid #e2e2e8; margin: 0 0 20px; padding: 0; }
-.admin-tabs a { padding: 10px 16px; text-decoration: none; color: #666; font-weight: 600; font-size: 0.95rem; border-radius: 6px 6px 0 0; border: 1px solid transparent; border-bottom: none; cursor: pointer; }
-.admin-tabs a:hover { background: #f0f0f5; color: #333; }
-.admin-tabs a.active { background: #fff; color: #1a1a2e; border-color: #e2e2e8; margin-bottom: -2px; }
-.admin-pane { display: none; }
-.admin-pane.active { display: block; }
-.is-hidden { display: none !important; }
-</style>
 <nav class="admin-tabs" id="admin-tabs">
     <a href="#overview" data-tab="overview" class="active">Overview</a>
     <a href="#worker" data-tab="worker">Worker</a>
@@ -213,35 +208,35 @@ require __DIR__ . '/../templates/header.php';
 </nav>
 
 <div class="card admin-pane active" data-tab="overview">
-    <h2>Quick actions</h2>
-    <p style="color:#666; font-size:0.9rem; margin-top:0;">Queue a command for the worker. It runs on the next poll (every ~20 s).</p>
-    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px;">
-        <form method="POST" style="display: inline;">
+    <div class="card-head"><h2>Quick actions</h2></div>
+    <p class="muted">Queue a command for the worker. It runs on the next poll (every ~20 s).</p>
+    <div class="section-actions">
+        <form method="POST">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="run_worker">
-            <button type="submit" class="btn">Run Worker Now</button>
+            <button type="submit" class="btn waves-effect"><i class="material-icons left">play_arrow</i>Run Worker Now</button>
         </form>
-        <form method="POST" style="display: inline;">
+        <form method="POST">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="recheck_keywords">
-            <button type="submit" class="btn btn-danger">Recheck Keywords</button>
+            <button type="submit" class="btn amber darken-2 waves-effect"><i class="material-icons left">search</i>Recheck Keywords</button>
         </form>
-        <form method="POST" style="display: inline;">
+        <form method="POST">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="update_worker">
-            <button type="submit" class="btn" onclick="return confirm('Update the worker on its host (git pull + restart)? The web app is not affected.')">Update Worker</button>
+            <button type="submit" class="btn waves-effect" onclick="return confirm('Update the worker on its host (git pull + restart)? The web app is not affected.')"><i class="material-icons left">system_update</i>Update Worker</button>
         </form>
     </div>
 </div>
 
 <div class="card admin-pane" data-tab="tlds">
-    <h2>TLDs</h2>
-    <p style="color:#666; font-size:0.9rem;">Manage the list of approved TLDs the worker will download and process.</p>
-    <p style="margin-top: 12px;"><a href="/admin/tlds.php" class="btn">Open TLD management</a></p>
+    <div class="card-head"><h2>TLDs</h2></div>
+    <p class="muted">Manage the list of approved TLDs the worker will download and process.</p>
+    <p><a href="/admin/tlds.php" class="btn waves-effect"><i class="material-icons left">public</i>Open TLD management</a></p>
 </div>
 
 <div class="card admin-pane" data-tab="recheck">
-    <h2>Keyword Recheck Status</h2>
+    <div class="card-head"><h2>Keyword Recheck Status</h2></div>
     <?php
     $recheckStatus = $db->query("SELECT * FROM recheck_status WHERE id = 1")->fetch();
     $recheckRunning = !empty($recheckStatus['is_running']);
@@ -252,41 +247,41 @@ require __DIR__ . '/../templates/header.php';
     ?>
     <div id="recheck-container" data-running="<?= $recheckRunning ? '1' : '0' ?>">
         <?php if ($recheckRunning): ?>
-            <p><strong>Status:</strong> <span style="color: #e67e22;">Running</span></p>
-            <div style="background: #f0f0f0; border-radius: 4px; height: 24px; margin: 10px 0; overflow: hidden;">
-                <div id="recheck-bar" style="background: #3498db; width: <?= $recheckPct ?>%; height: 100%; transition: width 0.5s;"></div>
+            <p><strong>Status:</strong> <span class="status-badge status-running">Running</span></p>
+            <div class="progress">
+                <div id="recheck-bar" class="determinate" style="width: <?= $recheckPct ?>%;"></div>
             </div>
             <p id="recheck-text">
                 Checked <strong><?= number_format($recheckChecked) ?></strong> of <strong><?= number_format($recheckTotal) ?></strong> domains
                 (<?= $recheckPct ?>%) — <strong><?= number_format($recheckMatches) ?></strong> matches found
             </p>
         <?php elseif ($recheckStatus && $recheckStatus['completed_at'] && $recheckTotal == 0): ?>
-            <p><strong>Status:</strong> <span style="color: #c0392b;">No cached domains</span></p>
-            <p style="color: #c0392b;">The worker has not downloaded any zones yet. Run the worker first to build the domain cache.</p>
+            <p><strong>Status:</strong> <span class="status-badge status-failed">No cached domains</span></p>
+            <p class="text-danger">The worker has not downloaded any zones yet. Run the worker first to build the domain cache.</p>
         <?php elseif ($recheckStatus && $recheckStatus['completed_at']): ?>
-            <p><strong>Status:</strong> <span style="color: #27ae60;">Completed</span> at <?= htmlspecialchars(fmt_date($recheckStatus['completed_at'])) ?></p>
+            <p><strong>Status:</strong> <span class="status-badge status-completed">Completed</span> at <?= htmlspecialchars(fmt_date($recheckStatus['completed_at'])) ?></p>
             <p>Checked <strong><?= number_format($recheckChecked) ?></strong> domains — <strong><?= number_format($recheckMatches) ?></strong> matches found</p>
         <?php else: ?>
-            <p><strong>Status:</strong> <span style="color: #7f8c8d;">Idle</span></p>
+            <p><strong>Status:</strong> <span class="status-badge status-cancelled">Idle</span></p>
         <?php endif; ?>
         <?php
         $pendingRecheck = $db->query("SELECT COUNT(*) FROM commands WHERE command = 'recheck_keywords' AND status = 'pending'")->fetchColumn();
         if ((int)$pendingRecheck > 0 && !$recheckRunning): ?>
-            <p style="color: #e67e22; font-size: 0.9rem;"><strong><?= (int)$pendingRecheck ?></strong> recheck command(s) queued — waiting for worker.</p>
+            <p class="text-success"><strong><?= (int)$pendingRecheck ?></strong> recheck command(s) queued — waiting for worker.</p>
         <?php endif; ?>
-        <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+        <div class="section-actions">
             <form method="POST">
                 <?php csrfField(); ?>
                 <input type="hidden" name="action" value="recheck_keywords">
-                <button type="submit" class="btn" <?= ($recheckRunning || (int)$pendingRecheck > 0) ? 'disabled' : '' ?>>
-                    <?= $recheckRunning ? 'Recheck in progress...' : ((int)$pendingRecheck > 0 ? 'Queued — waiting for worker' : 'Recheck All Cached Domains') ?>
+                <button type="submit" class="btn waves-effect" <?= ($recheckRunning || (int)$pendingRecheck > 0) ? 'disabled' : '' ?>>
+                    <i class="material-icons left">search</i><?= $recheckRunning ? 'Recheck in progress...' : ((int)$pendingRecheck > 0 ? 'Queued — waiting for worker' : 'Recheck All Cached Domains') ?>
                 </button>
             </form>
             <?php if ($recheckRunning): ?>
             <form method="POST">
                 <?php csrfField(); ?>
                 <input type="hidden" name="action" value="stop_recheck">
-                <button type="submit" class="btn btn-danger">⏹ Stop Recheck</button>
+                <button type="submit" class="btn btn-danger waves-effect"><i class="material-icons left">stop</i>Stop Recheck</button>
             </form>
             <?php endif; ?>
         </div>
@@ -307,23 +302,23 @@ if (!empty($workerStatus['last_heartbeat'])) {
 ?>
 
 <div class="card admin-pane" data-tab="worker">
-    <h2>Worker Status</h2>
+    <div class="card-head"><h2>Worker Status</h2></div>
     <?php if ($workerStatus): ?>
         <?php if (($workerStatus['is_running'] ?? 0)): ?>
-            <div style="margin-bottom: 12px; padding: 10px 14px; background: #fff3cd; border-radius: 4px; font-size: 0.9rem; color: #856404;">
-                🔧 <strong>Worker is busy.</strong> It is currently processing a command (downloading zones or rechecking keywords). New commands will execute once it finishes and returns to the polling loop. This may take several minutes or even hours depending on the workload.
+            <div class="card-panel amber lighten-4 amber-text text-darken-4">
+                <i class="material-icons left">build</i><strong>Worker is busy.</strong> It is currently processing a command (downloading zones or rechecking keywords). New commands will execute once it finishes and returns to the polling loop. This may take several minutes or even hours depending on the workload.
             </div>
         <?php elseif ($heartbeatStale): ?>
-            <div style="margin-bottom: 12px; padding: 10px 14px; background: #f8d7da; border-radius: 4px; font-size: 0.9rem; color: #721c24;">
-                ⚠️ <strong>Worker heartbeat is stale.</strong> Last seen <?= $secondsSinceHb !== null ? floor($secondsSinceHb / 60) . ' min ago' : 'a while ago' ?>. The worker may have crashed or lost connectivity. Check the LXC and run <code>systemctl status tdl-worker</code>.
+            <div class="card-panel red lighten-4 red-text text-darken-4">
+                <i class="material-icons left">error</i><strong>Worker heartbeat is stale.</strong> Last seen <?= $secondsSinceHb !== null ? floor($secondsSinceHb / 60) . ' min ago' : 'a while ago' ?>. The worker may have crashed or lost connectivity. Check the LXC and run <code>systemctl status tdl-worker</code>.
             </div>
         <?php else: ?>
-            <div style="margin-bottom: 12px; padding: 10px 14px; background: #d4edda; border-radius: 4px; font-size: 0.9rem; color: #155724;">
-                ✅ <strong>Worker is online.</strong> Polling normally. Last heartbeat <?= $secondsSinceHb !== null ? floor($secondsSinceHb / 60) . ' min ago' : 'recently' ?>.
+            <div class="card-panel green lighten-4 green-text text-darken-4">
+                <i class="material-icons left">check_circle</i><strong>Worker is online.</strong> Polling normally. Last heartbeat <?= $secondsSinceHb !== null ? floor($secondsSinceHb / 60) . ' min ago' : 'recently' ?>.
             </div>
         <?php endif; ?>
 
-        <table>
+        <table class="striped highlight">
             <tr><td>Last Heartbeat</td><td><?= htmlspecialchars(fmt_date($workerStatus['last_heartbeat'])) ?></td></tr>
             <tr><td>Last Run</td><td><?= htmlspecialchars(fmt_date($workerStatus['last_run'])) ?></td></tr>
             <tr><td>TLDs Processed</td><td><?= (int)($workerStatus['tlds_processed'] ?? 0) ?></td></tr>
@@ -339,11 +334,11 @@ if (!empty($workerStatus['last_heartbeat'])) {
 </div>
 
 <div class="card admin-pane" data-tab="commands">
-    <h2>Recent Commands</h2>
+    <div class="card-head"><h2>Recent Commands</h2></div>
     <?php if (empty($recentCommands)): ?>
-        <p style="color:#666;">No commands have been queued yet.</p>
+        <p class="muted">No commands have been queued yet.</p>
     <?php else: ?>
-        <table>
+        <table class="striped highlight responsive-table">
             <thead>
                 <tr><th>ID</th><th>Command</th><th>Status</th><th>Queued</th><th>Started</th><th>Duration</th><th>Result</th><th>Actions</th></tr>
             </thead>
@@ -363,12 +358,12 @@ if (!empty($workerStatus['last_heartbeat'])) {
                             <?php csrfField(); ?>
                             <input type="hidden" name="action" value="cancel_command">
                             <input type="hidden" name="command_id" value="<?= (int)$cmd['id'] ?>">
-                            <button type="submit" class="btn btn-small btn-danger"
+                            <button type="submit" class="btn btn-small btn-danger waves-effect"
                                     title="<?= $cmd['status'] === 'running' ? 'Only if the worker is stuck; a live run may overwrite this.' : '' ?>"
-                                    onclick="return confirm('Cancel command #<?= (int)$cmd['id'] ?>?')">Cancel</button>
+                                    onclick="return confirm('Cancel command #<?= (int)$cmd['id'] ?>?')"><i class="material-icons left">cancel</i>Cancel</button>
                         </form>
                         <?php else: ?>
-                        <span style="color:#ccc;">&mdash;</span>
+                        <span class="muted">&mdash;</span>
                         <?php endif; ?>
                     </td>
                 </tr>
@@ -379,16 +374,16 @@ if (!empty($workerStatus['last_heartbeat'])) {
 </div>
 
 <div class="card admin-pane" data-tab="commands">
-    <h2>Pending Commands</h2>
+    <div class="card-head"><h2>Pending Commands</h2></div>
     <?php if (empty($pendingCommandsList)): ?>
-        <p style="color: #666;">No pending commands. The queue is clear.</p>
+        <p class="muted">No pending commands. The queue is clear.</p>
     <?php else: ?>
-        <form method="POST" style="margin-bottom: 12px;">
+        <form method="POST" class="section-actions">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="clear_pending_commands">
-            <button type="submit" class="btn btn-danger btn-small" onclick="return confirm('Cancel ALL <?= count($pendingCommandsList) ?> pending command(s)? This cannot be undone.')">Clear All Pending</button>
+            <button type="submit" class="btn btn-danger btn-small waves-effect" onclick="return confirm('Cancel ALL <?= count($pendingCommandsList) ?> pending command(s)? This cannot be undone.')"><i class="material-icons left">delete_sweep</i>Clear All Pending</button>
         </form>
-        <table>
+        <table class="striped highlight responsive-table">
             <thead>
                 <tr><th>ID</th><th>Command</th><th>Payload</th><th>Queued At</th><th>In Queue</th><th>Actions</th></tr>
             </thead>
@@ -409,7 +404,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
                             <?php csrfField(); ?>
                             <input type="hidden" name="action" value="cancel_command">
                             <input type="hidden" name="command_id" value="<?= (int)$cmd['id'] ?>">
-                            <button type="submit" class="btn btn-small btn-danger" onclick="return confirm('Cancel command #<?= (int)$cmd['id'] ?>?')">Cancel</button>
+                            <button type="submit" class="btn btn-small btn-danger waves-effect" onclick="return confirm('Cancel command #<?= (int)$cmd['id'] ?>?')"><i class="material-icons left">cancel</i>Cancel</button>
                         </form>
                     </td>
                 </tr>
@@ -420,11 +415,11 @@ if (!empty($workerStatus['last_heartbeat'])) {
 </div>
 
 <div class="card admin-pane" data-tab="worker">
-    <h2>Worker Logs</h2>
+    <div class="card-head"><h2>Worker Logs</h2></div>
     <?php if (empty($workerLogs)): ?>
-        <p>No worker logs yet.</p>
+        <p class="muted">No worker logs yet.</p>
     <?php else: ?>
-        <table>
+        <table class="striped highlight responsive-table">
             <thead>
                 <tr><th>Time</th><th>Level</th><th>Message</th></tr>
             </thead>
@@ -442,8 +437,8 @@ if (!empty($workerStatus['last_heartbeat'])) {
 </div>
 
 <div class="card admin-pane" data-tab="users">
-    <h2>Users</h2>
-    <table>
+    <div class="card-head"><h2>Users</h2></div>
+    <table class="striped highlight responsive-table">
         <thead>
             <tr>
                 <th>ID</th>
@@ -462,31 +457,33 @@ if (!empty($workerStatus['last_heartbeat'])) {
                 <td><?= (int)$u['id'] ?></td>
                 <td><?= htmlspecialchars($u['username']) ?></td>
                 <td><?= htmlspecialchars($u['email']) ?></td>
-                <td><?= $u['is_active'] ? 'Yes' : 'No' ?></td>
-                <td><?= $u['is_admin'] ? 'Yes' : 'No' ?></td>
+                <td><?= $u['is_active'] ? '<span class="text-success">Yes</span>' : '<span class="muted">No</span>' ?></td>
+                <td><?= $u['is_admin'] ? '<span class="text-success">Yes</span>' : '<span class="muted">No</span>' ?></td>
                 <td>
-                    <form method="POST" style="display: inline; white-space: nowrap;">
+                    <form method="POST" class="inline-form-nowrap">
                         <?php csrfField(); ?>
                         <input type="hidden" name="action" value="set_max_keywords">
                         <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
-                        <input type="number" name="max_keywords" value="<?= (int)$u['max_keywords'] ?>" min="0" style="width: 55px; padding: 4px;">
-                        <button type="submit" class="btn btn-small" title="0 = unlimited">Set</button>
+                        <input type="number" name="max_keywords" value="<?= (int)$u['max_keywords'] ?>" min="0" class="browser-default compact num-input">
+                        <button type="submit" class="btn btn-small waves-effect" title="0 = unlimited">Set</button>
                     </form>
                 </td>
-                <td style="font-family: monospace; font-size: 0.8rem;"><?= substr(htmlspecialchars($u['api_key']), 0, 16) ?>...</td>
+                <td class="mono-sm"><?= substr(htmlspecialchars($u['api_key']), 0, 16) ?>...</td>
                 <td>
-                    <form method="POST" style="display: inline;">
-                        <?php csrfField(); ?>
-                        <input type="hidden" name="action" value="toggle_user">
-                        <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
-                        <button type="submit" class="btn btn-small"><?= $u['is_active'] ? 'Disable' : 'Enable' ?></button>
-                    </form>
-                    <form method="POST" style="display: inline;">
-                        <?php csrfField(); ?>
-                        <input type="hidden" name="action" value="regen_api">
-                        <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
-                        <button type="submit" class="btn btn-small btn-danger" onclick="return confirm('Regenerate API key?')">Regen Key</button>
-                    </form>
+                    <div class="action-group">
+                        <form method="POST" style="display:inline; margin:0;">
+                            <?php csrfField(); ?>
+                            <input type="hidden" name="action" value="toggle_user">
+                            <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
+                            <button type="submit" class="btn btn-small waves-effect"><?= $u['is_active'] ? 'Disable' : 'Enable' ?></button>
+                        </form>
+                        <form method="POST" style="display:inline; margin:0;">
+                            <?php csrfField(); ?>
+                            <input type="hidden" name="action" value="regen_api">
+                            <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
+                            <button type="submit" class="btn btn-small btn-danger waves-effect" onclick="return confirm('Regenerate API key?')">Regen Key</button>
+                        </form>
+                    </div>
                 </td>
             </tr>
             <?php endforeach; ?>
@@ -495,8 +492,8 @@ if (!empty($workerStatus['last_heartbeat'])) {
 </div>
 
 <div class="card admin-pane" data-tab="sync">
-    <h2>Sync Logs</h2>
-    <table>
+    <div class="card-head"><h2>Sync Logs</h2></div>
+    <table class="striped highlight responsive-table">
         <thead>
             <tr><th>Time</th><th>Source</th><th>Received</th><th>Inserted</th><th>Error</th></tr>
         </thead>
@@ -516,34 +513,34 @@ if (!empty($workerStatus['last_heartbeat'])) {
 
 <?php $regOpen = isRegistrationOpen($db); ?>
 <div class="card admin-pane" data-tab="system">
-    <h2>System</h2>
-    <h3 style="margin-top: 0;">Maintenance</h3>
-    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-        <a href="/admin/update.php" class="btn">Check for Updates / Update Web App</a>
-        <a href="/admin/cleanup.php" class="btn btn-danger">Cleanup False Matches</a>
+    <div class="card-head"><h2>System</h2></div>
+    <h5>Maintenance</h5>
+    <div class="section-actions">
+        <a href="/admin/update.php" class="btn waves-effect"><i class="material-icons left">system_update</i>Check for Updates / Update Web App</a>
+        <a href="/admin/cleanup.php" class="btn btn-danger waves-effect"><i class="material-icons left">cleaning_services</i>Cleanup False Matches</a>
     </div>
 
-    <hr style="margin: 15px 0; border: none; border-top: 1px solid #eee;">
+    <div class="divider"></div>
 
-    <h3 style="margin-top: 20px;">Registration</h3>
-    <p>Status: <strong><?= $regOpen ? 'Open' : 'Closed' ?></strong></p>
-    <form method="POST" style="margin-top: 10px;">
+    <h5>Registration</h5>
+    <p>Status: <strong><?= $regOpen ? '<span class="text-success">Open</span>' : '<span class="muted">Closed</span>' ?></strong></p>
+    <form method="POST">
         <?php csrfField(); ?>
         <input type="hidden" name="action" value="toggle_registration">
-        <button type="submit" class="btn <?= $regOpen ? 'btn-danger' : '' ?>"><?= $regOpen ? 'Close Registration' : 'Open Registration' ?></button>
+        <button type="submit" class="btn waves-effect <?= $regOpen ? 'btn-danger' : '' ?>"><i class="material-icons left"><?= $regOpen ? 'lock' : 'lock_open' ?></i><?= $regOpen ? 'Close Registration' : 'Open Registration' ?></button>
     </form>
-    
-    <hr style="margin: 15px 0; border: none; border-top: 1px solid #eee;">
-    
-    <form method="POST" style="display: flex; gap: 10px; align-items: center;">
+
+    <div class="divider"></div>
+
+    <form method="POST" class="section-actions">
         <?php csrfField(); ?>
         <input type="hidden" name="action" value="set_new_domain_days">
-        <label style="white-space: nowrap;">New domain threshold:</label>
-        <input type="number" name="new_domain_days" value="<?= (int)getSetting($db, 'new_domain_days', '1') ?>" min="1" max="365" style="width: 70px; padding: 6px;">
-        <span style="color: #666; font-size: 0.9rem;">day(s)</span>
-        <button type="submit" class="btn btn-small">Save</button>
+        <label class="nowrap">New domain threshold:</label>
+        <input type="number" name="new_domain_days" value="<?= (int)getSetting($db, 'new_domain_days', '1') ?>" min="1" max="365" class="browser-default compact num-input">
+        <span class="muted">day(s)</span>
+        <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">save</i>Save</button>
     </form>
-    <p style="color: #666; font-size: 0.85rem; margin-top: 5px;">Domains created within this window will show the 🆕 badge and appear in the "New only" filter.</p>
+    <p class="muted">Domains created within this window will show the NEW badge and appear in the "New only" filter.</p>
 </div>
 
 <script>
@@ -590,7 +587,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
                 if (!running) {
                     container.dataset.running = '0';
                     container.innerHTML = `
-                        <p><strong>Status:</strong> <span style="color: #27ae60;">Completed</span> at ${s.completed_at || 'just now'}</p>
+                        <p><strong>Status:</strong> <span class="status-badge status-completed">Completed</span> at ${s.completed_at || 'just now'}</p>
                         <p>Checked <strong>${checked}</strong> domains — <strong>${matches}</strong> matches found</p>
                     `;
                     return;
