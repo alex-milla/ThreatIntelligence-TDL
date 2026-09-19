@@ -9,20 +9,6 @@ $isAdmin = !empty($_SESSION['is_admin']);
 $message = $_SESSION['flash_message'] ?? '';
 unset($_SESSION['flash_message']);
 
-// Toggle email notifications
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'toggle_email') {
-    validateCsrf();
-    $stmt = $db->prepare("UPDATE users SET email_notifications = NOT email_notifications WHERE id = ?");
-    $stmt->execute([$userId]);
-    header('Location: /');
-    exit;
-}
-
-// Get current preference
-$stmt = $db->prepare("SELECT email_notifications FROM users WHERE id = ? LIMIT 1");
-$stmt->execute([$userId]);
-$emailNotifications = (bool)$stmt->fetchColumn();
-
 // Period filter for dashboard
 $period = $_GET['period'] ?? '30d';
 $validPeriods = ['24h' => '-1 day', '7d' => '-7 days', '30d' => '-30 days', 'all' => ''];
@@ -217,17 +203,6 @@ $sparkNonZero = count(array_filter($sparkDays));
             </tbody>
         </table>
     <?php endif; ?>
-</div>
-
-<div class="card" id="email">
-    <h2>Account preferences</h2>
-    <p>Status: <strong><?= $emailNotifications ? 'Enabled' : 'Disabled' ?></strong></p>
-    <p style="color: #666; font-size: 0.9rem;">When enabled, you will receive an email summary each time new domains match your keywords.</p>
-    <form method="POST" style="margin-top: 10px;">
-        <?php csrfField(); ?>
-        <input type="hidden" name="action" value="toggle_email">
-        <button type="submit" class="btn btn-small <?= $emailNotifications ? 'btn-danger' : '' ?>"><?= $emailNotifications ? 'Disable' : 'Enable' ?></button>
-    </form>
 </div>
 
 <!-- Domain detail modal -->

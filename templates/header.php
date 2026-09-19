@@ -9,62 +9,7 @@ sendSecurityHeaders();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(csrfToken()) ?>">
     <title><?= htmlspecialchars($pageTitle ?? 'ThreatIntelligence-TDL') ?></title>
-    <style>
-        * { box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; background: #f5f7fa; color: #333; }
-        .navbar { background: #1a1a2e; color: #fff; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; min-height: 52px; }
-        .navbar-left, .navbar-right { display: flex; align-items: center; gap: 2px; }
-        .navbar a { color: #fff; text-decoration: none; padding: 15px 12px; display: inline-block; }
-        .navbar a:hover { background: #16213e; }
-        .navbar .brand { font-weight: bold; font-size: 1.1rem; }
-        .navbar .nav-sep { width: 1px; height: 22px; background: #2a2a4e; margin: 0 6px; display: inline-block; }
-        .nav-dropdown { position: relative; display: inline-block; }
-        .nav-dropdown > .nav-toggle { color: #fff; padding: 15px 12px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
-        .nav-dropdown:hover > .nav-toggle { background: #16213e; }
-        .nav-dropdown > .nav-toggle .caret { font-size: 0.7rem; opacity: 0.7; }
-        .nav-dropdown-menu { display: none; position: absolute; right: 0; top: 100%; background: #16213e; border: 1px solid #2a2a4e; border-radius: 6px; box-shadow: 0 6px 16px rgba(0,0,0,0.35); z-index: 200; min-width: 220px; padding: 6px 0; }
-        .nav-dropdown:hover > .nav-dropdown-menu { display: block; }
-        .nav-dropdown-menu a, .nav-dropdown-menu .nav-item { display: block; width: 100%; text-align: left; color: #e8e8f0; padding: 9px 16px; cursor: pointer; }
-        .nav-dropdown-menu a:hover, .nav-dropdown-menu .nav-item:hover { background: #1f1f3a; color: #fff; }
-        .nav-dropdown-menu .nav-section { color: #8a8aab; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 16px 4px; }
-        .nav-dropdown-menu hr { border: none; border-top: 1px solid #2a2a4e; margin: 4px 0; }
-        .container { max-width: 1100px; margin: 30px auto; padding: 0 20px; }
-        .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 24px; margin-bottom: 20px; }
-        .card h2 { margin-top: 0; font-size: 1.25rem; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
-        th { background: #f8f9fa; font-weight: 600; }
-        .btn { display: inline-block; padding: 8px 16px; background: #007bff; color: #fff; text-decoration: none; border-radius: 4px; border: none; cursor: pointer; font-size: 0.95rem; }
-        .btn:hover { background: #0056b3; }
-        .btn-danger { background: #dc3545; }
-        .btn-danger:hover { background: #a71d2a; }
-        .btn-small { padding: 4px 10px; font-size: 0.85rem; }
-        .btn-tiny { padding: 3px 6px; font-size: 0.75rem; line-height: 1; }
-        .action-group { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
-        .action-menu { position: relative; display: inline-block; }
-        .action-menu-btn { background: none; border: none; cursor: pointer; font-size: 1.1rem; padding: 2px 6px; color: #666; border-radius: 4px; }
-        .action-menu-btn:hover { background: #eee; color: #333; }
-        .action-menu-dropdown { display: none; position: absolute; right: 0; top: 100%; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; min-width: 160px; padding: 4px 0; }
-        .action-menu-dropdown.active { display: block; }
-        .action-menu-dropdown form, .action-menu-dropdown button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 8px 14px; cursor: pointer; font-size: 0.9rem; color: #333; }
-        .action-menu-dropdown form:hover, .action-menu-dropdown button:hover { background: #f5f5f5; }
-        .action-menu-dropdown .menu-danger { color: #dc3545; }
-        .action-menu-dropdown .menu-good { color: #27ae60; }
-        .action-menu-dropdown .menu-bad { color: #c0392b; }
-        .action-menu-dropdown hr { border: none; border-top: 1px solid #eee; margin: 4px 0; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; font-weight: 600; margin-bottom: 5px; }
-        input[type="text"], input[type="email"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
-        .alert { padding: 12px 16px; border-radius: 4px; margin-bottom: 15px; }
-        .alert-error { background: #f8d7da; color: #721c24; }
-        .alert-success { background: #d4edda; color: #155724; }
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-        .stat-box { background: #fff; border-radius: 8px; padding: 20px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-        .stat-box .number { font-size: 2rem; font-weight: bold; color: #007bff; }
-        .stat-box .label { color: #666; margin-top: 5px; }
-        .unread { background: #fff3cd; }
-        .badge-new { display: inline-block; background: #e74c3c; color: #fff; font-size: 0.7rem; padding: 1px 5px; border-radius: 3px; margin-left: 4px; white-space: nowrap; }
-    </style>
+    <link rel="stylesheet" href="/assets/css/main.css">
     <script src="/assets/whois.js"></script>
 </head>
 <body>
@@ -78,14 +23,14 @@ sendSecurityHeaders();
                 <a href="/watchlist.php">Watchlist</a>
                 <?php if (!empty($_SESSION['is_admin'])): ?>
                 <span class="nav-sep"></span>
+                <a href="/admin/tlds.php">TLDs</a>
                 <div class="nav-dropdown">
-                    <a class="nav-toggle" href="/admin/">Admin <span class="caret">▼</span></a>
+                    <button class="nav-toggle" type="button">Admin <span class="caret">&#9660;</span></button>
                     <div class="nav-dropdown-menu">
                         <a href="/admin/#overview">Overview</a>
                         <a href="/admin/#worker">Worker</a>
                         <a href="/admin/#commands">Commands</a>
                         <a href="/admin/#recheck">Recheck</a>
-                        <a href="/admin/tlds.php">TLDs</a>
                         <a href="/admin/#users">Users</a>
                         <a href="/admin/#sync">Sync</a>
                         <a href="/admin/#system">System</a>
@@ -97,15 +42,15 @@ sendSecurityHeaders();
         <div class="navbar-right">
             <?php if (!empty($_SESSION['user_id'])): ?>
                 <div class="nav-dropdown">
-                    <a class="nav-toggle" href="/" style="cursor: pointer;"><?= htmlspecialchars($_SESSION['username'] ?? '') ?> <span class="caret">▼</span></a>
+                    <button class="nav-toggle" type="button"><?= htmlspecialchars($_SESSION['username'] ?? '') ?> <span class="caret">&#9660;</span></button>
                     <div class="nav-dropdown-menu">
                         <div class="nav-section">Account</div>
-                        <a href="/#email">Email notifications</a>
+                        <a href="/account.php">Email preferences</a>
                         <?php if (!empty($_SESSION['is_admin'])): ?>
                             <a href="/admin/#users">API key</a>
                         <?php endif; ?>
                         <hr>
-                        <a href="/logout.php">Cerrar sesión</a>
+                        <a href="/logout.php">Cerrar sesi&oacute;n</a>
                     </div>
                 </div>
             <?php else: ?>
@@ -114,4 +59,20 @@ sendSecurityHeaders();
             <?php endif; ?>
         </div>
     </nav>
+    <script>
+    document.querySelectorAll('.nav-dropdown').forEach(function(dd) {
+        var toggle = dd.querySelector('.nav-toggle');
+        toggle.addEventListener('click', function(e) {
+            e.preventDefault();
+            var wasOpen = dd.classList.contains('open');
+            document.querySelectorAll('.nav-dropdown.open').forEach(function(o) { o.classList.remove('open'); });
+            if (!wasOpen) dd.classList.add('open');
+        });
+    });
+    document.addEventListener('click', function(e) {
+        document.querySelectorAll('.nav-dropdown.open').forEach(function(dd) {
+            if (!dd.contains(e.target)) dd.classList.remove('open');
+        });
+    });
+    </script>
     <div class="container">
