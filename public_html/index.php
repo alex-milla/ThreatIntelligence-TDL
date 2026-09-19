@@ -86,13 +86,13 @@ require __DIR__ . '/templates/header.php';
         $hbStale = (time() - strtotime($workerHealth['last_heartbeat'])) > 300;
     }
     $isBusy = (int)($workerHealth['is_running'] ?? 0) === 1;
-    if ($isBusy) { $hState = 'busy'; $hLabel = 'Worker busy'; $hColor = '#e67e22'; }
-    elseif (empty($workerHealth['last_heartbeat'])) { $hState = 'unknown'; $hLabel = 'Worker never seen'; $hColor = '#7f8c8d'; }
-    elseif ($hbStale) { $hState = 'down'; $hLabel = 'Worker unreachable'; $hColor = '#c0392b'; }
-    else { $hState = 'ok'; $hLabel = 'Worker online'; $hColor = '#27ae60'; }
+    if ($isBusy) { $hState = 'busy'; $hLabel = 'Worker busy'; }
+    elseif (empty($workerHealth['last_heartbeat'])) { $hState = 'unknown'; $hLabel = 'Worker never seen'; }
+    elseif ($hbStale) { $hState = 'down'; $hLabel = 'Worker unreachable'; }
+    else { $hState = 'ok'; $hLabel = 'Worker online'; }
 ?>
 <a href="/admin/#worker" class="card worker-health">
-    <span class="dot" style="background:<?= htmlspecialchars($hColor) ?>;"></span>
+    <span class="dot <?= $hState ?>"></span>
     <strong><?= $hLabel ?></strong>
     <?php if ($isBusy && !empty($workerHealth['current_command'])): ?>
         <span class="wh-extra">&mdash; <?= htmlspecialchars($workerHealth['current_command']) ?><?php if (!empty($workerHealth['current_tld'])) echo ' &middot; ' . htmlspecialchars($workerHealth['current_tld']); ?></span>
@@ -103,29 +103,29 @@ require __DIR__ . '/templates/header.php';
 
 <div class="row">
     <div class="col s6 m6 l3">
-        <div class="card stat-card deep-purple">
+        <div class="card stat-card">
             <i class="material-icons stat-icon">vpn_key</i>
             <div class="number"><?= $keywordCount ?></div>
             <div class="label">Active keywords</div>
         </div>
     </div>
     <div class="col s6 m6 l3">
-        <div class="card stat-card blue darken-1">
-            <i class="material-icons stat-icon">find_in_page</i>
+        <div class="card stat-card">
+            <i class="material-icons stat-icon tone-info">find_in_page</i>
             <div class="number"><?= $matchCount ?></div>
             <div class="label">Matches (<?= htmlspecialchars($period) === 'all' ? 'all time' : htmlspecialchars($period) ?>)</div>
         </div>
     </div>
     <div class="col s6 m6 l3">
-        <div class="card stat-card orange darken-2">
-            <i class="material-icons stat-icon">notifications</i>
+        <div class="card stat-card">
+            <i class="material-icons stat-icon tone-warning">notifications</i>
             <div class="number"><?= $unreadCount ?></div>
             <div class="label">Unread notifications</div>
         </div>
     </div>
     <div class="col s6 m6 l3">
-        <div class="card stat-card teal darken-1">
-            <i class="material-icons stat-icon">fiber_new</i>
+        <div class="card stat-card">
+            <i class="material-icons stat-icon tone-success">fiber_new</i>
             <div class="number"><?= $new24h ?></div>
             <div class="label">New in last 24h</div>
         </div>
@@ -160,9 +160,9 @@ $sparkNonZero = count(array_filter($sparkDays));
     <div class="sparkline">
         <?php foreach ($sparkDays as $d => $c):
             $h = $sparkMax > 0 ? max(round($c / $sparkMax * 100), $c > 0 ? 6 : 2) : ($c > 0 ? 6 : 2);
-            $bg = $c > 0 ? '#512da8' : '#eceff1';
+            $barClass = $c > 0 ? 'has-data' : 'empty';
         ?>
-        <div title="<?= htmlspecialchars($d) ?>: <?= $c ?>" style="height:<?= $h ?>%; background:<?= $bg ?>;"></div>
+        <div title="<?= htmlspecialchars($d) ?>: <?= $c ?>" class="spark-bar <?= $barClass ?>" style="height:<?= $h ?>%"></div>
         <?php endforeach; ?>
     </div>
     <?php endif; ?>
@@ -243,8 +243,8 @@ function buildPanelHtml(domain) {
         +   '<div class="dpanel-section-label">Classification</div>'
         +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-tag-current">Loading...</span></div>'
         +   '<div class="dpanel-btn-row">'
-        +     '<button type="button" class="btn btn-small green waves-effect" onclick="tagDomain(_modalDomain, \'good\')">Mark Good</button>'
-        +     '<button type="button" class="btn btn-small red waves-effect" onclick="tagDomain(_modalDomain, \'bad\')">Mark Bad</button>'
+        +     '<button type="button" class="btn btn-small btn-outline good waves-effect" onclick="tagDomain(_modalDomain, \'good\')">Mark Good</button>'
+        +     '<button type="button" class="btn btn-small btn-outline bad waves-effect" onclick="tagDomain(_modalDomain, \'bad\')">Mark Bad</button>'
         +     '<button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain(_modalDomain, \'\')">Clear</button>'
         +   '</div>'
         + '</div>'
@@ -253,7 +253,7 @@ function buildPanelHtml(domain) {
         +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-watchlist-current">Loading...</span></div>'
         +   '<div class="dpanel-btn-row"><button type="button" id="modal-watchlist-btn" class="btn btn-small waves-effect" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button></div>'
         + '</div>'
-        + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn waves-effect indigo"><i class="material-icons left">shield</i>Open in VirusTotal</a></div>'
+        + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn btn-outline info waves-effect"><i class="material-icons left">shield</i>Open in VirusTotal</a></div>'
         + '</div>';
 }
 function toggleDomainDetail(linkEl, domain) {
@@ -287,8 +287,8 @@ function loadDomainTag(domain) {
             const box = document.getElementById('modal-tag-current');
             if (!box) return;
             if (data.success && data.tag) {
-                const color = data.tag.tag === 'good' ? '#2e7d32' : '#c62828';
-                box.innerHTML = '<span style="color:' + color + '; font-weight:700;">' + data.tag.tag.toUpperCase() + '</span>';
+                const cls = data.tag.tag === 'good' ? 'tag-good-text' : 'tag-bad-text';
+                box.innerHTML = '<span class="' + cls + '">' + data.tag.tag.toUpperCase() + '</span>';
                 if (data.tag.note) box.innerHTML += ' &mdash; ' + htmlspecialchars(data.tag.note);
             } else {
                 box.textContent = 'Not classified';
@@ -307,7 +307,7 @@ function loadWatchlistStatus(domain) {
             const btn = document.getElementById('modal-watchlist-btn');
             if (!box) return;
             if (data.in_watchlist) {
-                let html = '<span style="color:#f39c12; font-weight:700;">In watchlist</span>';
+                let html = '<span class="text-in-watchlist">In watchlist</span>';
                 if (data.group_name) html += ' <span class="muted">(' + htmlspecialchars(data.group_name) + ')</span>';
                 if (data.note) html += ' &mdash; ' + htmlspecialchars(data.note);
                 box.innerHTML = html;

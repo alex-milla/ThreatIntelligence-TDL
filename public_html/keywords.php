@@ -127,7 +127,7 @@ require __DIR__ . '/templates/header.php';
         <form method="POST">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="recheck_keywords">
-            <button type="submit" class="btn waves-effect amber darken-2" <?= $recheckRunning ? 'disabled' : '' ?>>
+            <button type="submit" class="btn btn-outline waves-effect" <?= $recheckRunning ? 'disabled' : '' ?>>
                 <i class="material-icons left">search</i><?= $recheckRunning ? 'Recheck in progress...' : 'Recheck All Cached Domains' ?>
             </button>
         </form>

@@ -219,7 +219,7 @@ require __DIR__ . '/../templates/header.php';
         <form method="POST">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="recheck_keywords">
-            <button type="submit" class="btn amber darken-2 waves-effect"><i class="material-icons left">search</i>Recheck Keywords</button>
+            <button type="submit" class="btn btn-outline waves-effect"><i class="material-icons left">search</i>Recheck Keywords</button>
         </form>
         <form method="POST">
             <?php csrfField(); ?>
@@ -305,16 +305,19 @@ if (!empty($workerStatus['last_heartbeat'])) {
     <div class="card-head"><h2>Worker Status</h2></div>
     <?php if ($workerStatus): ?>
         <?php if (($workerStatus['is_running'] ?? 0)): ?>
-            <div class="card-panel amber lighten-4 amber-text text-darken-4">
-                <i class="material-icons left">build</i><strong>Worker is busy.</strong> It is currently processing a command (downloading zones or rechecking keywords). New commands will execute once it finishes and returns to the polling loop. This may take several minutes or even hours depending on the workload.
+            <div class="notice notice-warning">
+                <i class="material-icons">build</i>
+                <div><strong>Worker is busy.</strong> It is currently processing a command (downloading zones or rechecking keywords). New commands will execute once it finishes and returns to the polling loop. This may take several minutes or even hours depending on the workload.</div>
             </div>
         <?php elseif ($heartbeatStale): ?>
-            <div class="card-panel red lighten-4 red-text text-darken-4">
-                <i class="material-icons left">error</i><strong>Worker heartbeat is stale.</strong> Last seen <?= $secondsSinceHb !== null ? floor($secondsSinceHb / 60) . ' min ago' : 'a while ago' ?>. The worker may have crashed or lost connectivity. Check the LXC and run <code>systemctl status tdl-worker</code>.
+            <div class="notice notice-error">
+                <i class="material-icons">error</i>
+                <div><strong>Worker heartbeat is stale.</strong> Last seen <?= $secondsSinceHb !== null ? floor($secondsSinceHb / 60) . ' min ago' : 'a while ago' ?>. The worker may have crashed or lost connectivity. Check the LXC and run <code>systemctl status tdl-worker</code>.</div>
             </div>
         <?php else: ?>
-            <div class="card-panel green lighten-4 green-text text-darken-4">
-                <i class="material-icons left">check_circle</i><strong>Worker is online.</strong> Polling normally. Last heartbeat <?= $secondsSinceHb !== null ? floor($secondsSinceHb / 60) . ' min ago' : 'recently' ?>.
+            <div class="notice notice-success">
+                <i class="material-icons">check_circle</i>
+                <div><strong>Worker is online.</strong> Polling normally. Last heartbeat <?= $secondsSinceHb !== null ? floor($secondsSinceHb / 60) . ' min ago' : 'recently' ?>.</div>
             </div>
         <?php endif; ?>
 

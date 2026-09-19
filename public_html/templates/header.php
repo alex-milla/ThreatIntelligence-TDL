@@ -6,6 +6,11 @@ $loggedIn = !empty($_SESSION['user_id']);
 $isAdmin = !empty($_SESSION['is_admin']);
 $username = $_SESSION['username'] ?? '';
 
+$assetVersion = '0';
+if (is_file(__DIR__ . '/../VERSION')) {
+    $assetVersion = trim((string)file_get_contents(__DIR__ . '/../VERSION'));
+}
+
 // Current page (for active nav state)
 $curPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $current = basename($curPath);
@@ -15,20 +20,31 @@ if ($curPath === '' || $curPath === '/') {
 $isAdminArea = strpos($curPath, '/admin') === 0;
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(csrfToken()) ?>">
     <title><?= htmlspecialchars($pageTitle ?? 'ThreatIntelligence-TDL') ?></title>
-    <link rel="stylesheet" href="/css/fonts.css">
-    <link rel="stylesheet" href="/css/materialize.min.css">
-    <link rel="stylesheet" href="/css/materialize.colors.min.css">
-    <link rel="stylesheet" href="/css/app.css">
+    <script>
+    (function () {
+        try {
+            var t = localStorage.getItem('tdl-theme');
+            if (t !== 'dark' && t !== 'light') { t = 'light'; }
+            document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {
+            document.documentElement.setAttribute('data-theme', 'light');
+        }
+    })();
+    </script>
+    <link rel="stylesheet" href="/css/fonts.css?v=<?= urlencode($assetVersion) ?>">
+    <link rel="stylesheet" href="/css/materialize.min.css?v=<?= urlencode($assetVersion) ?>">
+    <link rel="stylesheet" href="/css/materialize.colors.min.css?v=<?= urlencode($assetVersion) ?>">
+    <link rel="stylesheet" href="/css/app.css?v=<?= urlencode($assetVersion) ?>">
 </head>
 <body>
     <header>
-        <nav class="deep-purple darken-2">
+        <nav class="app-nav">
             <div class="nav-wrapper container">
                 <a href="/" class="brand-logo">ThreatIntelligence-TDL</a>
                 <a href="#" data-target="mobile-nav" class="sidenav-trigger" aria-label="Open navigation menu"><i class="material-icons">menu</i></a>
@@ -47,6 +63,13 @@ $isAdminArea = strpos($curPath, '/admin') === 0;
                                 </a>
                             </li>
                         <?php endif; ?>
+                    <?php endif; ?>
+                    <li>
+                        <a href="#!" data-theme-toggle class="theme-toggle" role="button" aria-label="Switch to dark mode">
+                            <i class="material-icons">dark_mode</i>
+                        </a>
+                    </li>
+                    <?php if ($loggedIn): ?>
                         <li>
                             <a class="dropdown-trigger" href="#!" data-target="account-dropdown" aria-haspopup="true">
                                 <i class="material-icons left">account_circle</i><?= htmlspecialchars($username) ?>
@@ -64,7 +87,7 @@ $isAdminArea = strpos($curPath, '/admin') === 0;
 
     <?php if ($loggedIn): ?>
     <ul class="sidenav" id="mobile-nav">
-        <li><div class="user-view deep-purple darken-3"><span class="white-text name"><?= htmlspecialchars($username) ?></span></div></li>
+        <li><div class="user-view"><span class="name"><?= htmlspecialchars($username) ?></span></div></li>
         <li><a href="/" class="<?= ($current === 'index.php' && !$isAdminArea) ? 'active' : '' ?>"><i class="material-icons">dashboard</i>Dashboard</a></li>
         <li><a href="/keywords.php" class="<?= $current === 'keywords.php' ? 'active' : '' ?>"><i class="material-icons">search</i>Keywords</a></li>
         <li><a href="/notifications.php" class="<?= $current === 'notifications.php' ? 'active' : '' ?>"><i class="material-icons">notifications</i>Notifications</a></li>
@@ -75,6 +98,7 @@ $isAdminArea = strpos($curPath, '/admin') === 0;
             <li><a href="/admin/#overview" class="<?= $isAdminArea ? 'active' : '' ?>"><i class="material-icons">admin_panel_settings</i>Admin Panel</a></li>
         <?php endif; ?>
         <li><div class="divider"></div></li>
+        <li><a href="#!" data-theme-toggle><i class="material-icons">dark_mode</i>Theme</a></li>
         <li><a href="/account.php" class="<?= $current === 'account.php' ? 'active' : '' ?>"><i class="material-icons">mail</i>Account</a></li>
         <li><a href="/logout.php"><i class="material-icons">logout</i>Logout</a></li>
     </ul>
@@ -82,6 +106,8 @@ $isAdminArea = strpos($curPath, '/admin') === 0;
     <ul class="sidenav" id="mobile-nav">
         <li><a href="/login.php" class="<?= $current === 'login.php' ? 'active' : '' ?>"><i class="material-icons">login</i>Login</a></li>
         <li><a href="/register.php" class="<?= $current === 'register.php' ? 'active' : '' ?>"><i class="material-icons">person_add</i>Register</a></li>
+        <li><div class="divider"></div></li>
+        <li><a href="#!" data-theme-toggle><i class="material-icons">dark_mode</i>Theme</a></li>
     </ul>
     <?php endif; ?>
 

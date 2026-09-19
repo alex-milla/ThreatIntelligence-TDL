@@ -304,8 +304,8 @@ require __DIR__ . '/templates/header.php';
                 <div class="dpanel-section-label">Domain classification</div>
                 <div id="modal-tag-current" class="status-value" style="margin-bottom:8px;">Loading...</div>
                 <div class="dpanel-btn-row">
-                    <button type="button" class="btn btn-small green waves-effect" onclick="tagDomain(_modalDomain, 'good')">Mark Good</button>
-                    <button type="button" class="btn btn-small red waves-effect" onclick="tagDomain(_modalDomain, 'bad')">Mark Bad</button>
+                    <button type="button" class="btn btn-small btn-outline good waves-effect" onclick="tagDomain(_modalDomain, 'good')">Mark Good</button>
+                    <button type="button" class="btn btn-small btn-outline bad waves-effect" onclick="tagDomain(_modalDomain, 'bad')">Mark Bad</button>
                     <button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain(_modalDomain, '')">Remove</button>
                 </div>
             </div>
@@ -317,7 +317,7 @@ require __DIR__ . '/templates/header.php';
                 </div>
             </div>
             <div class="dpanel-footer">
-                <a id="modal-vt" href="#" target="_blank" class="btn waves-effect indigo"><i class="material-icons left">shield</i>Open in VirusTotal</a>
+                <a id="modal-vt" href="#" target="_blank" class="btn btn-outline info waves-effect"><i class="material-icons left">shield</i>Open in VirusTotal</a>
             </div>
         </div>
     </div>
@@ -347,8 +347,8 @@ function loadDomainTag(domain) {
         .then(data => {
             const box = document.getElementById('modal-tag-current');
             if (data.success && data.tag) {
-                const color = data.tag.tag === 'good' ? '#27ae60' : '#c0392b';
-                box.innerHTML = '<span style="color:' + color + '; font-weight:700;">' + data.tag.tag.toUpperCase() + '</span>';
+                const cls = data.tag.tag === 'good' ? 'tag-good-text' : 'tag-bad-text';
+                box.innerHTML = '<span class="' + cls + '">' + data.tag.tag.toUpperCase() + '</span>';
                 if (data.tag.note) box.innerHTML += ' — ' + htmlspecialchars(data.tag.note);
             } else {
                 box.textContent = 'Not classified';
@@ -365,7 +365,7 @@ function loadWatchlistStatus(domain) {
             const box = document.getElementById('modal-watchlist-current');
             const btn = document.getElementById('modal-watchlist-btn');
             if (data.in_watchlist) {
-                box.innerHTML = '<span style="color:#f39c12; font-weight:700;">In watchlist</span>' + (data.note ? ' — ' + htmlspecialchars(data.note) : '');
+                box.innerHTML = '<span class="text-in-watchlist">In watchlist</span>' + (data.note ? ' — ' + htmlspecialchars(data.note) : '');
                 btn.textContent = 'Remove from Watchlist';
                 btn.classList.add('btn-danger');
             } else {

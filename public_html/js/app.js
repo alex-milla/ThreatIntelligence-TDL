@@ -1,10 +1,13 @@
 /**
  * ThreatIntelligence-TDL — App JavaScript
- * Initializes Materialize components and exposes small helpers.
+ * Initializes Materialize components, the light/dark theme and helpers.
  * Requires materialize.min.js to be loaded first (provides global M).
  */
 var App = {
+    STORAGE_KEY: 'tdl-theme',
+
     init: function () {
+        this.initTheme();
         this.initSidenav();
         this.initDropdowns();
         this.initTooltips();
@@ -12,6 +15,36 @@ var App = {
         this.initSelects();
         this.initCharacterCounters();
         this.bindConfirms();
+    },
+
+    /* ---------- Theme (light / dark) ---------- */
+    currentTheme: function () {
+        return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    },
+
+    applyTheme: function (theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        document.querySelectorAll('[data-theme-toggle]').forEach(function (btn) {
+            var icon = btn.querySelector('.material-icons');
+            if (icon) {
+                icon.textContent = theme === 'dark' ? 'light_mode' : 'dark_mode';
+            }
+            btn.setAttribute('aria-label',
+                theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+        });
+    },
+
+    initTheme: function () {
+        var self = this;
+        this.applyTheme(this.currentTheme());
+        document.querySelectorAll('[data-theme-toggle]').forEach(function (btn) {
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                var next = self.currentTheme() === 'dark' ? 'light' : 'dark';
+                try { localStorage.setItem(self.STORAGE_KEY, next); } catch (err) {}
+                self.applyTheme(next);
+            });
+        });
     },
 
     // Elements with data-confirm ask for confirmation before acting

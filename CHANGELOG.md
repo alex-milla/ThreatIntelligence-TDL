@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.58] - 2026-09-19
+
+### Web UI — "Soft Corporate" theme + light/dark mode
+- **New pastel corporate palette** (dusty blue `#5e81ac` + muted greys) replacing the high-saturation purple/rainbow scheme ("no more eye-bleeding colours").
+- **Light/dark mode with a toggle** in the navbar and the mobile sidenav; the choice is stored in `localStorage` and applied before paint (no flash of the wrong theme). Default is light.
+- **Removed the rainbow buttons**: *Mark Good/Bad*, VirusTotal and similar are now soft/outline buttons with coloured icons; only **primary** and **danger** remain solid.
+- **Stat cards, status badges, tag chips, alerts and notices** use soft semantic tones that adapt to the active theme.
+- **Cache-busting**: CSS/JS are requested with `?v=<VERSION>` so a new release is picked up without a hard refresh.
+- Materialize MD3 design tokens are mapped to the palette for **both** themes (inputs, checkboxes, switches, progress, pagination, links).
+
 ## [v1.3.57] - 2026-09-19
 
 ### Web UI — Materialize CSS integration

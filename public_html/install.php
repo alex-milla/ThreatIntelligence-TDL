@@ -67,18 +67,31 @@ if ($step === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+$assetVersion = is_file(__DIR__ . '/VERSION') ? trim((string)file_get_contents(__DIR__ . '/VERSION')) : '0';
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(csrfToken()) ?>">
     <title>Install - ThreatIntelligence-TDL</title>
-    <link rel="stylesheet" href="/css/fonts.css">
-    <link rel="stylesheet" href="/css/materialize.min.css">
-    <link rel="stylesheet" href="/css/materialize.colors.min.css">
-    <link rel="stylesheet" href="/css/app.css">
+    <script>
+    (function () {
+        try {
+            var t = localStorage.getItem('tdl-theme');
+            if (t !== 'dark' && t !== 'light') { t = 'light'; }
+            document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {
+            document.documentElement.setAttribute('data-theme', 'light');
+        }
+    })();
+    </script>
+    <link rel="stylesheet" href="/css/fonts.css?v=<?= urlencode($assetVersion) ?>">
+    <link rel="stylesheet" href="/css/materialize.min.css?v=<?= urlencode($assetVersion) ?>">
+    <link rel="stylesheet" href="/css/materialize.colors.min.css?v=<?= urlencode($assetVersion) ?>">
+    <link rel="stylesheet" href="/css/app.css?v=<?= urlencode($assetVersion) ?>">
 </head>
 <body>
     <main>
@@ -124,7 +137,7 @@ if ($step === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
     </main>
-    <script src="/js/materialize.min.js"></script>
-    <script src="/js/app.js"></script>
+    <script src="/js/materialize.min.js?v=<?= urlencode($assetVersion) ?>"></script>
+    <script src="/js/app.js?v=<?= urlencode($assetVersion) ?>"></script>
 </body>
 </html>

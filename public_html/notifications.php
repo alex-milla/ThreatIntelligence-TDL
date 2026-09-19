@@ -252,8 +252,9 @@ require __DIR__ . '/templates/header.php';
     <?php endif; ?>
 
     <?php if ($hiddenCount > 0): ?>
-        <div class="card-panel amber lighten-4 amber-text text-darken-4">
-            <i class="material-icons left">star</i><?= $hiddenCount ?> notification(s) hidden because the domain(s) are in your <a href="/watchlist.php" class="amber-text text-darken-4"><strong>Watchlist</strong></a>.
+        <div class="notice notice-warning">
+            <i class="material-icons">star</i>
+            <div><?= $hiddenCount ?> notification(s) hidden because the domain(s) are in your <a href="/watchlist.php"><strong>Watchlist</strong></a>.</div>
         </div>
     <?php endif; ?>
     <?php if (empty($notifications)): ?>
@@ -452,8 +453,8 @@ function buildPanelHtml(domain) {
         +   '<div class="dpanel-section-label">Classification</div>'
         +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-tag-current">Loading...</span></div>'
         +   '<div class="dpanel-btn-row">'
-        +     '<button type="button" class="btn btn-small green waves-effect" onclick="tagDomain(_modalDomain, \'good\')">Mark Good</button>'
-        +     '<button type="button" class="btn btn-small red waves-effect" onclick="tagDomain(_modalDomain, \'bad\')">Mark Bad</button>'
+        +     '<button type="button" class="btn btn-small btn-outline good waves-effect" onclick="tagDomain(_modalDomain, \'good\')">Mark Good</button>'
+        +     '<button type="button" class="btn btn-small btn-outline bad waves-effect" onclick="tagDomain(_modalDomain, \'bad\')">Mark Bad</button>'
         +     '<button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain(_modalDomain, \'\')">Clear</button>'
         +   '</div>'
         + '</div>'
@@ -462,7 +463,7 @@ function buildPanelHtml(domain) {
         +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-watchlist-current">Loading...</span></div>'
         +   '<div class="dpanel-btn-row"><button type="button" id="modal-watchlist-btn" class="btn btn-small waves-effect" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button></div>'
         + '</div>'
-        + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn waves-effect indigo"><i class="material-icons left">shield</i>Open in VirusTotal</a></div>'
+        + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn btn-outline info waves-effect"><i class="material-icons left">shield</i>Open in VirusTotal</a></div>'
         + '</div>';
 }
 function toggleDomainDetail(linkEl, domain) {
@@ -496,8 +497,8 @@ function loadDomainTag(domain) {
             const box = document.getElementById('modal-tag-current');
             if (!box) return;
             if (data.success && data.tag) {
-                const color = data.tag.tag === 'good' ? '#27ae60' : '#c0392b';
-                box.innerHTML = '<span style="color:' + color + '; font-weight:700;">' + data.tag.tag.toUpperCase() + '</span>';
+                const cls = data.tag.tag === 'good' ? 'tag-good-text' : 'tag-bad-text';
+                box.innerHTML = '<span class="' + cls + '">' + data.tag.tag.toUpperCase() + '</span>';
                 if (data.tag.note) box.innerHTML += ' &mdash; ' + htmlspecialchars(data.tag.note);
             } else {
                 box.textContent = 'Not classified';
@@ -516,8 +517,8 @@ function loadWatchlistStatus(domain) {
             const btn = document.getElementById('modal-watchlist-btn');
             if (!box) return;
             if (data.in_watchlist) {
-                let html = '<span style="color: #f39c12; font-weight:700;">In watchlist</span>';
-                if (data.group_name) html += ' <span style="color:#888;font-size:0.85rem;">(' + htmlspecialchars(data.group_name) + ')</span>';
+                let html = '<span class="text-in-watchlist">In watchlist</span>';
+                if (data.group_name) html += ' <span class="text-soft">(' + htmlspecialchars(data.group_name) + ')</span>';
                 if (data.note) html += ' &mdash; ' + htmlspecialchars(data.note);
                 box.innerHTML = html;
                 btn.textContent = 'Remove from Watchlist';
