@@ -20,6 +20,7 @@ never competes with the CZDS worker database for writes.
 import argparse
 import configparser
 import gzip
+import json
 import logging
 import os
 import re
@@ -700,15 +701,11 @@ def main() -> int:
 
     host_url = cfg.get("hosting", "url").rstrip("/")
     api_key = cfg.get("hosting", "api_key")
+    kind = "recheck" if args.recheck else ("test" if args.file else "import")
 
     log_dir = os.path.join(settings["data_dir"], "logs")
     logger.setup_logger(log_dir)
-    log.info("OpenINTEL import starting. Attribution: %s", ATTRIBUTION)
-
-    lock = acquire_lock(settings["data_dir"])
-    if lock is None:
-        log.warning("Another OpenINTEL import is already running. Exiting.")
-        return 0
+    log.info("OpenINTEL %s starting. Attribution: %s", kind, ATTRIBUTION)
 
     def report(status: str, payload: dict) -> None:
         """Report progress/result back to the web command (if any)."""
@@ -718,13 +715,19 @@ def main() -> int:
             sync_client.update_command_status(host_url, api_key, args.command_id,
                                               status, json.dumps(payload))
         except Exception as e:
-            log.debug("Could not report command %s: %s", args.command_id, e)
+            # Loud on purpose: a silent failure here leaves the command 'running'.
+            log.warning("Could not report command %s (%s): %s", args.command_id, status, e)
+
+    lock = acquire_lock(settings["data_dir"])
+    if lock is None:
+        log.warning("Another OpenINTEL import is already running. Exiting.")
+        report("failed", {"kind": kind, "error": "Another OpenINTEL run is already in progress."})
+        return 0
 
     session = requests.Session()
     session.headers.update({"User-Agent": "ThreatIntelligence-TDL-OpenINTEL/1.0"})
     conn = init_db(settings["db_path"])
     reports = []
-    kind = "recheck" if args.recheck else ("test" if args.file else "import")
     try:
         tlds = resolve_tlds(cfg, args, session, host_url, api_key)
         if not tlds:

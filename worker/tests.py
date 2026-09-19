@@ -295,6 +295,14 @@ def test_openintel_resolve_latest() -> None:
     print("[PASS] test_openintel_resolve_latest")
 
 
+def test_openintel_json_available() -> None:
+    # Regression: report() uses json.dumps; a missing import left commands
+    # stuck in 'running' silently.
+    assert hasattr(openintel, "json"), "openintel must import json"
+    openintel.json.dumps({"ok": True})
+    print("[PASS] test_openintel_json_available")
+
+
 def test_openintel_recheck_cached() -> None:
     sent: list[dict] = []
     orig_kw = openintel.sync_client.get_keywords
@@ -388,6 +396,7 @@ if __name__ == "__main__":
     test_openintel_parse_date()
     test_openintel_resolve_latest()
     test_openintel_csv_gz_read()
+    test_openintel_json_available()
     test_openintel_recheck_cached()
     test_openintel_baseline_and_diff()
     test_openintel_parquet_read()

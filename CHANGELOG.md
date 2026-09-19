@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.4.5] - 2026-09-19
+
+### Fixed
+
+- **OpenINTEL commands stuck in `running`**: `worker/openintel.py` used `json.dumps()` in its status reporting but never imported `json`, so every report raised `NameError`, was swallowed, and the command never left `running` even though the job had finished. Added the missing import and made reporting failures **warn** (they are no longer silent).
+- The importer also reports `failed` if it cannot acquire the OpenINTEL lock (another run in progress) instead of exiting silently.
+- **Zombie processes**: the daemon now reaps finished detached children (`reap_children()`), so the OpenINTEL child no longer lingers as `<defunct>`.
+- Log line now says `import`/`recheck`/`test` instead of always "import".
+
 ## [v1.4.4] - 2026-09-19
 
 ### Fixed

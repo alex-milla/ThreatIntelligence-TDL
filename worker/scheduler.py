@@ -1471,6 +1471,23 @@ def release_worker_lock(handle) -> None:
     handle.close()
 
 
+def reap_children() -> None:
+    """Reap finished detached children (e.g. the OpenINTEL importer).
+
+    The OpenINTEL job is launched with subprocess.Popen and never waited on, so
+    without this its process would stay as a zombie until the daemon exits.
+    """
+    try:
+        while True:
+            pid, _status = os.waitpid(-1, os.WNOHANG)
+            if pid == 0:
+                break
+    except ChildProcessError:
+        pass
+    except OSError:
+        pass
+
+
 def main() -> int:
     try:
         sys.stdout.reconfigure(line_buffering=True)
@@ -1579,6 +1596,8 @@ def main() -> int:
                 except Exception as e:
                     log.error(f"Daemon loop error: {e}")
 
+                reap_children()
+
                 if restart_requested:
                     log.info("Worker updated on disk; exiting so systemd restarts it with the new code.")
                     break
@@ -1614,6 +1633,7 @@ def main() -> int:
         if restart_requested:
             log.info("Worker updated on disk; cron mode will use the new code on the next run.")
 
+    reap_children()
     release_worker_lock(lock_handle)
     db.close()
     return 0
