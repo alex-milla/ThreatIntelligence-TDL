@@ -295,6 +295,36 @@ def test_openintel_resolve_latest() -> None:
     print("[PASS] test_openintel_resolve_latest")
 
 
+def test_openintel_recheck_cached() -> None:
+    sent: list[dict] = []
+    orig_kw = openintel.sync_client.get_keywords
+    orig_send = openintel.sync_client.send_matches
+    openintel.sync_client.get_keywords = lambda host, key: [{"id": 1, "keyword": "brand"}]
+
+    def fake_send(host, key, matches):
+        sent.extend(matches)
+        return True
+
+    openintel.sync_client.send_matches = fake_send
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn = openintel.init_db(os.path.join(tmpdir, "oi.db"))
+            conn.executemany(
+                "INSERT INTO cctld_seen (domain, tld, first_seen) VALUES (?, ?, ?)",
+                [("brand-a.io", "io", "2026-01-01"), ("other.io", "io", "2026-01-01")])
+            conn.commit()
+            stats = openintel.recheck_cached(conn, ["io"], "https://host", "key", {})
+            conn.close()
+    finally:
+        openintel.sync_client.get_keywords = orig_kw
+        openintel.sync_client.send_matches = orig_send
+
+    assert stats["domains_checked"] == 2 and stats["matches_found"] == 1, stats
+    assert len(sent) == 1 and sent[0]["domain"] == "brand-a.io", sent
+    assert sent[0]["is_historical"] == 1 and sent[0]["source"] == "ct", sent
+    print("[PASS] test_openintel_recheck_cached")
+
+
 def test_openintel_csv_gz_read() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "ccTLD-domain-names-list.io.2026-09-14.csv.gz")
@@ -358,6 +388,7 @@ if __name__ == "__main__":
     test_openintel_parse_date()
     test_openintel_resolve_latest()
     test_openintel_csv_gz_read()
+    test_openintel_recheck_cached()
     test_openintel_baseline_and_diff()
     test_openintel_parquet_read()
     print("\nAll tests passed.")

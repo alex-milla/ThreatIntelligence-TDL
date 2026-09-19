@@ -89,13 +89,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $db->commit();
 
-    if ($source === 'openintel' && $action === 'run_openintel') {
+    if ($source === 'openintel' && ($action === 'run_openintel' || $action === 'recheck_openintel')) {
         if (hasPendingCommand($db, 'run_openintel')) {
             $_SESSION['flash_message'] = 'An OpenINTEL import is already queued or running.';
         } else {
+            $payload = ['tlds' => array_values($active)];
+            if ($action === 'recheck_openintel') {
+                $payload['recheck'] = true;
+            }
             $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")
-               ->execute(['run_openintel', json_encode(['tlds' => array_values($active)])]);
-            $_SESSION['flash_message'] = 'OpenINTEL import queued for the selected ccTLD(s). It will run in the background on the worker.';
+               ->execute(['run_openintel', json_encode($payload)]);
+            $_SESSION['flash_message'] = $action === 'recheck_openintel'
+                ? 'OpenINTEL recheck queued. It will match the cached ccTLD domains against the current keywords (marked historical).'
+                : 'OpenINTEL import queued for the selected ccTLD(s). It will run in the background on the worker.';
         }
         header('Location: /admin/tlds.php?source=openintel');
         exit;
@@ -292,6 +298,11 @@ require __DIR__ . '/../templates/header.php';
                     title="Download and import the latest weekly lists for the selected ccTLDs (runs in the background on the worker)"
                     onclick="return confirm('Run the OpenINTEL import for the selected ccTLD(s) in the background?')">
                 <i class="material-icons left">cloud_download</i>Run OpenINTEL
+            </button>
+            <button type="submit" class="btn btn-outline waves-effect" name="action" value="recheck_openintel"
+                    title="Match the already-cached ccTLD domains against the current keywords (results are marked historical)"
+                    onclick="return confirm('Match the cached ccTLD domains against the current keywords? Results are marked historical and hidden from the default listings.')">
+                <i class="material-icons left">manage_search</i>Match cached
             </button>
             <?php else: ?>
             <button type="submit" class="btn waves-effect" name="action" value="run_worker_refresh"

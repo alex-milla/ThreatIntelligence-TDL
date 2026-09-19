@@ -556,6 +556,62 @@ def run_tld(tld: str, session: requests.Session, conn: sqlite3.Connection,
                 pass
 
 
+def recheck_cached(conn: sqlite3.Connection, tlds: list[str], host_url: str,
+                   api_key: str, settings: dict) -> dict:
+    """Match already-cached ccTLD domains against the current keywords.
+
+    The cached domains are existing registrations, so the matches are flagged
+    as historical (hidden from the default "new" listings; visible with the
+    "Include tagged / historical" toggle), mirroring the CZDS recheck.
+    """
+    stats = {"domains_checked": 0, "matches_found": 0}
+    try:
+        keywords = sync_client.get_keywords(host_url, api_key)
+    except Exception as e:
+        log.error("OpenINTEL recheck: could not fetch keywords: %s", e)
+        return stats
+
+    keyword_matcher = matcher.Matcher(keywords) if keywords else None
+    if not keyword_matcher or not keyword_matcher.keyword_list:
+        log.warning("OpenINTEL recheck: no active keywords.")
+        return stats
+
+    for tld in tlds:
+        last = ""
+        checked = 0
+        tld_matches = 0
+        while True:
+            rows = conn.execute(
+                "SELECT domain, first_seen FROM cctld_seen WHERE tld = ? AND domain > ? "
+                "ORDER BY domain LIMIT ?",
+                (tld, last, BATCH_SIZE)
+            ).fetchall()
+            if not rows:
+                break
+            last = rows[-1][0]
+            first_seen = {}
+            domains = []
+            for domain, fs in rows:
+                domains.append(domain)
+                first_seen[domain] = fs
+
+            matches = keyword_matcher.match(domains)
+            if matches:
+                for m in matches:
+                    m["first_seen"] = first_seen.get(m["domain"])
+                    m["is_historical"] = 1
+                    m["source"] = "ct"
+                if sync_client.send_matches(host_url, api_key, matches):
+                    stats["matches_found"] += len(matches)
+                    tld_matches += len(matches)
+                else:
+                    log.warning("OpenINTEL recheck .%s: failed to send %d matches", tld, len(matches))
+            stats["domains_checked"] += len(domains)
+            checked += len(domains)
+        log.info("OpenINTEL recheck .%s: checked=%d matches=%d", tld, checked, tld_matches)
+    return stats
+
+
 # --------------------------------------------------------------------------
 # Config / main
 # --------------------------------------------------------------------------
@@ -609,12 +665,15 @@ def main() -> int:
                         help="0=latest weekly file, 1=previous, ... (useful for testing)")
     parser.add_argument("--dry-run", action="store_true", help="Read/diff without sending matches")
     parser.add_argument("--force", action="store_true", help="Re-download and re-process")
+    parser.add_argument("--recheck", action="store_true",
+                        help="Match already-cached ccTLD domains against the current keywords")
     parser.add_argument("--reset-tld", help="Delete the seen-set for a TLD first (testing)")
     args = parser.parse_args()
 
     cfg, settings = load_settings()
 
-    if not cfg.getboolean("openintel", "enabled", fallback=False) and not args.force and not args.file:
+    if (not cfg.getboolean("openintel", "enabled", fallback=False)
+            and not args.force and not args.file and not args.recheck):
         print("[-] OpenINTEL import disabled ([openintel] enabled = false).")
         return 0
     if not cfg.getboolean("openintel", "accept_terms", fallback=False):
@@ -648,6 +707,12 @@ def main() -> int:
             conn.execute("DELETE FROM cctld_seen WHERE tld = ?", (args.reset_tld,))
             conn.execute("DELETE FROM cctld_runs WHERE tld = ?", (args.reset_tld,))
             conn.commit()
+
+        if args.recheck:
+            stats = recheck_cached(conn, tlds, host_url, api_key, settings)
+            log.info("OpenINTEL recheck done: checked=%d matches=%d",
+                     stats["domains_checked"], stats["matches_found"])
+            return 0
 
         for tld in tlds:
             if args.reset_tld and tld != args.reset_tld:

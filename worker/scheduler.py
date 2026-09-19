@@ -1365,6 +1365,8 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                     cmd = [sys.executable, script]
                     if isinstance(tlds, list) and tlds:
                         cmd += ["--tlds", ",".join(str(t).lower() for t in tlds if t)]
+                    if opts.get("recheck"):
+                        cmd.append("--recheck")
                     try:
                         with open(out_path, "a", encoding="utf-8") as out:
                             subprocess.Popen(cmd, cwd=os.path.dirname(script),

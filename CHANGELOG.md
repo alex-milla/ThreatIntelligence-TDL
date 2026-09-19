@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.4.3] - 2026-09-19
+
+### Added
+
+- **OpenINTEL recheck**: match the already-cached ccTLD domains against the current keywords. Because the first run is a baseline that caches without notifying, this lets you mine the cached domains.
+  - CLI: `openintel.py --recheck [--tlds io,es,...]`.
+  - Admin → TLDs → ccTLD (OpenINTEL) → **Match cached** (queues `run_openintel` with `{"recheck": true}`).
+  - Matches are flagged **historical** (`is_historical=1`, `source='ct'`), so they are hidden from the default "new" listings and visible via the **Include tagged / historical** toggle, mirroring the CZDS recheck.
+
 ## [v1.4.2] - 2026-09-19
 
 ### Fix
