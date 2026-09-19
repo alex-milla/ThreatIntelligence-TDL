@@ -1,6 +1,11 @@
-# Protect data directory
 RewriteEngine On
-RewriteRule ^data/ - [F,L]
+
+# Deny access to sensitive directories
+RewriteRule ^\. - [F,L]
+
+# Block access to parent directories
+RewriteRule ^\.\./ - [F,L]
+RewriteRule ^\./ - [F,L]
 
 # Optional: Pretty URLs (if supported by hosting)
 # RewriteCond %{REQUEST_FILENAME} !-f
