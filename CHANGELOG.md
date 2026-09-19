@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.65] - 2026-09-19
+
+### New classification state: "Insufficient info" (under observation)
+- **New third tag `observing`** alongside good/bad. The domain panels (Dashboard, Notifications and Watchlist) now show an **Insufficient info** button and the row action menu in Notifications has the equivalent entry. Domains under observation remain visible (they are not hidden).
+- `domain_tags.tag` no longer has a `CHECK` constraint (safe table rebuild preserving rows), so further states can be added later; values are validated in PHP (`ajax_tag_domain.php`, `api/v1/domain_tags.php`).
+- Chips/badges support the third state (`.tag-chip.observing`, warning tone) on all three pages.
+
+### Hide validated domains registered before the last successful scan
+- New **`tlds.last_ok_sync`**, advanced only by a real successful scan (`downloaded`, `not_modified`, `baselined`).
+- New **`domain_whois.creation_ts`** (UTC, normalized with `strtotime()`) so SQLite can compare raw WHOIS dates; `COALESCE(creation_ts, datetime(creation_date))` is used in queries.
+- The default "new" views (Notifications list + bulk delete + hidden counter, Dashboard KPIs/sparkline/recent matches and the Keywords match counter) now hide a domain whose WHOIS creation date is **older than `last_ok_sync - new_domain_days`**. Domains under observation are exempt (they stay in the list).
+- Notifications adds an **Only observing** filter and the existing toggle is renamed **Include tagged / historical / old**.
+
 ## [v1.3.64] - 2026-09-19
 
 ### Web UI - partial auto-refresh when a process finishes

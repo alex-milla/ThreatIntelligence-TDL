@@ -479,6 +479,7 @@ input:focus-visible {
 .text-soft { color: var(--text-muted); }
 .tag-good-text { color: var(--success); font-weight: 700; }
 .tag-bad-text  { color: var(--danger);  font-weight: 700; }
+.tag-observing-text { color: var(--warning); font-weight: 700; }
 .text-in-watchlist { color: var(--warning); font-weight: 700; }
 .center-align { text-align: center; }
 .material-icons.tiny { font-size: 1rem; vertical-align: middle; }
@@ -591,6 +592,7 @@ h5 { font-size: 1.15rem; font-weight: 500; }
 
 .btn-outline.good { color: var(--success); border-color: var(--success-border); }
 .btn-outline.bad  { color: var(--danger);  border-color: var(--danger-border); }
+.btn-outline.warning { color: var(--warning); border-color: var(--warning-border); }
 .btn-outline.info { color: var(--info);    border-color: var(--info-border); }
 
 .btn-tiny {
@@ -707,6 +709,7 @@ tr.unread {
 
 .tag-chip.good { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
 .tag-chip.bad  { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
+.tag-chip.observing { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
 
 /* ------------------------------------------------------------
    Tables
@@ -834,6 +837,8 @@ table.highlight > tbody > tr:hover {
 .action-menu-dropdown .menu-good .material-icons { color: var(--success); }
 .action-menu-dropdown .menu-bad { color: var(--danger); }
 .action-menu-dropdown .menu-bad .material-icons { color: var(--danger); }
+.action-menu-dropdown .menu-observing { color: var(--warning); }
+.action-menu-dropdown .menu-observing .material-icons { color: var(--warning); }
 .action-menu-dropdown hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
 
 /* ------------------------------------------------------------

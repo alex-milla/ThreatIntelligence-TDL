@@ -20,9 +20,19 @@ if (!empty($validPeriods[$period])) {
     $periodParams[] = $validPeriods[$period];
 }
 
-// Hide historical (recheck) matches and domains already classified (good/bad)
-// from the "new" dashboard view, matching the notifications page default.
-$archiveSql = " AND m.is_historical = 0 AND NOT EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain)";
+// Hide from the "new" dashboard view (matching the notifications page default):
+// historical (recheck) matches, domains classified good/bad, and domains whose
+// WHOIS creation date proves they were already registered before the last
+// successful scan of their TLD. Domains under observation are never hidden.
+$newDomainDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
+$oldDomainSql = "EXISTS (SELECT 1 FROM domain_whois dw JOIN tlds t ON t.name = m.tld "
+    . "WHERE dw.domain = m.domain AND t.last_ok_sync IS NOT NULL "
+    . "AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) IS NOT NULL "
+    . "AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) < datetime(t.last_ok_sync, '-{$newDomainDays} days'))";
+$archiveSql = " AND m.is_historical = 0"
+    . " AND NOT EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain AND dt.tag IN ('good','bad'))"
+    . " AND (EXISTS (SELECT 1 FROM domain_tags do WHERE do.domain = m.domain AND do.tag = 'observing')"
+    . " OR NOT " . $oldDomainSql . ")";
 
 // Stats
 $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE user_id = ?");
@@ -211,9 +221,9 @@ $sparkNonZero = count(array_filter($sparkDays));
                     $dtag = $domainTags[$m['domain']] ?? null;
                     $tagBadge = '';
                     if ($dtag) {
-                        $cls = $dtag === 'good' ? 'good' : 'bad';
-                        $label = $dtag === 'good' ? 'GOOD' : 'BAD';
-                        $tagBadge = ' <span class="tag-chip ' . $cls . '">' . $label . '</span>';
+                        $tagLabels = ['good' => 'GOOD', 'bad' => 'BAD', 'observing' => 'OBSERVING'];
+                        $cls = in_array($dtag, ['good', 'bad', 'observing'], true) ? $dtag : 'bad';
+                        $tagBadge = ' <span class="tag-chip ' . $cls . '">' . ($tagLabels[$dtag] ?? strtoupper($dtag)) . '</span>';
                     }
                 ?>
                 <tr>
@@ -257,6 +267,7 @@ function buildPanelHtml(domain) {
         +   '<div class="dpanel-btn-row">'
         +     '<button type="button" class="btn btn-small btn-outline good waves-effect" onclick="tagDomain(_modalDomain, \'good\')">Mark Good</button>'
         +     '<button type="button" class="btn btn-small btn-outline bad waves-effect" onclick="tagDomain(_modalDomain, \'bad\')">Mark Bad</button>'
+        +     '<button type="button" class="btn btn-small btn-outline warning waves-effect" onclick="tagDomain(_modalDomain, \'observing\')"><i class="material-icons left">help_outline</i>Insufficient info</button>'
         +     '<button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain(_modalDomain, \'\')">Clear</button>'
         +   '</div>'
         + '</div>'
@@ -299,8 +310,10 @@ function loadDomainTag(domain) {
             const box = document.getElementById('modal-tag-current');
             if (!box) return;
             if (data.success && data.tag) {
-                const cls = data.tag.tag === 'good' ? 'tag-good-text' : 'tag-bad-text';
-                box.innerHTML = '<span class="' + cls + '">' + data.tag.tag.toUpperCase() + '</span>';
+                const tag = data.tag.tag;
+                const cls = tag === 'good' ? 'tag-good-text' : (tag === 'observing' ? 'tag-observing-text' : 'tag-bad-text');
+                const label = tag === 'observing' ? 'OBSERVING (insufficient info)' : tag.toUpperCase();
+                box.innerHTML = '<span class="' + cls + '">' + label + '</span>';
                 if (data.tag.note) box.innerHTML += ' &mdash; ' + htmlspecialchars(data.tag.note);
             } else {
                 box.textContent = 'Not classified';

@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $tag = $input['tag'] ?? '';
     $note = trim($input['note'] ?? '');
 
-    if (!$domain || !in_array($tag, ['good', 'bad'], true)) {
+    if (!$domain || !in_array($tag, ['good', 'bad', 'observing'], true)) {
         jsonResponse(['success' => false, 'error' => 'Invalid domain or tag'], 400);
     }
 

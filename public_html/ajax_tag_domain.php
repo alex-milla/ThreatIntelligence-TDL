@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    if (!in_array($tag, ['good', 'bad'], true)) {
+    if (!in_array($tag, ['good', 'bad', 'observing'], true)) {
         echo json_encode(['success' => false, 'error' => 'Invalid tag']);
         exit;
     }

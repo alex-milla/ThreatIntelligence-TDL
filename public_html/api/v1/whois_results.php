@@ -32,8 +32,8 @@ $stored = 0;
 
 $stmt = $db->prepare(
     "INSERT OR REPLACE INTO domain_whois "
-    . "(domain, creation_date, expiration_date, registrar, name_servers, source, status, updated_at, cached_at) "
-    . "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
+    . "(domain, creation_date, creation_ts, expiration_date, registrar, name_servers, source, status, updated_at, cached_at) "
+    . "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
 );
 
 $db->beginTransaction();
@@ -58,9 +58,21 @@ try {
             return is_string($n) ? strtolower(rtrim(trim($n), '.')) : null;
         }, $nameServers))), 0, 20);
 
+        // Normalize the creation date to UTC so SQLite can compare it directly
+        // (raw WHOIS/registrar formats are often not ISO-8601).
+        $creationDate = $entry['creation_date'] ?? null;
+        $creationTs = null;
+        if (is_string($creationDate) && trim($creationDate) !== '') {
+            $ts = strtotime($creationDate);
+            if ($ts !== false) {
+                $creationTs = gmdate('Y-m-d H:i:s', $ts);
+            }
+        }
+
         $stmt->execute([
             $domain,
-            $entry['creation_date'] ?? null,
+            $creationDate,
+            $creationTs,
             $entry['expiration_date'] ?? null,
             isset($entry['registrar']) ? substr((string)$entry['registrar'], 0, 255) : null,
             json_encode($nameServers),

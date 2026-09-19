@@ -6,6 +6,25 @@ requireAuth();
 $db = Database::get();
 $userId = (int)$_SESSION['user_id'];
 
+// Configurable "new domain" window, also used as the margin when hiding domains
+// whose WHOIS creation date proves they were registered before the last scan.
+$defaultNewDays = max(1, (int)(getSetting($db, 'new_domain_days', '1')));
+$validDateFilters = ['24h' => '-1 day', '7d' => '-7 days', '30d' => '-30 days', 'all' => ''];
+
+// Default visibility rules, shared by the list, the bulk delete and the counters:
+//  - hidden: historical (recheck) matches, domains tagged good/bad, and domains
+//    registered before the last successful scan of their TLD (validated via WHOIS);
+//  - kept:  domains under observation ('observing') are never hidden by date.
+$goodBadClause = "NOT EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain AND dt.tag IN ('good','bad'))";
+$observingClause = "EXISTS (SELECT 1 FROM domain_tags dob WHERE dob.domain = m.domain AND dob.tag = 'observing')";
+$oldDomainClause = "EXISTS (SELECT 1 FROM domain_whois dw JOIN tlds t ON t.name = m.tld "
+    . "WHERE dw.domain = m.domain AND t.last_ok_sync IS NOT NULL "
+    . "AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) IS NOT NULL "
+    . "AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) < datetime(t.last_ok_sync, '-{$defaultNewDays} days'))";
+$hiddenPredicate = "m.is_historical = 1"
+    . " OR NOT (" . $goodBadClause . ")"
+    . " OR (NOT (" . $observingClause . ") AND (" . $oldDomainClause . "))";
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
 }
@@ -55,9 +74,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $dateFilterPost = $_POST['date'] ?? 'all';
     $unreadFilterPost = isset($_POST['unread_only']) && $_POST['unread_only'] === '1';
     $archivedFilterPost = isset($_POST['archived']) && $_POST['archived'] === '1';
+    $observingFilterPost = isset($_POST['observing']) && $_POST['observing'] === '1';
 
-    if (!$archivedFilterPost) {
-        $delWhere .= " AND m.is_historical = 0 AND NOT EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain)";
+    if ($observingFilterPost) {
+        $delWhere .= " AND " . $observingClause;
+    } elseif (!$archivedFilterPost) {
+        $delWhere .= " AND NOT (" . $hiddenPredicate . ")";
     }
 
     if ($qFilter !== '') {
@@ -87,12 +109,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 
     $redirect = '/notifications.php';
-    if ($qFilter !== '' || $dateFilterPost !== 'all' || $unreadFilterPost || $archivedFilterPost) {
+    if ($qFilter !== '' || $dateFilterPost !== 'all' || $unreadFilterPost || $archivedFilterPost || $observingFilterPost) {
         $qs = [];
         if ($qFilter !== '') $qs['q'] = $qFilter;
         if ($dateFilterPost !== 'all') $qs['date'] = $dateFilterPost;
         if ($unreadFilterPost) $qs['unread_only'] = '1';
         if ($archivedFilterPost) $qs['archived'] = '1';
+        if ($observingFilterPost) $qs['observing'] = '1';
         $redirect .= '?' . http_build_query($qs);
     }
     header('Location: ' . $redirect);
@@ -104,10 +127,9 @@ $search = trim($_GET['q'] ?? '');
 $unreadOnly = isset($_GET['unread_only']) && $_GET['unread_only'] === '1';
 $dateFilter = $_GET['date'] ?? 'all';
 $includeArchived = isset($_GET['archived']) && $_GET['archived'] === '1';
-$validDateFilters = ['24h' => '-1 day', '7d' => '-7 days', '30d' => '-30 days', 'all' => ''];
+$observingOnly = isset($_GET['observing']) && $_GET['observing'] === '1';
 
 // Configurable threshold for "new" badge/filter (default from admin setting)
-$defaultNewDays = max(1, (int)(getSetting($db, 'new_domain_days', '1')));
 $newDays = isset($_GET['new_days']) ? max(1, min(365, (int)$_GET['new_days'])) : null;
 $newOnly = $newDays !== null;
 
@@ -119,10 +141,13 @@ $offset = ($page - 1) * $perPage;
 $where = "WHERE n.user_id = ? AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)";
 $params = [$userId, $userId];
 
-// By default hide historical (recheck) matches and domains already classified
-// (good/bad). They remain accessible with the "Include tagged / historical" toggle.
-if (!$includeArchived) {
-    $where .= " AND m.is_historical = 0 AND NOT EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain)";
+// Default view hides historical, good/bad and validated-as-old domains, but
+// keeps domains under observation. The "Only observing" filter shows just those,
+// and the "Include tagged / historical" toggle reveals the hidden ones.
+if ($observingOnly) {
+    $where .= " AND " . $observingClause;
+} elseif (!$includeArchived) {
+    $where .= " AND NOT (" . $hiddenPredicate . ")";
 }
 
 if ($search !== '') {
@@ -159,13 +184,13 @@ $hiddenCountStmt = $db->prepare("SELECT COUNT(*) FROM notifications n JOIN match
 $hiddenCountStmt->execute([$userId, $userId]);
 $hiddenCount = (int)$hiddenCountStmt->fetchColumn();
 
-// Count how many are hidden because they are historical (recheck) or tagged.
+// Count how many are hidden (historical, good/bad, or validated as old). Domains
+// under observation are visible and therefore not counted here.
 $archivedCount = 0;
-if (!$includeArchived) {
+if (!$includeArchived && !$observingOnly) {
     $archivedCountStmt = $db->prepare(
         "SELECT COUNT(*) FROM notifications n JOIN matches m ON n.match_id = m.id "
-        . "WHERE n.user_id = ? AND (m.is_historical = 1 "
-        . "OR EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain))"
+        . "WHERE n.user_id = ? AND (" . $hiddenPredicate . ")"
     );
     $archivedCountStmt->execute([$userId]);
     $archivedCount = (int)$archivedCountStmt->fetchColumn();
@@ -214,13 +239,14 @@ if (!empty($notifications)) {
 }
 
 // Helper to build pagination URLs preserving filters
-function notifUrl(int $p, string $search, string $date, bool $unread, ?int $newDays, bool $archived = false): string {
+function notifUrl(int $p, string $search, string $date, bool $unread, ?int $newDays, bool $archived = false, bool $observing = false): string {
     $q = ['page' => $p];
     if ($search !== '') $q['q'] = $search;
     if ($date !== 'all') $q['date'] = $date;
     if ($unread) $q['unread_only'] = '1';
     if ($newDays !== null) $q['new_days'] = (string)$newDays;
     if ($archived) $q['archived'] = '1';
+    if ($observing) $q['observing'] = '1';
     return '/notifications.php?' . http_build_query($q);
 }
 
@@ -261,17 +287,21 @@ require __DIR__ . '/templates/header.php';
             <input type="number" name="new_days" value="<?= $newDays ?? $defaultNewDays ?>" min="1" max="365" class="browser-default compact num-input">
             <span class="muted">day(s)</span>
         </div>
-        <label class="check-inline" title="Show domains already tagged good/bad and matches from a recheck">
+        <label class="check-inline" title="Reveal hidden domains: tagged good/bad, recheck matches, or validated as registered before the last scan">
             <input type="checkbox" name="archived" value="1" <?= $includeArchived ? 'checked' : '' ?>>
-            <span>Include tagged / historical</span>
+            <span>Include tagged / historical / old</span>
+        </label>
+        <label class="check-inline" title="Show only domains under observation (insufficient info)">
+            <input type="checkbox" name="observing" value="1" <?= $observingOnly ? 'checked' : '' ?>>
+            <span>Only observing</span>
         </label>
         <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">search</i>Search</button>
-        <?php if ($search !== '' || $unreadOnly || $newDays !== null || $dateFilter !== 'all' || $includeArchived): ?>
+        <?php if ($search !== '' || $unreadOnly || $newDays !== null || $dateFilter !== 'all' || $includeArchived || $observingOnly): ?>
         <a href="/notifications.php" class="btn btn-small btn-danger waves-effect"><i class="material-icons left">clear</i>Clear</a>
         <?php endif; ?>
     </form>
 
-    <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all' || $includeArchived): ?>
+    <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all' || $includeArchived || $observingOnly): ?>
     <form method="POST" class="section-actions">
         <?php csrfField(); ?>
         <input type="hidden" name="action" value="delete_all_matching">
@@ -279,6 +309,7 @@ require __DIR__ . '/templates/header.php';
         <input type="hidden" name="date" value="<?= htmlspecialchars($dateFilter) ?>">
         <input type="hidden" name="unread_only" value="<?= $unreadOnly ? '1' : '0' ?>">
         <input type="hidden" name="archived" value="<?= $includeArchived ? '1' : '0' ?>">
+        <input type="hidden" name="observing" value="<?= $observingOnly ? '1' : '0' ?>">
         <button type="submit" class="btn btn-danger waves-effect" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')"><i class="material-icons left">delete_sweep</i>Delete All Matching Results (<?= $total ?>)</button>
     </form>
     <?php endif; ?>
@@ -292,11 +323,17 @@ require __DIR__ . '/templates/header.php';
     <?php if ($archivedCount > 0): ?>
         <div class="notice notice-info">
             <i class="material-icons">inventory_2</i>
-            <div><?= $archivedCount ?> notification(s) hidden because they were already tagged (good/bad) or come from a historical recheck. <a href="/notifications.php?archived=1"><strong>Show them</strong></a>.</div>
+            <div><?= $archivedCount ?> notification(s) hidden because they were tagged good/bad, come from a historical recheck, or were registered before the last scan. <a href="/notifications.php?archived=1"><strong>Show them</strong></a>.</div>
+        </div>
+    <?php endif; ?>
+    <?php if ($observingOnly): ?>
+        <div class="notice notice-warning">
+            <i class="material-icons">help_outline</i>
+            <div>Showing only domains under observation. <a href="/notifications.php"><strong>Show all</strong></a>.</div>
         </div>
     <?php endif; ?>
     <?php if (empty($notifications)): ?>
-        <p class="muted">No notifications to display.<?php if ($hiddenCount > 0): ?> The remaining <?= $hiddenCount ?> are in your <a href="/watchlist.php">Watchlist</a>.<?php endif; ?><?php if ($archivedCount > 0): ?> <?= $archivedCount ?> are tagged/historical (use the toggle above to show them).<?php endif; ?></p>
+        <p class="muted">No notifications to display.<?php if ($hiddenCount > 0): ?> The remaining <?= $hiddenCount ?> are in your <a href="/watchlist.php">Watchlist</a>.<?php endif; ?><?php if ($archivedCount > 0): ?> <?= $archivedCount ?> are hidden (use the toggle above to show them).<?php endif; ?></p>
     <?php else: ?>
         <form method="POST" id="bulk-form">
             <?php csrfField(); ?>
@@ -308,16 +345,17 @@ require __DIR__ . '/templates/header.php';
                 </label>
                 <button type="submit" class="btn btn-small btn-danger waves-effect" onclick="return confirm('Delete selected notifications?')"><i class="material-icons left">delete</i>Delete Selected</button>
                 <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
-                <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all' || $includeArchived): ?>
+                <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all' || $includeArchived || $observingOnly): ?>
                 <button type="submit" formaction="/notifications.php" formmethod="POST" class="btn btn-small btn-danger waves-effect" name="action" value="delete_all_matching" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')"><i class="material-icons left">delete_sweep</i>Delete All Matching (<?= $total ?>)</button>
                 <?php endif; ?>
             </div>
             <!-- Hidden filter params for delete_all_matching -->
-            <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all' || $includeArchived): ?>
+            <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all' || $includeArchived || $observingOnly): ?>
             <input type="hidden" name="q" value="<?= htmlspecialchars($search) ?>">
             <input type="hidden" name="date" value="<?= htmlspecialchars($dateFilter) ?>">
             <input type="hidden" name="unread_only" value="<?= $unreadOnly ? '1' : '0' ?>">
             <input type="hidden" name="archived" value="<?= $includeArchived ? '1' : '0' ?>">
+            <input type="hidden" name="observing" value="<?= $observingOnly ? '1' : '0' ?>">
             <?php endif; ?>
         </form>
         <table class="striped highlight responsive-table">
@@ -339,9 +377,10 @@ require __DIR__ . '/templates/header.php';
                     $dtag = $domainTags[$n['domain']] ?? null;
                     $tagBadge = '';
                     if ($dtag) {
-                        $cls = $dtag['tag'] === 'good' ? 'good' : 'bad';
-                        $label = $dtag['tag'] === 'good' ? 'GOOD' : 'BAD';
-                        $tagBadge = ' <span class="tag-chip ' . $cls . '">' . $label . '</span>';
+                        $tagLabels = ['good' => 'GOOD', 'bad' => 'BAD', 'observing' => 'OBSERVING'];
+                        $tagVal = $dtag['tag'];
+                        $cls = in_array($tagVal, ['good', 'bad', 'observing'], true) ? $tagVal : 'bad';
+                        $tagBadge = ' <span class="tag-chip ' . $cls . '">' . ($tagLabels[$tagVal] ?? strtoupper($tagVal)) . '</span>';
                     }
                     $whoisRow = $domainWhois[$n['domain']] ?? null;
                     $creationDate = $whoisRow['creation_date'] ?? null;
@@ -377,6 +416,7 @@ require __DIR__ . '/templates/header.php';
                                 <?php endif; ?>
                                 <button type="button" class="menu-good" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','good')"><i class="material-icons">thumb_up</i>Mark Good</button>
                                 <button type="button" class="menu-bad" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','bad')"><i class="material-icons">thumb_down</i>Mark Bad</button>
+                                <button type="button" class="menu-observing" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','observing')"><i class="material-icons">help_outline</i>Insufficient info</button>
                                 <button type="button" onclick="toggleWatchlist('<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><i class="material-icons">star</i>Add to Watchlist</button>
                                 <hr>
                                 <form method="POST" style="margin: 0;" onsubmit="return confirm('Delete this notification?')">
@@ -399,7 +439,7 @@ require __DIR__ . '/templates/header.php';
             </span>
             <ul class="pagination">
                 <?php if ($page > 1): ?>
-                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page - 1, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived)) ?>" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
+                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page - 1, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived, $observingOnly)) ?>" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
                 <?php else: ?>
                     <li class="disabled"><a href="#!" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
                 <?php endif; ?>
@@ -408,14 +448,14 @@ require __DIR__ . '/templates/header.php';
                     <?php if ($p === $page): ?>
                         <li class="active"><a href="#!"><?= $p ?></a></li>
                     <?php elseif ($p === 1 || $p === $totalPages || abs($p - $page) <= 2): ?>
-                        <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($p, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived)) ?>"><?= $p ?></a></li>
+                        <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($p, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived, $observingOnly)) ?>"><?= $p ?></a></li>
                     <?php elseif (abs($p - $page) === 3): ?>
                         <li class="disabled"><a href="#!">…</a></li>
                     <?php endif; ?>
                 <?php endfor; ?>
 
                 <?php if ($page < $totalPages): ?>
-                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page + 1, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived)) ?>" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
+                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page + 1, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived, $observingOnly)) ?>" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
                 <?php else: ?>
                     <li class="disabled"><a href="#!" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
                 <?php endif; ?>
@@ -494,6 +534,7 @@ function buildPanelHtml(domain) {
         +   '<div class="dpanel-btn-row">'
         +     '<button type="button" class="btn btn-small btn-outline good waves-effect" onclick="tagDomain(_modalDomain, \'good\')">Mark Good</button>'
         +     '<button type="button" class="btn btn-small btn-outline bad waves-effect" onclick="tagDomain(_modalDomain, \'bad\')">Mark Bad</button>'
+        +     '<button type="button" class="btn btn-small btn-outline warning waves-effect" onclick="tagDomain(_modalDomain, \'observing\')"><i class="material-icons left">help_outline</i>Insufficient info</button>'
         +     '<button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain(_modalDomain, \'\')">Clear</button>'
         +   '</div>'
         + '</div>'
@@ -536,8 +577,10 @@ function loadDomainTag(domain) {
             const box = document.getElementById('modal-tag-current');
             if (!box) return;
             if (data.success && data.tag) {
-                const cls = data.tag.tag === 'good' ? 'tag-good-text' : 'tag-bad-text';
-                box.innerHTML = '<span class="' + cls + '">' + data.tag.tag.toUpperCase() + '</span>';
+                const tag = data.tag.tag;
+                const cls = tag === 'good' ? 'tag-good-text' : (tag === 'observing' ? 'tag-observing-text' : 'tag-bad-text');
+                const label = tag === 'observing' ? 'OBSERVING (insufficient info)' : tag.toUpperCase();
+                box.innerHTML = '<span class="' + cls + '">' + label + '</span>';
                 if (data.tag.note) box.innerHTML += ' &mdash; ' + htmlspecialchars(data.tag.note);
             } else {
                 box.textContent = 'Not classified';

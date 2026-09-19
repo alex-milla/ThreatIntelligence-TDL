@@ -31,11 +31,16 @@ $allowedStatus = [
     'incomplete', 'skipped_large', 'no_space', 'retrying', 'parse_error',
     'baselined',
 ];
+// Only a real successful scan advances the reference used to hide validated
+// domains that were already registered before the previous scan.
+$okStatuses = ['downloaded', 'not_modified', 'baselined'];
 $now = gmdate('c');
 $updated = 0;
 
 $stmt = $db->prepare(
-    "UPDATE tlds SET last_sync = ?, status = ?, records_total = ?, records_new = ?, "
+    "UPDATE tlds SET last_sync = ?, "
+    . "last_ok_sync = CASE WHEN ? = 1 THEN ? ELSE last_ok_sync END, "
+    . "status = ?, records_total = ?, records_new = ?, "
     . "zone_size = ?, zone_file_mtime = ?, last_error = ?, retry_attempts = ?, next_retry = ? WHERE name = ?"
 );
 
@@ -57,7 +62,11 @@ try {
 
         $nextRetry = isset($entry['next_retry']) && $entry['next_retry'] !== '' ? (string)$entry['next_retry'] : null;
 
+        $isOk = in_array($status, $okStatuses, true) ? 1 : 0;
+
         $stmt->execute([
+            $now,
+            $isOk,
             $now,
             $status,
             (int)($entry['records_total'] ?? 0),

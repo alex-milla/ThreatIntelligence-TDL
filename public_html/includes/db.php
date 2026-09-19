@@ -183,9 +183,11 @@ class Database {
         )");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_watchlist_groups_user ON watchlist_groups(user_id)");
 
+        // tag has no CHECK so new classification states (e.g. observing) can be
+        // added without migrating; values are validated in PHP.
         $db->exec("CREATE TABLE IF NOT EXISTS domain_tags (
             domain TEXT PRIMARY KEY,
-            tag TEXT CHECK(tag IN ('good','bad')),
+            tag TEXT,
             note TEXT,
             created_by INTEGER NOT NULL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -278,5 +280,39 @@ class Database {
         try {
             $db->exec("ALTER TABLE domain_whois ADD COLUMN updated_at TEXT");
         } catch (PDOException $e) { }
+
+        // Safe migration: normalized UTC creation timestamp for SQL date filters
+        // (raw WHOIS dates can be non-ISO, which SQLite's datetime() cannot parse).
+        try {
+            $db->exec("ALTER TABLE domain_whois ADD COLUMN creation_ts TEXT");
+        } catch (PDOException $e) { }
+
+        // Safe migration: last *successful* sync per TLD, used to hide validated
+        // domains registered before the previous scan.
+        try {
+            $db->exec("ALTER TABLE tlds ADD COLUMN last_ok_sync TEXT");
+        } catch (PDOException $e) { }
+
+        // Safe migration: allow additional classification states (e.g. observing)
+        // by dropping the old CHECK(tag IN ('good','bad')) constraint. SQLite
+        // cannot alter a CHECK, so the table is rebuilt preserving its rows.
+        try {
+            $dtSql = $db->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='domain_tags'")->fetchColumn();
+            if (is_string($dtSql) && stripos($dtSql, 'CHECK(tag') !== false) {
+                $db->exec("ALTER TABLE domain_tags RENAME TO domain_tags_old");
+                $db->exec("CREATE TABLE domain_tags (
+                    domain TEXT PRIMARY KEY,
+                    tag TEXT,
+                    note TEXT,
+                    created_by INTEGER NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )");
+                $db->exec("INSERT INTO domain_tags (domain, tag, note, created_by, created_at)
+                           SELECT domain, tag, note, created_by, created_at FROM domain_tags_old");
+                $db->exec("DROP TABLE domain_tags_old");
+            }
+        } catch (PDOException $e) {
+            // Leave the table as-is; callers still validate tag values in PHP.
+        }
     }
 }

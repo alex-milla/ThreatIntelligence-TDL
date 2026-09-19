@@ -200,9 +200,10 @@ require __DIR__ . '/templates/header.php';
                     $dtag = $domainTags[$item['domain']] ?? null;
                     $tagBadge = '';
                     if ($dtag) {
-                        $cls = $dtag['tag'] === 'good' ? 'good' : 'bad';
-                        $label = $dtag['tag'] === 'good' ? 'GOOD' : 'BAD';
-                        $tagBadge = ' <span class="tag-chip ' . $cls . '">' . $label . '</span>';
+                        $tagLabels = ['good' => 'GOOD', 'bad' => 'BAD', 'observing' => 'OBSERVING'];
+                        $tagVal = $dtag['tag'];
+                        $cls = in_array($tagVal, ['good', 'bad', 'observing'], true) ? $tagVal : 'bad';
+                        $tagBadge = ' <span class="tag-chip ' . $cls . '">' . ($tagLabels[$tagVal] ?? strtoupper($tagVal)) . '</span>';
                     }
                 ?>
                 <tr>
@@ -306,6 +307,7 @@ require __DIR__ . '/templates/header.php';
                 <div class="dpanel-btn-row">
                     <button type="button" class="btn btn-small btn-outline good waves-effect" onclick="tagDomain(_modalDomain, 'good')">Mark Good</button>
                     <button type="button" class="btn btn-small btn-outline bad waves-effect" onclick="tagDomain(_modalDomain, 'bad')">Mark Bad</button>
+                    <button type="button" class="btn btn-small btn-outline warning waves-effect" onclick="tagDomain(_modalDomain, 'observing')"><i class="material-icons left">help_outline</i>Insufficient info</button>
                     <button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain(_modalDomain, '')">Remove</button>
                 </div>
             </div>
@@ -347,8 +349,10 @@ function loadDomainTag(domain) {
         .then(data => {
             const box = document.getElementById('modal-tag-current');
             if (data.success && data.tag) {
-                const cls = data.tag.tag === 'good' ? 'tag-good-text' : 'tag-bad-text';
-                box.innerHTML = '<span class="' + cls + '">' + data.tag.tag.toUpperCase() + '</span>';
+                const tag = data.tag.tag;
+                const cls = tag === 'good' ? 'tag-good-text' : (tag === 'observing' ? 'tag-observing-text' : 'tag-bad-text');
+                const label = tag === 'observing' ? 'OBSERVING (insufficient info)' : tag.toUpperCase();
+                box.innerHTML = '<span class="' + cls + '">' + label + '</span>';
                 if (data.tag.note) box.innerHTML += ' — ' + htmlspecialchars(data.tag.note);
             } else {
                 box.textContent = 'Not classified';

@@ -71,18 +71,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// List keywords with visible match count:
-// only matches that still have an active notification for this user
-// and are not in the user's watchlist
+// List keywords with visible match count: only matches that still have an active
+// notification for this user, are not in the watchlist, and match the default
+// notifications visibility (good/bad/historical/old hidden; observing kept).
+$newDomainDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
 $stmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.created_at,
     (SELECT COUNT(*) FROM matches m WHERE m.keyword_id = k.id
      AND EXISTS (SELECT 1 FROM notifications n WHERE n.match_id = m.id AND n.user_id = ?)
      AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)
+     AND m.is_historical = 0
+     AND NOT EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain AND dt.tag IN ('good','bad'))
+     AND (
+         EXISTS (SELECT 1 FROM domain_tags dob WHERE dob.domain = m.domain AND dob.tag = 'observing')
+         OR NOT EXISTS (
+             SELECT 1 FROM domain_whois dw JOIN tlds t ON t.name = m.tld
+             WHERE dw.domain = m.domain AND t.last_ok_sync IS NOT NULL
+             AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) IS NOT NULL
+             AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) < datetime(t.last_ok_sync, '-' || ? || ' days')
+         )
+     )
     ) AS visible_count
 FROM keywords k
 WHERE k.user_id = ?
 ORDER BY k.created_at DESC");
-$stmt->execute([$userId, $userId, $userId]);
+$stmt->execute([$userId, $userId, $newDomainDays, $userId]);
 $keywords = $stmt->fetchAll();
 
 // Recheck status for admin stop button
