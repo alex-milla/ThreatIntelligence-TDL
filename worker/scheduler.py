@@ -16,6 +16,11 @@ import time
 from datetime import datetime, timezone, timedelta
 
 try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # Python < 3.9
+    ZoneInfo = None
+
+try:
     import fcntl
 except ImportError:  # pragma: no cover - planned for Linux workers only
     fcntl = None
@@ -1645,6 +1650,63 @@ def set_last_run(db: sqlite3.Connection) -> None:
     db.commit()
 
 
+def get_daily_attempt(db: sqlite3.Connection) -> str | None:
+    """Local date (YYYY-MM-DD) of the last automatic daily attempt, if any."""
+    cursor = db.cursor()
+    cursor.execute("SELECT value FROM config WHERE key = 'last_daily_attempt'")
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def set_daily_attempt(db: sqlite3.Connection, day: str) -> None:
+    cursor = db.cursor()
+    cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('last_daily_attempt', ?)", (day,))
+    db.commit()
+
+
+def resolve_daily_schedule(cfg: configparser.ConfigParser):
+    """Resolve the automatic daily cycle settings.
+
+    Returns (enabled, hour, minute, tzinfo). Defaults to 04:00 Europe/Madrid.
+    """
+    enabled = cfg.getboolean("worker", "auto_daily", fallback=True)
+    time_str = (cfg.get("worker", "daily_run_time", fallback="04:00") or "04:00").strip()
+    tz_name = (cfg.get("worker", "daily_run_timezone", fallback="Europe/Madrid") or "Europe/Madrid").strip()
+    tz = timezone.utc
+    if ZoneInfo is not None:
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            log.warning("Unknown daily_run_timezone '%s'; using UTC.", tz_name)
+    else:
+        log.warning("zoneinfo is not available (Python < 3.9?); using UTC for the daily schedule.")
+    try:
+        hour, minute = (int(part) for part in time_str.split(":")[:2])
+        if not (0 <= hour < 24 and 0 <= minute < 60):
+            raise ValueError(time_str)
+    except Exception:
+        log.warning("Invalid daily_run_time '%s'; using 04:00.", time_str)
+        hour, minute = 4, 0
+    return enabled, hour, minute, tz
+
+
+def daily_cycle_due(cfg: configparser.ConfigParser, db: sqlite3.Connection) -> tuple[bool, str, object]:
+    """Decide whether the daemon must run the automatic daily cycle now.
+
+    Returns (due, local_date, tzinfo). It is due once per local day, after the
+    configured time, until an attempt is recorded (even if the run fails, so a
+    broken ICANN token does not cause a hot retry loop).
+    """
+    enabled, hour, minute, tz = resolve_daily_schedule(cfg)
+    if not enabled:
+        return False, "", tz
+    now_local = datetime.now(tz)
+    today = now_local.strftime("%Y-%m-%d")
+    if (now_local.hour, now_local.minute) < (hour, minute):
+        return False, today, tz
+    return get_daily_attempt(db) != today, today, tz
+
+
 def acquire_worker_lock(data_dir: str):
     """Acquire an exclusive, non-blocking lock so two worker runs never overlap.
 
@@ -1782,6 +1844,21 @@ def main() -> int:
                     cmd_logs, worker_stats, _, restart_requested = handle_commands(db, cfg, host_url, api_key, version,
                                                                                    force=args.force, refresh=args.refresh)
                     logs.extend(cmd_logs)
+
+                    # Automatic daily cycle (e.g. 04:00 Europe/Madrid). Runs at
+                    # most once per local day; the daily guard still skips TLDs
+                    # already processed today.
+                    if worker_stats is None:
+                        due, today, _tz = daily_cycle_due(cfg, db)
+                        if due:
+                            log.info("Automatic daily cycle triggered (scheduled).")
+                            set_daily_attempt(db, today)
+                            worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version,
+                                                            force=args.force, refresh=args.refresh,
+                                                            command_label="auto-daily")
+                            logs.append({"level": "info", "message":
+                                         f"Scheduled daily cycle done: {worker_stats['tlds_processed']} TLDs, "
+                                         f"{worker_stats['matches_found']} matches"})
 
                     heartbeat_payload = {
                         "last_heartbeat": datetime.now(timezone.utc).isoformat(),

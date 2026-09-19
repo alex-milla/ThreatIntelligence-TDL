@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.0] - 2026-09-20
+
+### Added - Automatic daily ICANN run + weekly OpenINTEL schedule
+
+- **Daemon auto-daily (CZDS)**: in daemon mode the worker now runs one full cycle per local day after a configurable time, so **no cron is needed** (a `--once` cron job would be silently skipped while the daemon holds `worker.lock`). New `[worker]` settings: `auto_daily = true`, `daily_run_time = 04:00`, `daily_run_timezone = Europe/Madrid`.
+- **No retry loops**: the local `last_daily_attempt` marker records the attempt even when the run fails (e.g. an invalid ICANN token), so the daemon does not hammer the API every poll. The daily guard still skips TLDs already processed today, and a host that was off at the scheduled time catches up on the next poll.
+- **OpenINTEL weekly timer** moved to **Sundays 17:00 Europe/Madrid** (`tdl-openintel.timer`, `Persistent=true`).
+- Tests: `resolve_daily_schedule` / `daily_cycle_due` coverage in `worker/tests.py`.
+
 ## [v1.5.0] - 2026-09-19
 
 ### Added - VirusTotal domain reputation (batch + cache)

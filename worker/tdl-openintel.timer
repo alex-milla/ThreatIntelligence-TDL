@@ -1,11 +1,11 @@
 [Unit]
-Description=Weekly OpenINTEL ccTLD import (Mondays)
+Description=Weekly OpenINTEL ccTLD import (Sundays)
 Documentation=https://www.openintel.nl/data/domain-lists/cctld-names/
 
 [Timer]
-OnCalendar=Mon 10:00
+OnCalendar=Sun *-*-* 17:00:00 Europe/Madrid
 Persistent=true
-RandomizedDelaySec=1800
+RandomizedDelaySec=0
 
 [Install]
 WantedBy=timers.target

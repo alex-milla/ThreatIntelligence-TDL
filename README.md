@@ -83,11 +83,34 @@ Run manually first:
 python3 scheduler.py
 ```
 
-Then schedule it via cron (daily at 06:00 UTC):
+Then schedule it.
+
+### Scheduling the daily ICANN (CZDS) cycle
+
+**Recommended — daemon mode with the automatic daily run.** `install.sh` sets up
+the `tdl-worker` systemd service; once it is running the worker triggers one full
+cycle per local day after the configured time, so **no cron is needed**:
+
+```ini
+[worker]
+auto_daily = true
+daily_run_time = 04:00
+daily_run_timezone = Europe/Madrid
+```
+
+The daemon holds `data/worker.lock`, so a `--once` cron job would be skipped
+while it runs. The daily guard still avoids re-scanning TLDs already processed
+today, and if the host was off at the scheduled time the cycle runs on the next
+poll after it starts.
+
+**Alternative — cron / one-shot mode** (if you do not run the daemon):
 
 ```bash
-0 6 * * * cd /path/to/ThreatIntelligence-TDL/worker && /usr/bin/python3 scheduler.py >> /var/log/tdl_worker.log 2>&1
+0 6 * * * cd /path/to/ThreatIntelligence-TDL/worker && /usr/bin/python3 scheduler.py --once >> /var/log/tdl_worker.log 2>&1
 ```
+
+Cron mode and the daemon are mutually exclusive (single-instance lock): use
+`--once` only when the `tdl-worker` service is stopped.
 
 ### Updating the worker
 
@@ -200,7 +223,7 @@ From any domain modal you can click **Fetch WHOIS (worker)**. The web queues a `
 
 CZDS only covers gTLDs. For **country-code TLDs** (`.io`, `.es`, `.fr`, ...) the worker can additionally import the **weekly apex-domain lists** published by [OpenINTEL](https://www.openintel.nl/data/domain-lists/cctld-names/), extracted from Certificate Transparency logs.
 
-- **Separate process/database**: `worker/openintel.py` uses its own SQLite (`data/openintel.db`) and is launched by `tdl-openintel.timer` (Mondays) or on demand from **Admin → TLDs → ccTLD (OpenINTEL)** (`run_openintel`). It never touches the CZDS pipeline.
+- **Separate process/database**: `worker/openintel.py` uses its own SQLite (`data/openintel.db`) and is launched by `tdl-openintel.timer` (Sundays, 17:00 Europe/Madrid) or on demand from **Admin → TLDs → ccTLD (OpenINTEL)** (`run_openintel`). It never touches the CZDS pipeline.
 - The **first run baselines** a ccTLD (caches everything, reports nothing). Later runs report only domains seen for the first time, matched against keywords; candidates are optionally confirmed with RDAP/WHOIS so old domains are filtered out.
 - The weekly files are **`.csv.gz`** and are read without extra dependencies; `pyarrow` is only needed if a dataset is ever served as parquet. Enable the import in `config.ini`:
   ```ini

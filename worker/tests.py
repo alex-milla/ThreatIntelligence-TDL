@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Simple unit tests for parser and matcher modules."""
 
+import configparser
 import gzip
 import os
 import sqlite3
@@ -348,6 +349,53 @@ def test_local_db_vt_usage() -> None:
     print("[PASS] test_local_db_vt_usage")
 
 
+def test_daily_schedule_resolution() -> None:
+    # Defaults: enabled, 04:00.
+    enabled, hour, minute, _tz = scheduler.resolve_daily_schedule(configparser.ConfigParser())
+    assert enabled and hour == 4 and minute == 0, (enabled, hour, minute)
+
+    cfg = configparser.ConfigParser()
+    cfg["worker"] = {"auto_daily": "false", "daily_run_time": "6:30",
+                     "daily_run_timezone": "Europe/Madrid"}
+    enabled, hour, minute, _tz = scheduler.resolve_daily_schedule(cfg)
+    assert not enabled and hour == 6 and minute == 30, (enabled, hour, minute)
+
+    # Invalid time/tz must fall back to 04:00/UTC without raising.
+    bad = configparser.ConfigParser()
+    bad["worker"] = {"daily_run_time": "99:99", "daily_run_timezone": "Nowhere/Nope"}
+    enabled, hour, minute, tz = scheduler.resolve_daily_schedule(bad)
+    assert enabled and hour == 4 and minute == 0, (hour, minute)
+    assert tz is not None
+    print("[PASS] test_daily_schedule_resolution")
+
+
+def test_daily_cycle_due() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
+        # 00:00 UTC is always already past, so the daily flag alone decides.
+        cfg = configparser.ConfigParser()
+        cfg["worker"] = {"daily_run_time": "00:00", "daily_run_timezone": "UTC"}
+
+        due, today, _tz = scheduler.daily_cycle_due(cfg, db)
+        assert due and today, (due, today)
+
+        scheduler.set_daily_attempt(db, today)
+        due, today2, _tz = scheduler.daily_cycle_due(cfg, db)
+        assert not due and today2 == today, (due, today2)
+        assert scheduler.get_daily_attempt(db) == today
+
+        scheduler.set_daily_attempt(db, "1970-01-01")
+        due, _today, _tz = scheduler.daily_cycle_due(cfg, db)
+        assert due, due
+
+        off = configparser.ConfigParser()
+        off["worker"] = {"auto_daily": "false", "daily_run_time": "00:00"}
+        due, _today, _tz = scheduler.daily_cycle_due(off, db)
+        assert not due, due
+        db.close()
+    print("[PASS] test_daily_cycle_due")
+
+
 def test_openintel_json_available() -> None:
     # Regression: report() uses json.dumps; a missing import left commands
     # stuck in 'running' silently.
@@ -452,6 +500,8 @@ if __name__ == "__main__":
     test_search_cached_domains_with_cctld()
     test_virustotal_classify()
     test_local_db_vt_usage()
+    test_daily_schedule_resolution()
+    test_daily_cycle_due()
     test_openintel_json_available()
     test_openintel_recheck_cached()
     test_openintel_baseline_and_diff()
