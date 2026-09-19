@@ -216,6 +216,12 @@ function buildPanelHtml(domain) {
         +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-watchlist-current">Loading...</span></div>'
         +   '<div class="dpanel-btn-row"><button type="button" id="modal-watchlist-btn" class="btn btn-small waves-effect" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button></div>'
         + '</div>'
+        + '<div class="dpanel-section" id="modal-vt-box">'
+        +   '<div class="dpanel-section-label">VirusTotal</div>'
+        +   '<div class="status-value" id="modal-vt-verdict">Not checked</div>'
+        +   '<div class="dpanel-btn-row"><button type="button" class="btn btn-small waves-effect" onclick="checkVt()">Check VirusTotal</button></div>'
+        +   '<div id="modal-vt-error" class="text-danger" style="display:none; padding:4px 0;"></div>'
+        + '</div>'
         + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn btn-outline info waves-effect"><i class="material-icons left">shield</i>Open in VirusTotal</a></div>'
         + '</div>';
 }
@@ -232,6 +238,7 @@ function showLookupPanel(domain) {
     loadCachedWhois();
     loadDomainTag(domain);
     loadWatchlistStatus(domain);
+    loadVtStatus();
     panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 function closeDomainDetail() {

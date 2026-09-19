@@ -163,6 +163,19 @@ class Database {
             cached_at TEXT DEFAULT CURRENT_TIMESTAMP
         )");
 
+        $db->exec("CREATE TABLE IF NOT EXISTS domain_vt (
+            domain TEXT PRIMARY KEY,
+            verdict TEXT,
+            malicious INTEGER DEFAULT 0,
+            suspicious INTEGER DEFAULT 0,
+            harmless INTEGER DEFAULT 0,
+            undetected INTEGER DEFAULT 0,
+            reputation INTEGER DEFAULT 0,
+            tags TEXT,
+            last_analysis_date TEXT,
+            checked_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )");
+
         $db->exec("CREATE TABLE IF NOT EXISTS watchlist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,

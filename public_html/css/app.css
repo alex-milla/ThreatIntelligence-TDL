@@ -726,6 +726,22 @@ tr.unread {
 .tag-chip.bad  { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
 .tag-chip.observing { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
 
+/* VirusTotal verdict badges */
+.vt-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+.vt-malicious  { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
+.vt-suspicious { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
+.vt-dga        { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
+.vt-clean      { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+.vt-unknown    { background: var(--neutral-bg); color: var(--neutral); border-color: var(--neutral-border); }
+
 /* ------------------------------------------------------------
    Tables
    ------------------------------------------------------------ */

@@ -60,6 +60,9 @@ var App = {
                             el.className = fresh.className;
                         }
                     });
+                    // Let pages refresh non-section parts (e.g. the TLD table
+                    // rows) without a full reload.
+                    document.dispatchEvent(new CustomEvent('tdl:refreshed'));
                 })
                 .catch(function () {})
                 .then(function () { refreshing = false; });

@@ -25,6 +25,7 @@ import logger
 import parser
 import matcher
 import sync_client
+import virustotal
 import whois
 
 log = logging.getLogger("tdl_worker")
@@ -103,6 +104,11 @@ def init_local_db(db_path: str, cache_mb: int = 2048) -> sqlite3.Connection:
             next_retry TEXT,
             last_error TEXT,
             updated_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS vt_usage (
+            day TEXT PRIMARY KEY,
+            count INTEGER DEFAULT 0
         );
     """)
     # Migration: drop the unused tld index on the hash cache (older versions).
@@ -1460,6 +1466,65 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 logs.append({"level": "info", "message": f"WHOIS lookup: {len(entries)} domain(s), sent={ok}"})
                 if not ok:
                     status = "failed"
+
+            elif command == "vt_lookup":
+                opts = {}
+                if payload:
+                    try:
+                        opts = json.loads(payload) if isinstance(payload, str) else {}
+                    except (ValueError, TypeError):
+                        opts = {}
+                domains = opts.get("domains")
+                if not isinstance(domains, list):
+                    domains = []
+                domains = [str(d).lower().strip() for d in domains if d][:200]
+
+                if cfg.has_section("virustotal"):
+                    vt_key = cfg.get("virustotal", "api_key", fallback="").strip()
+                    vt_rate = cfg.getfloat("virustotal", "rate_delay_seconds", fallback=16.0)
+                    vt_daily = cfg.getint("virustotal", "daily_limit", fallback=500)
+                    vt_timeout = cfg.getint("virustotal", "timeout", fallback=20)
+                else:
+                    vt_key, vt_rate, vt_daily, vt_timeout = "", 16.0, 500, 20
+
+                if not vt_key or vt_key.upper().startswith("TU_"):
+                    result = "VirusTotal API key not configured ([virustotal] api_key)."
+                    status = "failed"
+                    logs.append({"level": "error", "message": result})
+                else:
+                    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                    row = db.execute("SELECT count FROM vt_usage WHERE day = ?", (today,)).fetchone()
+                    used = int(row[0]) if row else 0
+                    remaining = max(0, vt_daily - used)
+                    if remaining <= 0:
+                        result = f"VirusTotal daily limit reached ({vt_daily}). Try again tomorrow."
+                        status = "failed"
+                        logs.append({"level": "warning", "message": result})
+                    else:
+                        batch = domains[:remaining]
+                        entries = []
+                        quota_hit = False
+                        for d in batch:
+                            try:
+                                entries.append(virustotal.lookup_domain(d, vt_key, timeout=vt_timeout))
+                            except virustotal.QuotaError:
+                                quota_hit = True
+                                break
+                            if vt_rate > 0:
+                                time.sleep(vt_rate)
+                        db.execute("INSERT OR REPLACE INTO vt_usage (day, count) VALUES (?, ?)",
+                                   (today, used + len(entries)))
+                        db.commit()
+                        ok = sync_client.send_vt_results(host_url, api_key, entries)
+                        result = json.dumps({
+                            "requested": len(domains), "looked_up": len(entries), "sent": ok,
+                            "quota_hit": quota_hit, "remaining_today": max(0, vt_daily - (used + len(entries))),
+                        })
+                        logs.append({"level": "info", "message":
+                                     f"VirusTotal lookup: {len(entries)} domain(s), sent={ok}"
+                                     + (" [quota reached]" if quota_hit else "")})
+                        if not ok:
+                            status = "failed"
 
             elif command == "search_domain":
                 opts = {}

@@ -260,6 +260,18 @@ if (!empty($notifications)) {
     // (no blocking network calls while rendering the page).
 }
 
+// Load cached VirusTotal verdicts for the visible rows
+$domainVt = [];
+if (!empty($notifications)) {
+    $domainsOnPage = array_column($notifications, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domainsOnPage), '?'));
+    $vtStmt = $db->prepare("SELECT domain, verdict, malicious, suspicious FROM domain_vt WHERE domain IN ($placeholders)");
+    $vtStmt->execute($domainsOnPage);
+    foreach ($vtStmt->fetchAll() as $v) {
+        $domainVt[$v['domain']] = $v;
+    }
+}
+
 // Helper to build pagination URLs preserving filters
 function notifUrl(int $p, string $search, string $date, bool $unread, ?int $newDays, bool $archived = false, bool $observing = false, string $sort = '', string $dir = ''): string {
     $q = ['page' => $p];
@@ -385,6 +397,7 @@ require __DIR__ . '/templates/header.php';
                 </label>
                 <button type="submit" class="btn btn-small btn-danger waves-effect" onclick="return confirm('Delete selected notifications?')"><i class="material-icons left">delete</i>Delete Selected</button>
                 <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
+                <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
                 <?php if ($search !== '' || $unreadOnly || $dateFilter !== 'all' || $includeArchived || $observingOnly): ?>
                 <button type="submit" formaction="/notifications.php" formmethod="POST" class="btn btn-small btn-danger waves-effect" name="action" value="delete_all_matching" onclick="return confirm('This will delete ALL <?= $total ?> notification(s) matching your current filter across every page. This cannot be undone. Are you sure?')"><i class="material-icons left">delete_sweep</i>Delete All Matching (<?= $total ?>)</button>
                 <?php endif; ?>
@@ -404,6 +417,7 @@ require __DIR__ . '/templates/header.php';
                     <th style="width: 30px;"></th>
                     <th><?= notifSortLink('status', 'Status', $sort, $dir, $notifSortDefaults) ?></th>
                     <th><?= notifSortLink('domain', 'Domain', $sort, $dir, $notifSortDefaults) ?></th>
+                    <th>VT</th>
                     <th><?= notifSortLink('tld', 'TLD', $sort, $dir, $notifSortDefaults) ?></th>
                     <th><?= notifSortLink('keyword', 'Keyword', $sort, $dir, $notifSortDefaults) ?></th>
                     <th><?= notifSortLink('first_seen', 'First Seen', $sort, $dir, $notifSortDefaults) ?></th>
@@ -432,11 +446,18 @@ require __DIR__ . '/templates/header.php';
                         } catch (Exception $e) { $isNew = false; }
                     }
                     $creationDisplay = $creationDate ? substr(fmt_date($creationDate), 0, 10) : '—';
+                    $vtRow = $domainVt[$n['domain']] ?? null;
+                    $vtVerdict = $vtRow ? (string)$vtRow['verdict'] : '';
+                    $vtLabels = ['malicious' => 'MALICIOUS', 'dga' => 'DGA', 'suspicious' => 'SUSPICIOUS', 'clean' => 'CLEAN'];
+                    $vtCell = isset($vtLabels[$vtVerdict])
+                        ? '<span class="vt-badge vt-' . $vtVerdict . '">' . $vtLabels[$vtVerdict] . '</span>'
+                        : '<span class="muted">&mdash;</span>';
                 ?>
                 <tr class="<?= $n['is_read'] ? '' : 'unread' ?>" data-domain="<?= htmlspecialchars($n['domain']) ?>">
                     <td><label><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form"><span></span></label></td>
                     <td><?= $n['is_read'] ? '<span class="status-badge status-cancelled">Read</span>' : '<span class="status-badge status-pending">Unread</span>' ?></td>
                     <td><a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><?= htmlspecialchars($n['domain']) ?></a><?= $tagBadge ?></td>
+                    <td><?= $vtCell ?></td>
                     <td><?= htmlspecialchars($n['tld']) ?></td>
                     <td><?= htmlspecialchars($n['keyword']) ?></td>
                     <td><?= htmlspecialchars(fmt_date($n['first_seen'])) ?></td>
@@ -583,6 +604,12 @@ function buildPanelHtml(domain) {
         +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-watchlist-current">Loading...</span></div>'
         +   '<div class="dpanel-btn-row"><button type="button" id="modal-watchlist-btn" class="btn btn-small waves-effect" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button></div>'
         + '</div>'
+        + '<div class="dpanel-section" id="modal-vt-box">'
+        +   '<div class="dpanel-section-label">VirusTotal</div>'
+        +   '<div class="status-value" id="modal-vt-verdict">Not checked</div>'
+        +   '<div class="dpanel-btn-row"><button type="button" class="btn btn-small waves-effect" onclick="checkVt()">Check VirusTotal</button></div>'
+        +   '<div id="modal-vt-error" class="text-danger" style="display:none; padding:4px 0;"></div>'
+        + '</div>'
         + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn btn-outline info waves-effect"><i class="material-icons left">shield</i>Open in VirusTotal</a></div>'
         + '</div>';
 }
@@ -598,13 +625,14 @@ function toggleDomainDetail(linkEl, domain) {
     var detailRow = document.createElement('tr');
     detailRow.className = 'dpanel-row';
     detailRow.dataset.domain = domain;
-    detailRow.innerHTML = '<td colspan="9">' + buildPanelHtml(domain) + '</td>';
+    detailRow.innerHTML = '<td colspan="10">' + buildPanelHtml(domain) + '</td>';
     row.parentNode.insertBefore(detailRow, row.nextSibling);
     document.getElementById('modal-domain-title').textContent = domain;
     document.getElementById('modal-vt').href = 'https://www.virustotal.com/gui/domain/' + encodeURIComponent(domain);
     loadCachedWhois();
     loadDomainTag(domain);
     loadWatchlistStatus(domain);
+    loadVtStatus();
     detailRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 function closeDomainDetail() {
@@ -719,6 +747,32 @@ function fetchVisibleWhois() {
         }
     })
     .catch(() => alert('Failed to queue WHOIS lookup'));
+}
+function fetchVisibleVt() {
+    const domains = [];
+    document.querySelectorAll('tr[data-domain]').forEach(tr => {
+        const cb = tr.querySelector('.row-check');
+        if (cb && cb.checked) domains.push(tr.dataset.domain);
+    });
+    if (!domains.length) {
+        document.querySelectorAll('tr[data-domain]').forEach(tr => domains.push(tr.dataset.domain));
+    }
+    if (!domains.length) { alert('No domains to check.'); return; }
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    fetch('/ajax_vt_request.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': meta ? meta.content : ''},
+        body: JSON.stringify({domains: domains})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert('Queued ' + (data.queued || 0) + ' domain(s) for VirusTotal. The free API allows 4 requests/min and 500/day; reload in a moment to see verdicts.');
+        } else {
+            alert(data.error || 'Failed to queue VirusTotal lookup');
+        }
+    })
+    .catch(() => alert('Failed to queue VirusTotal lookup'));
 }
 </script>
 

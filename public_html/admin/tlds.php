@@ -320,6 +320,7 @@ require __DIR__ . '/../templates/header.php';
         <?php csrfField(); ?>
         <input type="hidden" name="source" value="<?= htmlspecialchars($source) ?>">
         <div class="section-actions">
+            <button type="button" class="btn btn-small waves-effect" onclick="location.reload()" title="Reload this tab"><i class="material-icons left">refresh</i>Refresh</button>
             <button type="button" class="btn btn-small waves-effect" onclick="selectAllTlds(true)"><i class="material-icons left">check_box</i>Select All</button>
             <button type="button" class="btn btn-small waves-effect" onclick="selectAllTlds(false)"><i class="material-icons left">check_box_outline_blank</i>Deselect All</button>
             <button type="submit" class="btn waves-effect" name="action" value="save_selection"><i class="material-icons left">save</i>Save Selection</button>
@@ -446,10 +447,11 @@ function confirmLargeSelection() {
 
 updateTldCount();
 
-// Live refresh of per-TLD download status while the worker is running.
+// Live refresh of per-TLD download status. It starts always (not only when a
+// task was active at load) and also refreshes when the activity watcher fires
+// 'tdl:refreshed' (after a forced run finishes), so the table never goes stale.
 (function() {
-    const workerRunning = <?= $tldWatch ? 'true' : 'false' ?>;
-    if (!workerRunning || !document.getElementById('tld-tbody')) return;
+    if (!document.getElementById('tld-tbody')) return;
 
     const statusLabels = {
         downloaded:    'Downloaded',
@@ -517,6 +519,7 @@ updateTldCount();
     }
 
     setInterval(poll, 5000);
+    document.addEventListener('tdl:refreshed', poll);
 })();
 </script>
 

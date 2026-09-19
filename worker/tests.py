@@ -10,6 +10,7 @@ import parser
 import matcher
 import scheduler
 import openintel
+import virustotal
 
 
 def create_test_zone(filepath: str, records: list[str]) -> None:
@@ -322,6 +323,31 @@ def test_search_cached_domains_with_cctld() -> None:
     print("[PASS] test_search_cached_domains_with_cctld")
 
 
+def test_virustotal_classify() -> None:
+    cases = [
+        ({"last_analysis_stats": {"malicious": 3, "suspicious": 0, "harmless": 50, "undetected": 10}, "tags": []}, "malicious"),
+        ({"last_analysis_stats": {"malicious": 0, "suspicious": 0, "harmless": 5, "undetected": 1}, "tags": ["DGA"]}, "dga"),
+        ({"last_analysis_stats": {"malicious": 0, "suspicious": 2, "harmless": 1, "undetected": 0}, "tags": []}, "suspicious"),
+        ({"last_analysis_stats": {"malicious": 0, "suspicious": 0, "harmless": 3, "undetected": 2}, "tags": []}, "clean"),
+        ({}, "clean"),
+    ]
+    for attrs, expected in cases:
+        got = virustotal.classify(attrs)
+        assert got["verdict"] == expected, (attrs, got)
+    assert virustotal.classify({"last_analysis_stats": {"malicious": 1}, "tags": ["dga"]})["verdict"] == "malicious"
+    print("[PASS] test_virustotal_classify")
+
+
+def test_local_db_vt_usage() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
+        db.execute("INSERT OR REPLACE INTO vt_usage (day, count) VALUES ('2026-09-19', 3)")
+        db.commit()
+        assert db.execute("SELECT count FROM vt_usage WHERE day = '2026-09-19'").fetchone()[0] == 3
+        db.close()
+    print("[PASS] test_local_db_vt_usage")
+
+
 def test_openintel_json_available() -> None:
     # Regression: report() uses json.dumps; a missing import left commands
     # stuck in 'running' silently.
@@ -424,6 +450,8 @@ if __name__ == "__main__":
     test_openintel_resolve_latest()
     test_openintel_csv_gz_read()
     test_search_cached_domains_with_cctld()
+    test_virustotal_classify()
+    test_local_db_vt_usage()
     test_openintel_json_available()
     test_openintel_recheck_cached()
     test_openintel_baseline_and_diff()

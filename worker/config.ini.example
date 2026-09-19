@@ -58,6 +58,19 @@ whois_fallback = true
 ; Seconds to wait between lookups (be polite to the registries).
 rate_delay = 1.0
 
+[virustotal]
+; VirusTotal API v3 key (https://www.virustotal.com/gui/my-apikey). The free
+; public API allows 4 requests/minute and 500/day; keep the values below in
+; sync with your plan.
+api_key = TU_API_KEY_VIRUSTOTAL
+; Seconds between lookups (16 keeps it under 4 requests/minute).
+rate_delay_seconds = 16
+; Hard cap of lookups per calendar day (UTC).
+daily_limit = 500
+; Skip domains already checked within this many days (unless force is requested).
+cache_days = 7
+timeout = 20
+
 [openintel]
 ; Weekly ccTLD apex-domain lists from OpenINTEL (see README).
 ; Data license: CC BY-NC-SA 4.0 (non-commercial, attribution required).

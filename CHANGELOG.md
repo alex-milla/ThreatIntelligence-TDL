@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.5.0] - 2026-09-19
+
+### Added - VirusTotal domain reputation (batch + cache)
+
+- **Worker**: new `worker/virustotal.py` (API v3) and a `vt_lookup` command. Classifies each domain as `malicious` (malicious>0) > `dga` (VT `dga` tag) > `suspicious` (suspicious>0) > `clean`, and respects the free plan limits: `[virustotal] rate_delay_seconds = 16` (4/min) and `daily_limit = 500` (counter `vt_usage` in `worker.db`, reset per UTC day). On HTTP 429/403 it stops the batch. Results are posted to the web (`api/v1/vt_results.php`) and cached in `domain_vt`.
+- **Notifications**: new **VT column** next to the domain with a badge (`MALICIOUS`/`DGA`/`SUSPICIOUS`/`CLEAN`/`—`) and a **Check VirusTotal (worker)** batch button for the selected/visible domains (capped at 25 per request, skips cached unless forced).
+- **Domain panel** (Notifications, Dashboard and Watchlist): a **VirusTotal** section showing the verdict, malicious/suspicious counts and tags, plus a per-domain **Check VirusTotal** button (`assets/vt.js`).
+- New endpoints `ajax_vt_request.php`, `ajax_vt_cache.php`, `api/v1/vt_results.php`; new `domain_vt` table and `.vt-badge` styles. `[virustotal] api_key` in `config.ini`.
+- Note: the free API does not return an explicit DGA verdict; DGA is only flagged when VT tags the domain, otherwise it is treated as clean.
+
+### Fixed - TLD tabs did not refresh after forcing a task
+
+- The TLD table row poll now starts **always** (not only when a task was active at load) and refreshes when the activity watcher fires `tdl:refreshed` (emitted by `js/app.js` after a section refresh), so a forced run updates without F5.
+- Added a **Refresh** button on each TLD tab (ICANN/ccTLD) that reloads the current tab.
+
 ## [v1.4.7] - 2026-09-19
 
 ### Fixed - Keywords page slow to load
