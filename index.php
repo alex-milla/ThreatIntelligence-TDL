@@ -193,7 +193,7 @@ $sparkNonZero = count(array_filter($sparkDays));
                     }
                 ?>
                 <tr>
-                    <td><a href="javascript:void(0)" onclick="openDomainModal('<?= htmlspecialchars(addslashes($m['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($m['domain']) ?></a><?= $tagBadge ?></td>
+                    <td><a href="javascript:void(0)" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($m['domain'])) ?>')" style="color: #3498db; text-decoration: underline; cursor: pointer;"><?= htmlspecialchars($m['domain']) ?></a><?= $tagBadge ?></td>
                     <td><?= htmlspecialchars($m['tld']) ?></td>
                     <td><?= htmlspecialchars($m['keyword']) ?></td>
                     <td><?= htmlspecialchars(fmt_date($m['first_seen'])) ?></td>
@@ -205,83 +205,75 @@ $sparkNonZero = count(array_filter($sparkDays));
     <?php endif; ?>
 </div>
 
-<!-- Domain detail modal -->
-<div id="domain-modal" class="dmodal-overlay">
-    <div class="dmodal">
-        <div class="dmodal-header">
-            <h3 id="modal-domain-title"></h3>
-            <button type="button" class="dmodal-close" onclick="document.getElementById('domain-modal').classList.remove('is-open')">&#10005;</button>
-        </div>
-        <div class="dmodal-body">
-            <div class="dmodal-section">
-                <div class="dmodal-section-label">WHOIS Registry Data</div>
-                <button type="button" id="modal-whois-btn" class="btn btn-small" style="width:100%; margin-bottom:10px;" onclick="fetchWhois()">Fetch WHOIS via worker</button>
-                <div id="modal-whois-loading" style="display:none; color:#888; font-size:0.85rem; padding:6px 0;">Consultando WHOIS...</div>
-                <div id="modal-whois-content" style="display:none;">
-                    <div class="dmodal-whois-grid">
-                        <div>Creation Date</div><div id="modal-creation"></div>
-                        <div>Expiration Date</div><div id="modal-expiration"></div>
-                        <div>Registrar</div><div id="modal-registrar"></div>
-                        <div>Name Servers</div><div id="modal-ns"></div>
-                    </div>
-                </div>
-                <div id="modal-whois-error" style="display:none; color:#c0392b; font-size:0.85rem; padding:6px 0;"></div>
-            </div>
-
-            <div class="dmodal-section" id="modal-tag-box" style="display:none;">
-                <div class="dmodal-section-label">Classification</div>
-                <div class="dmodal-status-row">
-                    <span style="color:#888;">Status:</span>
-                    <span class="status-value" id="modal-tag-current">Loading...</span>
-                </div>
-                <div class="dmodal-btn-row">
-                    <button type="button" class="btn btn-small" style="background:#27ae60;" onclick="tagDomain(_modalDomain, 'good')">Mark Good</button>
-                    <button type="button" class="btn btn-small" style="background:#c0392b;" onclick="tagDomain(_modalDomain, 'bad')">Mark Bad</button>
-                    <button type="button" class="btn btn-small btn-danger" onclick="tagDomain(_modalDomain, '')">Clear</button>
-                </div>
-            </div>
-
-            <div class="dmodal-section" id="modal-watchlist-box" style="display:none;">
-                <div class="dmodal-section-label">Watchlist</div>
-                <div class="dmodal-status-row">
-                    <span style="color:#888;">Status:</span>
-                    <span class="status-value" id="modal-watchlist-current">Loading...</span>
-                </div>
-                <div class="dmodal-btn-row">
-                    <button type="button" id="modal-watchlist-btn" class="btn btn-small" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button>
-                </div>
-            </div>
-        </div>
-        <div class="dmodal-footer">
-            <a id="modal-vt" href="#" target="_blank" class="btn" style="background:#3949ab;">Open in VirusTotal</a>
-            <button type="button" class="btn btn-danger" onclick="document.getElementById('domain-modal').classList.remove('is-open')">Close</button>
-        </div>
-    </div>
-</div>
-
 <script>
 let _modalDomain = '';
-function openDomainModal(domain) {
+function buildPanelHtml(domain) {
+    return '<div class="dpanel">'
+        + '<div class="dpanel-header">'
+        +   '<h3 id="modal-domain-title"></h3>'
+        +   '<button type="button" class="dpanel-close" onclick="closeDomainDetail()">&#10005;</button>'
+        + '</div>'
+        + '<div class="dpanel-section">'
+        +   '<div class="dpanel-section-label">WHOIS Registry Data</div>'
+        +   '<button type="button" id="modal-whois-btn" class="btn btn-small" style="width:100%; margin-bottom:8px;" onclick="fetchWhois()">Fetch WHOIS via worker</button>'
+        +   '<div id="modal-whois-loading" style="display:none; color:#888; font-size:0.85rem; padding:4px 0;">Consultando WHOIS...</div>'
+        +   '<div id="modal-whois-content" style="display:none;">'
+        +     '<div class="dpanel-whois-grid">'
+        +       '<div>Creation Date</div><div id="modal-creation"></div>'
+        +       '<div>Expiration Date</div><div id="modal-expiration"></div>'
+        +       '<div>Registrar</div><div id="modal-registrar"></div>'
+        +       '<div>Name Servers</div><div id="modal-ns"></div>'
+        +     '</div>'
+        +   '</div>'
+        +   '<div id="modal-whois-error" style="display:none; color:#c0392b; font-size:0.85rem; padding:4px 0;"></div>'
+        + '</div>'
+        + '<div class="dpanel-section" id="modal-tag-box">'
+        +   '<div class="dpanel-section-label">Classification</div>'
+        +   '<div class="dpanel-status-row"><span style="color:#888;">Status:</span><span class="status-value" id="modal-tag-current">Loading...</span></div>'
+        +   '<div class="dpanel-btn-row">'
+        +     '<button type="button" class="btn btn-small" style="background:#27ae60;" onclick="tagDomain(_modalDomain, \'good\')">Mark Good</button>'
+        +     '<button type="button" class="btn btn-small" style="background:#c0392b;" onclick="tagDomain(_modalDomain, \'bad\')">Mark Bad</button>'
+        +     '<button type="button" class="btn btn-small btn-danger" onclick="tagDomain(_modalDomain, \'\')">Clear</button>'
+        +   '</div>'
+        + '</div>'
+        + '<div class="dpanel-section" id="modal-watchlist-box">'
+        +   '<div class="dpanel-section-label">Watchlist</div>'
+        +   '<div class="dpanel-status-row"><span style="color:#888;">Status:</span><span class="status-value" id="modal-watchlist-current">Loading...</span></div>'
+        +   '<div class="dpanel-btn-row"><button type="button" id="modal-watchlist-btn" class="btn btn-small" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button></div>'
+        + '</div>'
+        + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn" style="background:#3949ab;">Open in VirusTotal</a></div>'
+        + '</div>';
+}
+function toggleDomainDetail(linkEl, domain) {
+    var row = linkEl.closest('tr');
+    var existing = row.nextElementSibling;
+    if (existing && existing.classList.contains('dpanel-row') && existing.dataset.domain === domain) {
+        existing.remove();
+        return;
+    }
+    document.querySelectorAll('.dpanel-row').forEach(function(r) { r.remove(); });
     _modalDomain = domain;
+    var detailRow = document.createElement('tr');
+    detailRow.className = 'dpanel-row';
+    detailRow.dataset.domain = domain;
+    detailRow.innerHTML = '<td colspan="5">' + buildPanelHtml(domain) + '</td>';
+    row.parentNode.insertBefore(detailRow, row.nextSibling);
     document.getElementById('modal-domain-title').textContent = domain;
     document.getElementById('modal-vt').href = 'https://www.virustotal.com/gui/domain/' + encodeURIComponent(domain);
-    document.getElementById('modal-whois-loading').style.display = 'none';
-    document.getElementById('modal-whois-content').style.display = 'none';
-    document.getElementById('modal-whois-error').style.display = 'none';
     loadCachedWhois();
-    document.getElementById('modal-tag-box').style.display = 'block';
-    document.getElementById('modal-tag-current').textContent = 'Loading...';
-    document.getElementById('modal-watchlist-box').style.display = 'block';
-    document.getElementById('modal-watchlist-current').textContent = 'Loading...';
-    document.getElementById('domain-modal').classList.add('is-open');
     loadDomainTag(domain);
     loadWatchlistStatus(domain);
+    detailRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function closeDomainDetail() {
+    document.querySelectorAll('.dpanel-row').forEach(function(r) { r.remove(); });
 }
 function loadDomainTag(domain) {
     fetch('/ajax_tag_domain.php?domain=' + encodeURIComponent(domain))
         .then(r => r.json())
         .then(data => {
             const box = document.getElementById('modal-tag-current');
+            if (!box) return;
             if (data.success && data.tag) {
                 const color = data.tag.tag === 'good' ? '#27ae60' : '#c0392b';
                 box.innerHTML = '<span style="color:' + color + '; font-weight:700;">' + data.tag.tag.toUpperCase() + '</span>';
@@ -291,7 +283,8 @@ function loadDomainTag(domain) {
             }
         })
         .catch(() => {
-            document.getElementById('modal-tag-current').textContent = 'Unable to load tag';
+            const box = document.getElementById('modal-tag-current');
+            if (box) box.textContent = 'Unable to load tag';
         });
 }
 function loadWatchlistStatus(domain) {
@@ -300,6 +293,7 @@ function loadWatchlistStatus(domain) {
         .then(data => {
             const box = document.getElementById('modal-watchlist-current');
             const btn = document.getElementById('modal-watchlist-btn');
+            if (!box) return;
             if (data.in_watchlist) {
                 let html = '<span style="color: #f39c12; font-weight:700;">In watchlist</span>';
                 if (data.group_name) html += ' <span style="color:#888;font-size:0.85rem;">(' + htmlspecialchars(data.group_name) + ')</span>';
@@ -314,7 +308,8 @@ function loadWatchlistStatus(domain) {
             }
         })
         .catch(() => {
-            document.getElementById('modal-watchlist-current').textContent = 'Unable to load watchlist status';
+            const box = document.getElementById('modal-watchlist-current');
+            if (box) box.textContent = 'Unable to load watchlist status';
         });
 }
 function toggleWatchlist(domain) {
@@ -355,9 +350,6 @@ function htmlspecialchars(str) {
     div.textContent = str;
     return div.innerHTML;
 }
-document.getElementById('domain-modal').addEventListener('click', function(e) {
-    if (e.target === this) this.classList.remove('is-open');
-});
 </script>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>

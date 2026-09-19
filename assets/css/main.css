@@ -85,6 +85,31 @@ input[type="text"], input[type="email"], input[type="password"] { width: 100%; p
 .dmodal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); align-items: center; justify-content: center; }
 .dmodal-overlay.is-open { display: flex; }
 .dmodal { background: #fff; border-radius: 10px; max-width: 560px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+
+/* ===== Domain detail inline panel (expandable table row) ===== */
+.dpanel-row td { padding: 0 !important; border-bottom: 1px solid #e2e2e8 !important; background: #f8f9fb; }
+.dpanel { padding: 16px 20px; }
+.dpanel-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.dpanel-header h3 { margin: 0; font-size: 1rem; word-break: break-all; color: #1a1a2e; }
+.dpanel-close { flex-shrink: 0; width: 26px; height: 26px; border: none; background: #e8e8f0; border-radius: 50%; cursor: pointer; font-size: 0.95rem; color: #666; display: flex; align-items: center; justify-content: center; }
+.dpanel-close:hover { background: #ddd; color: #333; }
+.dpanel-section { margin-bottom: 14px; }
+.dpanel-section:last-child { margin-bottom: 0; }
+.dpanel-section-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #999; margin-bottom: 6px; }
+.dpanel-whois-grid { display: grid; grid-template-columns: 130px 1fr; border: 1px solid #e8e8e8; border-radius: 6px; overflow: hidden; }
+.dpanel-whois-grid > div { padding: 6px 12px; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; }
+.dpanel-whois-grid > div:nth-last-child(-n+2) { border-bottom: none; }
+.dpanel-whois-grid > div:nth-child(odd) { background: #f5f5f8; color: #888; font-weight: 500; }
+.dpanel-whois-grid > div:nth-child(even) { font-weight: 600; color: #333; word-break: break-all; }
+.dpanel-status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 0.88rem; }
+.dpanel-status-row .status-value { font-weight: 600; }
+.dpanel-btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.dpanel-btn-row .btn { flex: 1; min-width: 80px; text-align: center; }
+.dpanel-footer { display: flex; gap: 8px; margin-top: 14px; }
+.dpanel-footer .btn { flex: 1; text-align: center; }
+@media (max-width: 768px) {
+    .dpanel-whois-grid { grid-template-columns: 100px 1fr; }
+}
 .dmodal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 24px 16px; border-bottom: 1px solid #eee; }
 .dmodal-header h3 { margin: 0; font-size: 1.15rem; word-break: break-all; color: #1a1a2e; line-height: 1.4; }
 .dmodal-close { flex-shrink: 0; width: 30px; height: 30px; border: none; background: #f0f0f5; border-radius: 50%; cursor: pointer; font-size: 1.1rem; color: #666; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
