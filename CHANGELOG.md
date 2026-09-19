@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.67] - 2026-09-19
+
+### Dashboard - domain lookup against the worker cache
+
+- **Removed the "Recent Matches" table** (and its period filter; the Matches KPI is now all-time). The full lists live on the Notifications page.
+- **New "Domain lookup" card** below the detection graph: type a domain or part of it and search the **worker's local cache** (queued as a `search_domain` command; the worker answers on its next poll).
+  - `exact` matches both the text cache and the compact hash cache (so it also works for huge TLDs like `.com`).
+  - `prefix`/`contains` cover text-cached TLDs only; `contains` requires >= 4 characters, is capped at 100 rows and aborts after 5 s (partial results) so a full scan cannot hang the worker.
+  - Partial input shows a result list; a single exact match opens the domain panel directly (WHOIS, classification, watchlist, VirusTotal) in a standalone container.
+- New `ajax_domain_search.php` (queue + poll) available to any logged-in user, with a per-session rate limit and identical-pending-search reuse.
+- Worker: new `search_cached_domains()` helper and `search_domain` command (`worker/scheduler.py`), plus a unit test.
+
 ## [v1.3.66] - 2026-09-19
 
 ### Web UI - sortable table columns (Keywords and Notifications)

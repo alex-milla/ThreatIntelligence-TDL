@@ -191,6 +191,40 @@ def test_baseline_decision() -> None:
     print("[PASS] test_baseline_decision")
 
 
+def test_search_cached_domains() -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.executescript("""
+        CREATE TABLE domains_cache (domain TEXT PRIMARY KEY, tld TEXT, first_seen TEXT);
+        CREATE TABLE domains_cache_hash (domain_hash INTEGER PRIMARY KEY, tld TEXT, first_seen INTEGER) WITHOUT ROWID;
+    """)
+    conn.execute("INSERT INTO domains_cache VALUES ('santander-bank.xyz','xyz','2026-01-01T00:00:00Z')")
+    conn.execute("INSERT INTO domains_cache VALUES ('my-santander-login.zip','zip','2026-01-02T00:00:00Z')")
+    big = "santander-big.com"
+    conn.execute("INSERT INTO domains_cache_hash VALUES (?, 'com', ?)",
+                 (scheduler._domain_hash(big), 1700000000))
+
+    r = scheduler.search_cached_domains(conn, "santander-bank.xyz", "exact")
+    assert len(r["results"]) == 1 and r["results"][0]["domain"] == "santander-bank.xyz", r
+
+    # Exact search must also find hash-cached (huge) TLDs.
+    r = scheduler.search_cached_domains(conn, big, "exact")
+    assert len(r["results"]) == 1 and r["results"][0].get("hash_cached"), r
+
+    r = scheduler.search_cached_domains(conn, "santander", "prefix")
+    assert {x["domain"] for x in r["results"]} == {"santander-bank.xyz"}, r
+
+    r = scheduler.search_cached_domains(conn, "santander", "contains")
+    assert len(r["results"]) == 2, r
+
+    r = scheduler.search_cached_domains(conn, "san", "contains")
+    assert r["results"] == [] and "4 characters" in r["note"], r
+
+    r = scheduler.search_cached_domains(conn, "nope.xyz", "exact")
+    assert r["results"] == [], r
+    conn.close()
+    print("[PASS] test_search_cached_domains")
+
+
 def test_tld_meta_baseline_persistence() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
@@ -219,5 +253,6 @@ if __name__ == "__main__":
     test_matcher_case_insensitive()
     test_baseline_no_matches()
     test_baseline_decision()
+    test_search_cached_domains()
     test_tld_meta_baseline_persistence()
     print("\nAll tests passed.")

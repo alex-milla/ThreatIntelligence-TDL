@@ -176,7 +176,7 @@ sqlite_synchronous_parse = OFF  ; skip fsync during parse (NORMAL to revert)
 
 - **Keywords**: Each user can define keywords to monitor (e.g., `santander`, `nasa`).
 - **Notifications**: In-app notifications when a new domain matches any of your keywords.
-- **Dashboard**: View recent matches and statistics.
+- **Dashboard**: Statistics and a **domain lookup** that searches the worker's cached domains (exact match covers every cached domain, including huge hash-cached TLDs like `.com`; prefix/contains cover text-cached TLDs only). It is served by the worker through the command queue, so it needs the worker in **daemon mode** and waits for the current run to finish.
 - **Admin Panel**: Manage users, keyword limits, API keys, sync logs, and system updates.
 
 ## WHOIS / RDAP enrichment (on demand)

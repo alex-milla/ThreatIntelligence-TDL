@@ -924,6 +924,15 @@ table.highlight > tbody > tr:hover {
 
 .dpanel { padding: 20px 24px; }
 
+/* Standalone domain panel (dashboard lookup) */
+#lookup-panel .dpanel {
+    margin-top: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-2);
+}
+#lookup-results { margin-top: 8px; }
+
 .dpanel-header {
     display: flex;
     align-items: center;

@@ -1097,6 +1097,91 @@ def perform_worker_update() -> tuple[str, str]:
     return (f"Worker source updated to {new_version}. Restart required to load it.", "completed")
 
 
+HASH_SEARCH_NOTE = ("Prefix/contains search only covers text-cached TLDs; huge TLDs "
+                    "cached as hashes (e.g. .com) are excluded. Exact search covers both.")
+
+
+def search_cached_domains(db: sqlite3.Connection, query: str, mode: str = "exact",
+                          limit: int = 100, timeout: float = 5.0) -> dict:
+    """Search the worker's local domain cache and return results.
+
+    exact: text cache by domain plus the compact hash cache by computed hash, so
+    it also finds domains in huge hash-cached TLDs. prefix/contains: text cache
+    only (the hash cache has no text). `contains` aborts after `timeout` seconds
+    through a SQLite progress handler and returns partial results, so a full scan
+    can never hang the worker.
+    """
+    query = (query or "").strip().lower()
+    limit = max(1, min(int(limit or 100), 200))
+    results: list[dict] = []
+    partial = False
+    note = HASH_SEARCH_NOTE
+
+    if not query:
+        return {"results": [], "partial": False, "note": "Empty query."}
+    if mode not in ("exact", "prefix", "contains"):
+        mode = "exact"
+
+    if mode == "exact":
+        row = db.execute(
+            "SELECT domain, tld, first_seen FROM domains_cache WHERE domain = ?",
+            (query,)
+        ).fetchone()
+        if row:
+            results.append({"domain": row[0], "tld": row[1], "first_seen": row[2]})
+        else:
+            h = _domain_hash(query)
+            hrow = db.execute(
+                "SELECT tld, first_seen FROM domains_cache_hash WHERE domain_hash = ?",
+                (h,)
+            ).fetchone()
+            if hrow:
+                try:
+                    first_seen = datetime.fromtimestamp(int(hrow[1]), tz=timezone.utc).isoformat()
+                except (TypeError, ValueError, OSError):
+                    first_seen = None
+                results.append({"domain": query, "tld": hrow[0], "first_seen": first_seen,
+                                "hash_cached": True})
+        return {"results": results, "partial": False, "note": note}
+
+    # prefix / contains -> text cache only
+    if mode == "contains" and len(query) < 4:
+        return {"results": [], "partial": False,
+                "note": "Contains search requires at least 4 characters."}
+
+    escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = escaped + "%" if mode == "prefix" else "%" + escaped + "%"
+
+    if mode == "contains":
+        deadline = time.perf_counter() + max(1.0, float(timeout))
+
+        def _progress() -> int:
+            return 1 if time.perf_counter() > deadline else 0
+
+        db.set_progress_handler(_progress, 10000)
+        try:
+            rows = db.execute(
+                "SELECT domain, tld, first_seen FROM domains_cache "
+                "WHERE domain LIKE ? ESCAPE '\\' LIMIT ?",
+                (pattern, limit)
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+            partial = True
+        finally:
+            db.set_progress_handler(None, 0)
+    else:
+        rows = db.execute(
+            "SELECT domain, tld, first_seen FROM domains_cache "
+            "WHERE domain LIKE ? ESCAPE '\\' LIMIT ?",
+            (pattern, limit)
+        ).fetchall()
+
+    for r in rows:
+        results.append({"domain": r[0], "tld": r[1], "first_seen": r[2]})
+    return {"results": results, "partial": partial, "note": note}
+
+
 def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False, refresh: bool = False) -> tuple[list[dict], dict | None, bool, bool]:
     """Poll and execute pending commands from the hosting.
 
@@ -1236,6 +1321,25 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 logs.append({"level": "info", "message": f"WHOIS lookup: {len(entries)} domain(s), sent={ok}"})
                 if not ok:
                     status = "failed"
+
+            elif command == "search_domain":
+                opts = {}
+                if payload:
+                    try:
+                        opts = json.loads(payload) if isinstance(payload, str) else {}
+                    except (ValueError, TypeError):
+                        opts = {}
+                q = str(opts.get("q", "")).strip().lower()
+                mode = str(opts.get("mode", "exact"))
+                try:
+                    limit = int(opts.get("limit", 100) or 100)
+                except (TypeError, ValueError):
+                    limit = 100
+                search_result = search_cached_domains(db, q, mode=mode, limit=limit)
+                result = json.dumps(search_result)
+                logs.append({"level": "info", "message":
+                             f"Domain search '{q}' ({mode}): {len(search_result['results'])} result(s)"
+                             + (" [partial]" if search_result.get("partial") else "")})
 
             elif command == "stop_recheck":
                 result = "Stop recheck command acknowledged. If a recheck is running it will stop at the next batch boundary."

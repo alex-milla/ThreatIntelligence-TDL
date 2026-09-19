@@ -10,16 +10,6 @@ $message = $_SESSION['flash_message'] ?? '';
 unset($_SESSION['flash_message']);
 $activity = getWorkerActivity($db);
 
-// Period filter for dashboard
-$period = $_GET['period'] ?? '30d';
-$validPeriods = ['24h' => '-1 day', '7d' => '-7 days', '30d' => '-30 days', 'all' => ''];
-$periodSql = '';
-$periodParams = [];
-if (!empty($validPeriods[$period])) {
-    $periodSql = " AND m.discovered_at >= datetime('now', ?)";
-    $periodParams[] = $validPeriods[$period];
-}
-
 // Hide from the "new" dashboard view (matching the notifications page default):
 // historical (recheck) matches, domains classified good/bad, and domains whose
 // WHOIS creation date proves they were already registered before the last
@@ -39,36 +29,14 @@ $stmt = $db->prepare("SELECT COUNT(*) FROM keywords WHERE user_id = ?");
 $stmt->execute([$userId]);
 $keywordCount = (int)$stmt->fetchColumn();
 
-$matchSql = "SELECT COUNT(*) FROM matches m JOIN keywords k ON m.keyword_id = k.id WHERE k.user_id = ?" . $archiveSql . $periodSql;
+$matchSql = "SELECT COUNT(*) FROM matches m JOIN keywords k ON m.keyword_id = k.id WHERE k.user_id = ?" . $archiveSql;
 $stmt = $db->prepare($matchSql);
-$stmt->execute(array_merge([$userId], $periodParams));
+$stmt->execute([$userId]);
 $matchCount = (int)$stmt->fetchColumn();
 
 $stmt = $db->prepare("SELECT COUNT(*) FROM notifications n JOIN matches m ON n.match_id = m.id WHERE n.user_id = ? AND n.is_read = 0 AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)" . $archiveSql);
 $stmt->execute([$userId, $userId]);
 $unreadCount = (int)$stmt->fetchColumn();
-
-// Recent matches
-$stmt = $db->prepare("SELECT m.id, m.domain, m.tld, m.discovered_at, m.first_seen, k.keyword 
-    FROM matches m 
-    JOIN keywords k ON m.keyword_id = k.id 
-    WHERE k.user_id = ? $archiveSql $periodSql
-    ORDER BY m.discovered_at DESC 
-    LIMIT 20");
-$stmt->execute(array_merge([$userId], $periodParams));
-$recentMatches = $stmt->fetchAll();
-
-// Load domain tags for recent matches
-$domainTags = [];
-if (!empty($recentMatches)) {
-    $domains = array_column($recentMatches, 'domain');
-    $placeholders = implode(',', array_fill(0, count($domains), '?'));
-    $tagStmt = $db->prepare("SELECT domain, tag FROM domain_tags WHERE domain IN ($placeholders)");
-    $tagStmt->execute($domains);
-    foreach ($tagStmt->fetchAll() as $t) {
-        $domainTags[$t['domain']] = $t['tag'];
-    }
-}
 
 // New matches in the last 24h (trend KPI)
 $stmt = $db->prepare("SELECT COUNT(*) FROM matches m JOIN keywords k ON m.keyword_id = k.id WHERE k.user_id = ?" . $archiveSql . " AND m.discovered_at >= datetime('now','-1 day')");
@@ -135,7 +103,7 @@ require __DIR__ . '/templates/header.php';
         <div class="card stat-card">
             <i class="material-icons stat-icon tone-info">find_in_page</i>
             <div class="number"><?= $matchCount ?></div>
-            <div class="label">Matches (<?= htmlspecialchars($period) === 'all' ? 'all time' : htmlspecialchars($period) ?>)</div>
+            <div class="label">Matches (all time)</div>
         </div>
     </div>
     <div class="col s6 m6 l3">
@@ -190,53 +158,25 @@ $sparkNonZero = count(array_filter($sparkDays));
     <?php endif; ?>
 </div>
 
-<div class="card" id="live-recent-matches" data-live-section>
+<div class="card" id="domain-lookup">
     <div class="card-head">
-        <h2>Recent Matches</h2>
-        <form method="GET" class="inline-filter">
-            <select name="period" class="browser-default compact" onchange="this.form.submit()">
-                <option value="24h" <?= $period === '24h' ? 'selected' : '' ?>>Last 24h</option>
-                <option value="7d" <?= $period === '7d' ? 'selected' : '' ?>>Last 7 days</option>
-                <option value="30d" <?= $period === '30d' ? 'selected' : '' ?>>Last 30 days</option>
-                <option value="all" <?= $period === 'all' ? 'selected' : '' ?>>All time</option>
-            </select>
-            <noscript><button type="submit" class="btn btn-small">Filter</button></noscript>
-        </form>
+        <h2>Domain lookup <span class="card-sub">search the worker's cached domains</span></h2>
     </div>
-    <?php if (empty($recentMatches)): ?>
-        <p class="muted">No matches in this period. Start by adding <a href="/keywords.php">keywords</a>.</p>
-    <?php else: ?>
-        <table class="striped highlight responsive-table">
-            <thead>
-                <tr>
-                    <th>Domain</th>
-                    <th>TLD</th>
-                    <th>Keyword</th>
-                    <th>First Seen</th>
-                    <th>Discovered</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($recentMatches as $m):
-                    $dtag = $domainTags[$m['domain']] ?? null;
-                    $tagBadge = '';
-                    if ($dtag) {
-                        $tagLabels = ['good' => 'GOOD', 'bad' => 'BAD', 'observing' => 'OBSERVING'];
-                        $cls = in_array($dtag, ['good', 'bad', 'observing'], true) ? $dtag : 'bad';
-                        $tagBadge = ' <span class="tag-chip ' . $cls . '">' . ($tagLabels[$dtag] ?? strtoupper($dtag)) . '</span>';
-                    }
-                ?>
-                <tr>
-                    <td><a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($m['domain'])) ?>')"><?= htmlspecialchars($m['domain']) ?></a><?= $tagBadge ?></td>
-                    <td><?= htmlspecialchars($m['tld']) ?></td>
-                    <td><?= htmlspecialchars($m['keyword']) ?></td>
-                    <td><?= htmlspecialchars(fmt_date($m['first_seen'])) ?></td>
-                    <td><?= htmlspecialchars(fmt_date($m['discovered_at'])) ?></td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-    <?php endif; ?>
+    <form id="lookup-form" class="filter-form" onsubmit="return false;">
+        <div class="input-field">
+            <i class="material-icons prefix">search</i>
+            <input id="lookup-q" type="text" placeholder=" " autocomplete="off">
+            <label for="lookup-q">Domain or part of it</label>
+        </div>
+        <button type="button" class="btn waves-effect" onclick="runDomainLookup()"><i class="material-icons left">travel_explore</i>Search</button>
+    </form>
+    <p class="muted" style="font-size:.82rem; margin-top:-4px;">
+        Exact search covers every cached domain (including hash-cached TLDs like .com).
+        Prefix/contains only cover text-cached TLDs.
+    </p>
+    <div id="lookup-status" class="muted" style="display:none; padding:6px 0;"></div>
+    <div id="lookup-results"></div>
+    <div id="lookup-panel" style="display:none;"></div>
 </div>
 
 <script>
@@ -279,29 +219,86 @@ function buildPanelHtml(domain) {
         + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn btn-outline info waves-effect"><i class="material-icons left">shield</i>Open in VirusTotal</a></div>'
         + '</div>';
 }
-function toggleDomainDetail(linkEl, domain) {
-    var row = linkEl.closest('tr');
-    var existing = row.nextElementSibling;
-    if (existing && existing.classList.contains('dpanel-row') && existing.dataset.domain === domain) {
-        existing.remove();
-        return;
-    }
-    document.querySelectorAll('.dpanel-row').forEach(function(r) { r.remove(); });
+function showLookupPanel(domain) {
     _modalDomain = domain;
-    var detailRow = document.createElement('tr');
-    detailRow.className = 'dpanel-row';
-    detailRow.dataset.domain = domain;
-    detailRow.innerHTML = '<td colspan="5">' + buildPanelHtml(domain) + '</td>';
-    row.parentNode.insertBefore(detailRow, row.nextSibling);
+    var panel = document.getElementById('lookup-panel');
+    var results = document.getElementById('lookup-results');
+    if (results) results.innerHTML = '';
+    if (!panel) return;
+    panel.innerHTML = buildPanelHtml(domain);
+    panel.style.display = 'block';
     document.getElementById('modal-domain-title').textContent = domain;
     document.getElementById('modal-vt').href = 'https://www.virustotal.com/gui/domain/' + encodeURIComponent(domain);
     loadCachedWhois();
     loadDomainTag(domain);
     loadWatchlistStatus(domain);
-    detailRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 function closeDomainDetail() {
-    document.querySelectorAll('.dpanel-row').forEach(function(r) { r.remove(); });
+    var panel = document.getElementById('lookup-panel');
+    if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+}
+function lookupCsrf() {
+    var m = document.querySelector('meta[name="csrf-token"]');
+    return m ? m.content : '';
+}
+function runDomainLookup() {
+    var qEl = document.getElementById('lookup-q');
+    var q = qEl ? qEl.value.trim() : '';
+    if (!q) return;
+    var status = document.getElementById('lookup-status');
+    var results = document.getElementById('lookup-results');
+    closeDomainDetail();
+    if (results) results.innerHTML = '';
+    if (status) { status.style.display = 'block'; status.textContent = 'Searching the worker cache\u2026 (the worker polls every ~20 s)'; }
+    fetch('/ajax_domain_search.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': lookupCsrf()},
+        body: JSON.stringify({q: q})
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+        if (!d.success) { if (status) status.textContent = d.error || 'Search failed'; return; }
+        pollDomainLookup(d.command_id, 0);
+    })
+    .catch(function () { if (status) status.textContent = 'Search failed'; });
+}
+function pollDomainLookup(commandId, tries) {
+    var status = document.getElementById('lookup-status');
+    if (tries > 60) { if (status) status.textContent = 'Timed out waiting for the worker.'; return; }
+    fetch('/ajax_domain_search.php?command_id=' + encodeURIComponent(commandId), {cache: 'no-store'})
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.success) { if (status) status.textContent = d.error || 'Search failed'; return; }
+            if (d.status === 'completed') { renderLookupResults(d); return; }
+            if (d.status === 'failed' || d.status === 'cancelled') { if (status) status.textContent = 'Search ' + d.status + '.'; return; }
+            setTimeout(function () { pollDomainLookup(commandId, tries + 1); }, 3000);
+        })
+        .catch(function () { setTimeout(function () { pollDomainLookup(commandId, tries + 1); }, 5000); });
+}
+function renderLookupResults(data) {
+    var status = document.getElementById('lookup-status');
+    var results = document.getElementById('lookup-results');
+    if (!results) return;
+    var list = data.results || [];
+    if (status) {
+        if (data.partial) { status.style.display = 'block'; status.textContent = data.note || 'Partial results.'; }
+        else if (!list.length) { status.style.display = 'block'; status.textContent = 'No cached domain found.'; }
+        else { status.style.display = 'none'; }
+    }
+    if (!list.length) { results.innerHTML = ''; return; }
+    var qEl = document.getElementById('lookup-q');
+    var q = qEl ? qEl.value.trim().toLowerCase() : '';
+    if (list.length === 1 && list[0].domain === q) { showLookupPanel(list[0].domain); return; }
+    var rows = list.map(function (r) {
+        var label = r.hash_cached ? ' <span class="muted">(hash-cached)</span>' : '';
+        var seen = r.first_seen ? String(r.first_seen).substring(0, 10) : '\u2014';
+        return '<tr><td><a href="javascript:void(0)" class="domain-link" onclick="showLookupPanel(\''
+            + htmlspecialchars(r.domain) + '\')">' + htmlspecialchars(r.domain) + '</a>' + label
+            + '</td><td>' + htmlspecialchars(r.tld || '') + '</td><td>' + htmlspecialchars(seen) + '</td></tr>';
+    }).join('');
+    results.innerHTML = '<table class="striped highlight responsive-table"><thead><tr>'
+        + '<th>Domain</th><th>TLD</th><th>First seen</th></tr></thead><tbody>' + rows + '</tbody></table>';
 }
 function loadDomainTag(domain) {
     fetch('/ajax_tag_domain.php?domain=' + encodeURIComponent(domain))
@@ -375,7 +372,6 @@ function tagDomain(domain, tag) {
     .then(data => {
         if (data.success) {
             loadDomainTag(domain);
-            window.location.reload();
         } else {
             alert(data.error || 'Failed to tag domain');
         }
