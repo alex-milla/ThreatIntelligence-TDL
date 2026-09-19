@@ -71,6 +71,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
+// Column sorting (whitelisted, never interpolate user input into SQL).
+$kwSortCols = ['keyword' => 'k.keyword', 'matches' => 'visible_count', 'added' => 'k.created_at'];
+$kwSortDefaults = ['keyword' => 'asc', 'matches' => 'desc', 'added' => 'desc'];
+$kwSort = $_GET['sort'] ?? 'added';
+if (!isset($kwSortCols[$kwSort])) {
+    $kwSort = 'added';
+}
+$kwDir = isset($_GET['dir']) ? (strtolower((string)$_GET['dir']) === 'asc' ? 'asc' : 'desc') : $kwSortDefaults[$kwSort];
+$kwOrderBy = $kwSortCols[$kwSort] . ' ' . strtoupper($kwDir);
+
 // List keywords with visible match count: only matches that still have an active
 // notification for this user, are not in the watchlist, and match the default
 // notifications visibility (good/bad/historical/old hidden; observing kept).
@@ -93,9 +103,22 @@ $stmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.created_at,
     ) AS visible_count
 FROM keywords k
 WHERE k.user_id = ?
-ORDER BY k.created_at DESC");
+ORDER BY $kwOrderBy");
 $stmt->execute([$userId, $userId, $newDomainDays, $userId]);
 $keywords = $stmt->fetchAll();
+
+/**
+ * Render a sortable table header link for the keywords list.
+ */
+function kwSortLink(string $col, string $label, string $currentSort, string $currentDir, array $defaults): string {
+    $dir = ($col === $currentSort) ? ($currentDir === 'asc' ? 'desc' : 'asc') : ($defaults[$col] ?? 'asc');
+    $url = '/keywords.php?sort=' . urlencode($col) . '&dir=' . urlencode($dir);
+    $active = ($col === $currentSort);
+    $arrow = $active ? ($currentDir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
+    $aria = $active ? ' aria-sort="' . ($currentDir === 'asc' ? 'ascending' : 'descending') . '"' : '';
+    return '<a href="' . htmlspecialchars($url) . '" class="th-sort' . ($active ? ' active' : '') . '"' . $aria . '>'
+        . htmlspecialchars($label) . $arrow . '</a>';
+}
 
 // Recheck status for admin stop button
 $recheckStatus = null;
@@ -160,9 +183,9 @@ require __DIR__ . '/templates/header.php';
         <table class="striped highlight responsive-table">
             <thead>
                 <tr>
-                    <th>Keyword</th>
-                    <th>Matches</th>
-                    <th>Added</th>
+                    <th><?= kwSortLink('keyword', 'Keyword', $kwSort, $kwDir, $kwSortDefaults) ?></th>
+                    <th><?= kwSortLink('matches', 'Matches', $kwSort, $kwDir, $kwSortDefaults) ?></th>
+                    <th><?= kwSortLink('added', 'Added', $kwSort, $kwDir, $kwSortDefaults) ?></th>
                     <th style="width: 100px;">Actions</th>
                 </tr>
             </thead>

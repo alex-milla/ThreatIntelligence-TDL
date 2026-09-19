@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.66] - 2026-09-19
+
+### Web UI - sortable table columns (Keywords and Notifications)
+
+- **Keywords page**: the `Keyword`, `Matches` and `Added` headers are now clickable. Clicking toggles asc/desc and shows ▲/▼ with `aria-sort`.
+- **Notifications page** (including the list you get when opening a keyword's matches): sortable `Status`, `Domain`, `TLD`, `Keyword`, `First Seen`, `Created` and `Discovered` columns. Sorting is preserved across pagination and combined with the existing filters (`q`, `date`, `unread_only`, `new_days`, `archived`, `observing`).
+- Sorting `Created` adds a `LEFT JOIN domain_whois` so it is done server-side, coherent with the WHOIS data.
+- Whitelisted columns only (the `sort`/`dir` parameters are never interpolated into SQL).
+
 ## [v1.3.65] - 2026-09-19
 
 ### New classification state: "Insufficient info" (under observation)

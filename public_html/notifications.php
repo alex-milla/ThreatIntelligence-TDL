@@ -129,6 +129,27 @@ $dateFilter = $_GET['date'] ?? 'all';
 $includeArchived = isset($_GET['archived']) && $_GET['archived'] === '1';
 $observingOnly = isset($_GET['observing']) && $_GET['observing'] === '1';
 
+// Column sorting (whitelisted, never interpolate user input into SQL).
+$notifSortCols = [
+    'status'     => 'n.is_read',
+    'domain'     => 'm.domain',
+    'tld'        => 'm.tld',
+    'keyword'    => 'k.keyword',
+    'first_seen' => 'm.first_seen',
+    'created'    => 'COALESCE(dws.creation_ts, datetime(dws.creation_date))',
+    'discovered' => 'm.discovered_at',
+];
+$notifSortDefaults = [
+    'status' => 'asc', 'domain' => 'asc', 'tld' => 'asc', 'keyword' => 'asc',
+    'first_seen' => 'desc', 'created' => 'desc', 'discovered' => 'desc',
+];
+$sort = $_GET['sort'] ?? '';
+if (!isset($notifSortCols[$sort])) {
+    $sort = '';
+}
+$dir = isset($_GET['dir']) ? (strtolower((string)$_GET['dir']) === 'asc' ? 'asc' : 'desc') : 'desc';
+$orderBy = $sort !== '' ? ($notifSortCols[$sort] . ' ' . strtoupper($dir)) : 'n.created_at DESC';
+
 // Configurable threshold for "new" badge/filter (default from admin setting)
 $newDays = isset($_GET['new_days']) ? max(1, min(365, (int)$_GET['new_days'])) : null;
 $newOnly = $newDays !== null;
@@ -199,13 +220,14 @@ if (!$includeArchived && !$observingOnly) {
 $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
-// Fetch page
+// Fetch page. The domain_whois join lets "Created" be sorted server-side.
 $sql = "SELECT n.id, n.is_read, n.created_at, m.domain, m.tld, m.discovered_at, m.first_seen, k.keyword 
     FROM notifications n 
     JOIN matches m ON n.match_id = m.id 
     JOIN keywords k ON m.keyword_id = k.id 
+    LEFT JOIN domain_whois dws ON dws.domain = m.domain
     $where 
-    ORDER BY n.created_at DESC 
+    ORDER BY $orderBy 
     LIMIT $perPage OFFSET $offset";
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
@@ -239,7 +261,7 @@ if (!empty($notifications)) {
 }
 
 // Helper to build pagination URLs preserving filters
-function notifUrl(int $p, string $search, string $date, bool $unread, ?int $newDays, bool $archived = false, bool $observing = false): string {
+function notifUrl(int $p, string $search, string $date, bool $unread, ?int $newDays, bool $archived = false, bool $observing = false, string $sort = '', string $dir = ''): string {
     $q = ['page' => $p];
     if ($search !== '') $q['q'] = $search;
     if ($date !== 'all') $q['date'] = $date;
@@ -247,7 +269,25 @@ function notifUrl(int $p, string $search, string $date, bool $unread, ?int $newD
     if ($newDays !== null) $q['new_days'] = (string)$newDays;
     if ($archived) $q['archived'] = '1';
     if ($observing) $q['observing'] = '1';
+    if ($sort !== '') { $q['sort'] = $sort; $q['dir'] = $dir; }
     return '/notifications.php?' . http_build_query($q);
+}
+
+/**
+ * Render a sortable table header link, preserving the current filters.
+ */
+function notifSortLink(string $col, string $label, string $currentSort, string $currentDir, array $defaults): string {
+    $dir = ($col === $currentSort) ? ($currentDir === 'asc' ? 'desc' : 'asc') : ($defaults[$col] ?? 'asc');
+    $q = $_GET;
+    unset($q['page']);
+    $q['sort'] = $col;
+    $q['dir'] = $dir;
+    $url = '/notifications.php?' . http_build_query($q);
+    $active = ($col === $currentSort);
+    $arrow = $active ? ($currentDir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
+    $aria = $active ? ' aria-sort="' . ($currentDir === 'asc' ? 'ascending' : 'descending') . '"' : '';
+    return '<a href="' . htmlspecialchars($url) . '" class="th-sort' . ($active ? ' active' : '') . '"' . $aria . '>'
+        . htmlspecialchars($label) . $arrow . '</a>';
 }
 
 $pageTitle = 'Notifications';
@@ -362,13 +402,13 @@ require __DIR__ . '/templates/header.php';
             <thead>
                 <tr>
                     <th style="width: 30px;"></th>
-                    <th>Status</th>
-                    <th>Domain</th>
-                    <th>TLD</th>
-                    <th>Keyword</th>
-                    <th>First Seen</th>
-                    <th>Created</th>
-                    <th>Discovered</th>
+                    <th><?= notifSortLink('status', 'Status', $sort, $dir, $notifSortDefaults) ?></th>
+                    <th><?= notifSortLink('domain', 'Domain', $sort, $dir, $notifSortDefaults) ?></th>
+                    <th><?= notifSortLink('tld', 'TLD', $sort, $dir, $notifSortDefaults) ?></th>
+                    <th><?= notifSortLink('keyword', 'Keyword', $sort, $dir, $notifSortDefaults) ?></th>
+                    <th><?= notifSortLink('first_seen', 'First Seen', $sort, $dir, $notifSortDefaults) ?></th>
+                    <th><?= notifSortLink('created', 'Created', $sort, $dir, $notifSortDefaults) ?></th>
+                    <th><?= notifSortLink('discovered', 'Discovered', $sort, $dir, $notifSortDefaults) ?></th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -439,7 +479,7 @@ require __DIR__ . '/templates/header.php';
             </span>
             <ul class="pagination">
                 <?php if ($page > 1): ?>
-                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page - 1, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived, $observingOnly)) ?>" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
+                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page - 1, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived, $observingOnly, $sort, $dir)) ?>" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
                 <?php else: ?>
                     <li class="disabled"><a href="#!" aria-label="Previous page"><i class="material-icons">chevron_left</i></a></li>
                 <?php endif; ?>
@@ -448,14 +488,14 @@ require __DIR__ . '/templates/header.php';
                     <?php if ($p === $page): ?>
                         <li class="active"><a href="#!"><?= $p ?></a></li>
                     <?php elseif ($p === 1 || $p === $totalPages || abs($p - $page) <= 2): ?>
-                        <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($p, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived, $observingOnly)) ?>"><?= $p ?></a></li>
+                        <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($p, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived, $observingOnly, $sort, $dir)) ?>"><?= $p ?></a></li>
                     <?php elseif (abs($p - $page) === 3): ?>
                         <li class="disabled"><a href="#!">…</a></li>
                     <?php endif; ?>
                 <?php endfor; ?>
 
                 <?php if ($page < $totalPages): ?>
-                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page + 1, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived, $observingOnly)) ?>" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
+                    <li class="waves-effect"><a href="<?= htmlspecialchars(notifUrl($page + 1, $search, $dateFilter, $unreadOnly, $newDays, $includeArchived, $observingOnly, $sort, $dir)) ?>" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
                 <?php else: ?>
                     <li class="disabled"><a href="#!" aria-label="Next page"><i class="material-icons">chevron_right</i></a></li>
                 <?php endif; ?>
