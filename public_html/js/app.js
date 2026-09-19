@@ -15,6 +15,87 @@ var App = {
         this.initSelects();
         this.initCharacterCounters();
         this.bindConfirms();
+        this.initAutoRefresh();
+    },
+
+    /* ---------- Partial auto-refresh of live sections ----------
+     * Pages mark the parts that change with [data-live-section] and add an
+     * #activity-watcher element with the initial state. While the worker / a
+     * recheck / a queued command is active the marked sections are re-fetched,
+     * and once it finishes they are refreshed a final time. The rest of the
+     * page (forms, scroll, open menus) is left untouched: no full reload.
+     */
+    initAutoRefresh: function () {
+        var watcher = document.getElementById('activity-watcher');
+        var sections = document.querySelectorAll('[data-live-section]');
+        if (!watcher || sections.length === 0) return;
+
+        var activityUrl = watcher.getAttribute('data-url') || '/ajax_worker_activity.php';
+        var pollInterval = parseInt(watcher.getAttribute('data-interval') || '5000', 10);
+        var refreshInterval = parseInt(watcher.getAttribute('data-refresh-interval') || '10000', 10);
+        var active = watcher.getAttribute('data-active') === '1';
+        var version = watcher.getAttribute('data-version') || '';
+        var lastRefresh = 0;
+        var refreshing = false;
+
+        function refreshSections() {
+            if (refreshing) return;
+            refreshing = true;
+            lastRefresh = Date.now();
+            fetch(window.location.pathname + window.location.search, {
+                cache: 'no-store',
+                headers: { 'X-Requested-With': 'fetch' }
+            })
+                .then(function (r) { return r.text(); })
+                .then(function (html) {
+                    var doc = new DOMParser().parseFromString(html, 'text/html');
+                    document.querySelectorAll('[data-live-section]').forEach(function (el) {
+                        var fresh = doc.getElementById(el.id);
+                        if (!fresh) return;
+                        el.innerHTML = fresh.innerHTML;
+                        // Some sections toggle visibility via their class (e.g.
+                        // the live worker card). Only those opt in, so tab panes
+                        // keep their JS-managed "active" class.
+                        if (el.hasAttribute('data-live-class')) {
+                            el.className = fresh.className;
+                        }
+                    });
+                })
+                .catch(function () {})
+                .then(function () { refreshing = false; });
+        }
+
+        function tick() {
+            fetch(activityUrl, {
+                headers: { 'Accept': 'application/json' },
+                cache: 'no-store'
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (!d || !d.success) return;
+                    var nowActive = !!d.active;
+                    var newVersion = d.worker_version || '';
+                    var versionChanged = !!newVersion && !!version && newVersion !== version;
+                    var justFinished = active && !nowActive;
+
+                    if (newVersion) version = newVersion;
+
+                    if (justFinished || versionChanged) {
+                        active = nowActive;
+                        refreshSections();
+                        return;
+                    }
+
+                    active = nowActive;
+                    if (nowActive && Date.now() - lastRefresh >= refreshInterval) {
+                        refreshSections();
+                    }
+                })
+                .catch(function () {});
+        }
+
+        setInterval(tick, pollInterval);
+        tick();
     },
 
     /* ---------- Theme (light / dark) ---------- */

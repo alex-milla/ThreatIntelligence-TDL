@@ -84,6 +84,9 @@ $tlds = $db->query(
 $workerStatus = $db->query("SELECT is_running FROM worker_status WHERE id = 1")->fetch();
 $workerRunning = !empty($workerStatus['is_running']);
 $versionMismatch = workerVersionMismatch($db);
+$activity = getWorkerActivity($db);
+// Keep polling the table while the worker is downloading or a run is queued.
+$tldWatch = $workerRunning || $activity['commands_pending'] > 0 || $activity['commands_running'] > 0;
 
 $summary = ['downloaded' => 0, 'not_modified' => 0, 'skipped_today' => 0, 'failed' => 0];
 foreach ($tlds as $t) {
@@ -116,6 +119,13 @@ require __DIR__ . '/../templates/header.php';
 </div>
 <?php endif; ?>
 
+<span id="activity-watcher" hidden
+      data-url="/ajax_worker_activity.php"
+      data-interval="5000"
+      data-refresh-interval="10000"
+      data-active="<?= $activity['active'] ? '1' : '0' ?>"
+      data-version="<?= htmlspecialchars($activity['worker_version']) ?>"></span>
+
 <div class="card">
     <div class="card-head">
         <h2>Approved TLDs (<?= count($tlds) ?>)</h2>
@@ -130,7 +140,7 @@ require __DIR__ . '/../templates/header.php';
     </div>
     <?php else: ?>
 
-    <div class="status-summary">
+    <div class="status-summary" id="live-tld-summary" data-live-section>
         <span><strong><?= $activeCount ?></strong> active</span>
         <span class="text-success"><strong><?= $summary['downloaded'] ?></strong> downloaded</span>
         <span><strong><?= $summary['not_modified'] ?></strong> unchanged</span>
@@ -260,7 +270,7 @@ updateTldCount();
 
 // Live refresh of per-TLD download status while the worker is running.
 (function() {
-    const workerRunning = <?= $workerRunning ? 'true' : 'false' ?>;
+    const workerRunning = <?= $tldWatch ? 'true' : 'false' ?>;
     if (!workerRunning || !document.getElementById('tld-tbody')) return;
 
     const statusLabels = {

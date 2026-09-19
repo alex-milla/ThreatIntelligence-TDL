@@ -8,6 +8,7 @@ $userId = (int)$_SESSION['user_id'];
 $isAdmin = !empty($_SESSION['is_admin']);
 $message = $_SESSION['flash_message'] ?? '';
 unset($_SESSION['flash_message']);
+$activity = getWorkerActivity($db);
 
 // Period filter for dashboard
 $period = $_GET['period'] ?? '30d';
@@ -83,6 +84,13 @@ require __DIR__ . '/templates/header.php';
 <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= htmlspecialchars($message) ?></div>
 <?php endif; ?>
 
+<span id="activity-watcher" hidden
+      data-url="/ajax_worker_activity.php"
+      data-interval="5000"
+      data-refresh-interval="10000"
+      data-active="<?= $activity['active'] ? '1' : '0' ?>"
+      data-version="<?= htmlspecialchars($activity['worker_version']) ?>"></span>
+
 <?php if ($isAdmin && $workerHealth): ?>
 <?php
     $hbStale = false;
@@ -95,7 +103,7 @@ require __DIR__ . '/templates/header.php';
     elseif ($hbStale) { $hState = 'down'; $hLabel = 'Worker unreachable'; }
     else { $hState = 'ok'; $hLabel = 'Worker online'; }
 ?>
-<a href="/admin/#worker" class="card worker-health">
+<a href="/admin/#worker" class="card worker-health" id="live-worker-health" data-live-section>
     <span class="dot <?= $hState ?>"></span>
     <strong><?= $hLabel ?></strong>
     <?php if ($isBusy && !empty($workerHealth['current_command'])): ?>
@@ -105,7 +113,7 @@ require __DIR__ . '/templates/header.php';
 </a>
 <?php endif; ?>
 
-<div class="row">
+<div class="row" id="live-stats" data-live-section>
     <div class="col s6 m6 l3">
         <div class="card stat-card">
             <i class="material-icons stat-icon">vpn_key</i>
@@ -153,7 +161,7 @@ foreach ($matchesPerDay as $row) {
 $sparkTotal = array_sum($sparkDays);
 $sparkNonZero = count(array_filter($sparkDays));
 ?>
-<div class="card">
+<div class="card" id="live-sparkline" data-live-section>
     <div class="card-head">
         <h2>Matches per day <span class="card-sub">last 30 days &middot; <?= number_format($sparkTotal) ?> total</span></h2>
         <?php if ($sparkMax === 0): ?>
@@ -172,7 +180,7 @@ $sparkNonZero = count(array_filter($sparkDays));
     <?php endif; ?>
 </div>
 
-<div class="card">
+<div class="card" id="live-recent-matches" data-live-section>
     <div class="card-head">
         <h2>Recent Matches</h2>
         <form method="GET" class="inline-filter">

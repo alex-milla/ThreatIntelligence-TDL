@@ -154,6 +154,69 @@ function hasPendingCommand(PDO $db, string $command): bool {
 }
 
 /**
+ * Summarise whether the worker, a recheck or any queued command is active.
+ *
+ * The web UI polls this so it can refresh itself once the background work
+ * finishes instead of leaving the page stale until a manual reload. The data
+ * is not sensitive (only activity flags and the worker version).
+ */
+function getWorkerActivity(PDO $db): array {
+    $activity = [
+        'active'           => false,
+        'worker_running'   => false,
+        'recheck_running'  => false,
+        'commands_pending' => 0,
+        'commands_running' => 0,
+        'max_command_id'   => 0,
+        'worker_version'   => '',
+        'last_run'         => null,
+    ];
+
+    try {
+        $ws = $db->query("SELECT is_running, version, last_run FROM worker_status WHERE id = 1")->fetch();
+        if ($ws) {
+            $activity['worker_running'] = !empty($ws['is_running']);
+            $activity['worker_version'] = (string)($ws['version'] ?? '');
+            $activity['last_run'] = $ws['last_run'] ?? null;
+        }
+    } catch (Throwable $e) {
+        // Table not created yet.
+    }
+
+    try {
+        $rc = $db->query("SELECT is_running FROM recheck_status WHERE id = 1")->fetch();
+        if ($rc) {
+            $activity['recheck_running'] = !empty($rc['is_running']);
+        }
+    } catch (Throwable $e) {
+        // Table not created yet.
+    }
+
+    try {
+        $row = $db->query(
+            "SELECT "
+            . "SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS p, "
+            . "SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS r, "
+            . "COALESCE(MAX(id), 0) AS m FROM commands"
+        )->fetch();
+        if ($row) {
+            $activity['commands_pending'] = (int)($row['p'] ?? 0);
+            $activity['commands_running'] = (int)($row['r'] ?? 0);
+            $activity['max_command_id'] = (int)($row['m'] ?? 0);
+        }
+    } catch (Throwable $e) {
+        // Table not created yet.
+    }
+
+    $activity['active'] = $activity['worker_running']
+        || $activity['recheck_running']
+        || $activity['commands_pending'] > 0
+        || $activity['commands_running'] > 0;
+
+    return $activity;
+}
+
+/**
  * Return ['app' => x, 'worker' => y] when the running worker reports a version
  * different from the application VERSION file, or null if they match/unknown.
  */

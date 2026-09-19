@@ -160,6 +160,7 @@ $pendingCommands = $db->query("SELECT COUNT(*) FROM commands WHERE status = 'pen
 $pendingCommandsList = $db->query("SELECT id, command, payload, created_at FROM commands WHERE status = 'pending' ORDER BY created_at ASC")->fetchAll();
 $recentCommands = $db->query("SELECT id, command, payload, status, result, created_at, executed_at, finished_at FROM commands ORDER BY id DESC LIMIT 20")->fetchAll();
 $versionMismatch = workerVersionMismatch($db);
+$activity = getWorkerActivity($db);
 
 $pageTitle = 'Admin Panel';
 require __DIR__ . '/../templates/header.php';
@@ -184,7 +185,14 @@ require __DIR__ . '/../templates/header.php';
 </div>
 <?php endif; ?>
 
-<div class="card <?= (($workerStatus['is_running'] ?? 0) && ($workerStatus['total_tlds'] ?? 0) > 0) ? '' : 'is-hidden' ?>" id="live-worker-card">
+<span id="activity-watcher" hidden
+      data-url="/ajax_worker_activity.php"
+      data-interval="5000"
+      data-refresh-interval="5000"
+      data-active="<?= $activity['active'] ? '1' : '0' ?>"
+      data-version="<?= htmlspecialchars($activity['worker_version']) ?>"></span>
+
+<div class="card <?= (($workerStatus['is_running'] ?? 0) && ($workerStatus['total_tlds'] ?? 0) > 0) ? '' : 'is-hidden' ?>" id="live-worker-card" data-live-section data-live-class>
     <div class="card-head">
         <h2><i class="material-icons left">memory</i>Live Worker Progress</h2>
     </div>
@@ -246,7 +254,7 @@ require __DIR__ . '/../templates/header.php';
     <p><a href="/admin/tlds.php" class="btn waves-effect"><i class="material-icons left">public</i>Open TLD management</a></p>
 </div>
 
-<div class="card admin-pane" data-tab="recheck">
+<div class="card admin-pane" data-tab="recheck" id="live-recheck" data-live-section>
     <div class="card-head"><h2>Keyword Recheck Status</h2></div>
     <?php
     $recheckStatus = $db->query("SELECT * FROM recheck_status WHERE id = 1")->fetch();
@@ -312,7 +320,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
 }
 ?>
 
-<div class="card admin-pane" data-tab="worker">
+<div class="card admin-pane" data-tab="worker" id="live-worker-status" data-live-section>
     <div class="card-head"><h2>Worker Status</h2></div>
     <?php if ($workerStatus): ?>
         <?php if (($workerStatus['is_running'] ?? 0)): ?>
@@ -347,7 +355,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
     <?php endif; ?>
 </div>
 
-<div class="card admin-pane" data-tab="commands">
+<div class="card admin-pane" data-tab="commands" id="live-recent-commands" data-live-section>
     <div class="card-head"><h2>Recent Commands</h2></div>
     <?php if (empty($recentCommands)): ?>
         <p class="muted">No commands have been queued yet.</p>
@@ -387,7 +395,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
     <?php endif; ?>
 </div>
 
-<div class="card admin-pane" data-tab="commands">
+<div class="card admin-pane" data-tab="commands" id="live-pending-commands" data-live-section>
     <div class="card-head"><h2>Pending Commands</h2></div>
     <?php if (empty($pendingCommandsList)): ?>
         <p class="muted">No pending commands. The queue is clear.</p>
@@ -428,7 +436,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
     <?php endif; ?>
 </div>
 
-<div class="card admin-pane" data-tab="worker">
+<div class="card admin-pane" data-tab="worker" id="live-worker-logs" data-live-section>
     <div class="card-head"><h2>Worker Logs</h2></div>
     <?php if (empty($workerLogs)): ?>
         <p class="muted">No worker logs yet.</p>
@@ -505,7 +513,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
     </table>
 </div>
 
-<div class="card admin-pane" data-tab="sync">
+<div class="card admin-pane" data-tab="sync" id="live-sync-logs" data-live-section>
     <div class="card-head"><h2>Sync Logs</h2></div>
     <table class="striped highlight responsive-table">
         <thead>
@@ -603,85 +611,5 @@ if (!empty($workerStatus['last_heartbeat'])) {
     if (hash && valid.includes(hash)) activate(hash);
 })();
 </script>
-
-<script>
-(function() {
-    const container = document.getElementById('recheck-container');
-    if (!container || container.dataset.running !== '1') return;
-
-    function updateStatus() {
-        fetch('/ajax_recheck_status.php')
-            .then(r => r.json())
-            .then(data => {
-                if (!data.success || !data.status) return;
-                const s = data.status;
-                const running = s.is_running == 1;
-                const pct = s.progress_pct || 0;
-                const checked = parseInt(s.checked_domains || 0).toLocaleString();
-                const total = parseInt(s.total_domains || 0).toLocaleString();
-                const matches = parseInt(s.matches_found || 0).toLocaleString();
-
-                if (!running) {
-                    container.dataset.running = '0';
-                    container.innerHTML = `
-                        <p><strong>Status:</strong> <span class="status-badge status-completed">Completed</span> at ${s.completed_at || 'just now'}</p>
-                        <p>Checked <strong>${checked}</strong> domains — <strong>${matches}</strong> matches found</p>
-                    `;
-                    return;
-                }
-
-                let bar = document.getElementById('recheck-bar');
-                let text = document.getElementById('recheck-text');
-                if (bar) bar.style.width = pct + '%';
-                if (text) {
-                    text.innerHTML = `Checked <strong>${checked}</strong> of <strong>${total}</strong> domains (${pct}%) — <strong>${matches}</strong> matches found`;
-                }
-            })
-            .catch(() => {});
-    }
-
-    setInterval(updateStatus, 5000);
-})();
-
-// Live Worker Progress polling
-(function() {
-    const card = document.getElementById('live-worker-card');
-    if (!card) return;
-
-    function updateLiveWorker() {
-        fetch('/api/v1/worker_status.php')
-            .then(r => r.json())
-            .then(data => {
-                if (!data.success || !data.status) return;
-                const s = data.status;
-                const running = s.is_running == 1;
-                const total = parseInt(s.total_tlds || 0);
-
-                if (!running || total === 0) {
-                    card.classList.add('is-hidden');
-                    return;
-                }
-
-                card.classList.remove('is-hidden');
-                const done = parseInt(s.tlds_processed || 0);
-                const domains = parseInt(s.domains_processed || 0);
-                const pct = total > 0 ? Math.round(done / total * 100) : 0;
-
-                document.getElementById('live-command').textContent = s.current_command || '—';
-                document.getElementById('live-action').textContent = s.current_action || '—';
-                document.getElementById('live-tld').textContent = s.current_tld || '—';
-                document.getElementById('live-bar').style.width = pct + '%';
-                document.getElementById('live-done').textContent = done.toLocaleString();
-                document.getElementById('live-total').textContent = total.toLocaleString();
-                document.getElementById('live-domains').textContent = domains.toLocaleString();
-            })
-            .catch(() => {});
-    }
-
-    setInterval(updateLiveWorker, 5000);
-})();
-</script>
-
-
 
 <?php require __DIR__ . '/../templates/footer.php'; ?>

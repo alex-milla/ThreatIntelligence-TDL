@@ -6,8 +6,9 @@ requireAdmin();
 set_time_limit(300);
 ignore_user_abort(true);
 
-$pageTitle = 'System Update';
-require __DIR__ . '/../templates/header.php';
+// Flash message survives the post-update redirect (new code reloads the page).
+$message = $_SESSION['flash_message'] ?? '';
+unset($_SESSION['flash_message']);
 
 $repoOwner = 'alex-milla';
 $repoName  = 'ThreatIntelligence-TDL';
@@ -376,7 +377,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $release && empty($error)) {
         if ($result['success']) {
             file_put_contents($versionFile, $remoteVersion);
             $action = $forceUpdate ? 'Force updated' : 'Updated';
-            $info = "{$action} successfully to v{$remoteVersion}. Files copied: {$result['copied']}.<br>Backup saved to: <code>" . htmlspecialchars(basename($result['backup'])) . "</code>";
+            // Redirect (PRG) so the browser reloads the freshly installed files
+            // and the message is shown by the new version.
+            $_SESSION['flash_message'] = "{$action} successfully to v{$remoteVersion}. Files copied: {$result['copied']}.<br>Backup saved to: <code>" . htmlspecialchars(basename($result['backup'])) . "</code>";
+            header('Location: /admin/update.php');
+            exit;
         } else {
             $error = $result['error'];
             if (!empty($result['backup'])) {
@@ -394,10 +399,16 @@ if (is_dir($backupBase)) {
     }
     rsort($backups);
 }
+
+$pageTitle = 'System Update';
+require __DIR__ . '/../templates/header.php';
 ?>
 
 <div class="card">
     <div class="card-head"><h2>System Update</h2></div>
+    <?php if ($message): ?>
+        <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= $message ?></div>
+    <?php endif; ?>
     <p>This checks the latest <strong>GitHub Release</strong> and updates the application files.</p>
     <p><strong>Repository:</strong> <?= htmlspecialchars("{$repoOwner}/{$repoName}") ?></p>
 

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.3.64] - 2026-09-19
+
+### Web UI - partial auto-refresh when a process finishes
+
+- **New activity probe** `ajax_worker_activity.php` (`getWorkerActivity()` in `includes/auth.php`): reports whether the worker, a recheck or a queued command is active, plus the worker version. Available to any logged-in user.
+- **Partial refresh, no full reload**: pages mark the parts that change with `data-live-section` (plus an `#activity-watcher` with the initial state). While work is active those sections are re-fetched every few seconds and refreshed a final time when it finishes. Forms, scroll position and open menus are preserved.
+- **Admin panel**: Worker Status, Live Worker Progress, Recheck, Recent/Pending Commands and Worker/Sync Logs now update themselves. The broken bespoke polls (the browser poll of `/api/v1/worker_status.php` lacked the API key, and the recheck poll only started if it was already running) were removed in favour of the shared mechanism.
+- **TLDs page**: the table poll now starts when a run is merely **queued** (previously it only started if the worker was already running, so a queued Refresh/Force never updated), and the status summary refreshes itself.
+- **Dashboard**: stats, sparkline, recent matches and the admin worker-health card refresh while a run is in progress and once it ends, so new matches appear without F5.
+- **System Update**: after a successful self-update the page now redirects (PRG) so the freshly installed files and version are loaded; the success message is kept via a flash.
+
 ## [v1.3.63] - 2026-09-19
 
 ### Worker - TLD baseline (only new delegations since the last validation)
