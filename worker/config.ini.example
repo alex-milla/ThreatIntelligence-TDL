@@ -61,10 +61,20 @@ whitelist = zip, wine
 ; On-demand domain registration lookups requested from the web panel.
 ; RDAP is used first; the WHOIS port 43 fallback covers TLDs without RDAP.
 timeout = 20
+; TCP connect timeout: fail fast on registries that block/refuse port 43.
+connect_timeout = 6
 rdap_only = false
 whois_fallback = true
 ; Seconds to wait between lookups (be polite to the registries).
 rate_delay = 1.0
+; Registries that restrict WHOIS port 43 (authorized IPs only) or publish no
+; data. They return "unsupported" without a network call (the panel then shows
+; the first seen in zone data). Empty value disables the shortcut.
+; .es (Red.es) only serves WHOIS to pre-authorized IPs; .de (DENIC) publishes
+; no creation date. Set rdap_overrides for RDAP servers missing from IANA.
+disabled_tlds = es
+rdap_overrides = de=https://rdap.denic.de/
+whois_overrides =
 
 [virustotal]
 ; VirusTotal API v3 key (https://www.virustotal.com/gui/my-apikey). The free

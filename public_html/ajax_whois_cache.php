@@ -12,6 +12,7 @@ if (!$domain || strlen($domain) > 253 || !preg_match('/^[a-z0-9\p{L}\-\.]+$/u', 
 }
 
 $db = Database::get();
+$userId = (int)$_SESSION['user_id'];
 $stmt = $db->prepare(
     "SELECT domain, creation_date, expiration_date, registrar, name_servers, source, status, updated_at, cached_at "
     . "FROM domain_whois WHERE domain = ? LIMIT 1"
@@ -19,13 +20,16 @@ $stmt = $db->prepare(
 $stmt->execute([$domain]);
 $row = $stmt->fetch();
 
+$firstSeen = getDomainFirstSeen($db, $userId, $domain);
+
 if (!$row) {
-    echo json_encode(['success' => true, 'whois' => null]);
+    echo json_encode(['success' => true, 'whois' => null, 'first_seen' => $firstSeen]);
     exit;
 }
 
 echo json_encode([
     'success' => true,
+    'first_seen' => $firstSeen,
     'whois' => [
         'domain' => $row['domain'],
         'creation_date' => $row['creation_date'],
@@ -36,5 +40,6 @@ echo json_encode([
         'status' => $row['status'],
         'updated_at' => $row['updated_at'],
         'cached_at' => $row['cached_at'],
+        'first_seen' => $firstSeen,
     ],
 ]);

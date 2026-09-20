@@ -151,6 +151,26 @@ def _domain_hash(domain: str) -> int:
     return int.from_bytes(digest, "big", signed=True)
 
 
+def _parse_tld_map(value: str) -> dict:
+    """Parse ``tld=value, tld2=value2`` (WHOIS/RDAP overrides) into a dict."""
+    out: dict = {}
+    for item in (value or "").split(","):
+        item = item.strip()
+        if "=" not in item:
+            continue
+        key, val = item.split("=", 1)
+        key = key.strip().lower().lstrip(".")
+        val = val.strip()
+        if key and val:
+            out[key] = val
+    return out
+
+
+def _parse_tld_set(value: str) -> set:
+    """Parse ``es, de`` (restricted TLDs) into a set of lowercased TLD names."""
+    return {t.strip().lower().lstrip(".") for t in (value or "").split(",") if t.strip()}
+
+
 def _timing_add(timing: dict | None, key: str, seconds: float) -> None:
     if timing is not None:
         timing[key] = timing.get(key, 0.0) + seconds
@@ -1452,18 +1472,29 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                     domains = []
                 domains = [str(d).lower().strip() for d in domains if d][:200]
                 data_dir = cfg.get("worker", "data_dir", fallback="./data")
+                timeout, connect_timeout, rdap_only, whois_fallback, rate_delay = 20, 6, False, True, 1.0
+                rdap_overrides: dict = {}
+                whois_overrides: dict = {}
+                disabled_tlds = None
                 if cfg.has_section("whois"):
                     timeout = cfg.getint("whois", "timeout", fallback=20)
+                    connect_timeout = cfg.getint("whois", "connect_timeout", fallback=6)
                     rdap_only = cfg.getboolean("whois", "rdap_only", fallback=False)
                     whois_fallback = cfg.getboolean("whois", "whois_fallback", fallback=True)
                     rate_delay = cfg.getfloat("whois", "rate_delay", fallback=1.0)
-                else:
-                    timeout, rdap_only, whois_fallback, rate_delay = 20, False, True, 1.0
+                    rdap_overrides = _parse_tld_map(cfg.get("whois", "rdap_overrides", fallback=""))
+                    whois_overrides = _parse_tld_map(cfg.get("whois", "whois_overrides", fallback=""))
+                    if cfg.has_option("whois", "disabled_tlds"):
+                        disabled_tlds = _parse_tld_set(cfg.get("whois", "disabled_tlds", fallback=""))
                 entries = []
                 for d in domains:
                     entries.append(whois.lookup_domain(d, data_dir, timeout=timeout,
                                                        rdap_only=rdap_only,
-                                                       whois_fallback=whois_fallback))
+                                                       whois_fallback=whois_fallback,
+                                                       connect_timeout=connect_timeout,
+                                                       overrides=rdap_overrides,
+                                                       whois_overrides=whois_overrides,
+                                                       disabled_tlds=disabled_tlds))
                     if rate_delay > 0:
                         time.sleep(rate_delay)
                 ok = sync_client.send_whois_results(host_url, api_key, entries)

@@ -19,14 +19,36 @@ IANA_WHOIS_HOST = "whois.iana.org"
 USER_AGENT = "ThreatIntelligence-TDL-Worker/1.0"
 BOOTSTRAP_MAX_AGE = 7 * 24 * 3600
 
+# RDAP base URLs for TLDs missing from the IANA bootstrap (verified manually).
+# Merged with any [whois] rdap_overrides coming from the configuration.
+RDAP_OVERRIDES = {
+    "de": "https://rdap.denic.de/",
+}
+
+# Registries that restrict WHOIS port 43 (authorized IPs only) and/or do not
+# publish registration data, so a direct lookup cannot succeed. Checked before
+# any network call; override with [whois] disabled_tlds (use an empty value to
+# disable this default and rely on [whois] whois_overrides).
+DEFAULT_RESTRICTED_TLDS = {"es"}
+
 
 def _bootstrap_path(data_dir: str) -> str:
     return os.path.join(data_dir, "rdap_bootstrap.json")
 
 
-def get_rdap_base(tld: str, data_dir: str, timeout: int = 15) -> str | None:
+def get_rdap_base(tld: str, data_dir: str, timeout: int = 15,
+                  overrides: dict | None = None) -> str | None:
     """Return the RDAP base URL for a TLD using the IANA bootstrap (cached 7 days)."""
     tld = tld.lower().strip(".")
+
+    # Explicit overrides win over the bootstrap (some registries publish RDAP
+    # without being listed by IANA, e.g. .de).
+    merged = dict(RDAP_OVERRIDES)
+    if overrides:
+        merged.update({str(k).lower().strip("."): v for k, v in overrides.items() if v})
+    if tld in merged:
+        return str(merged[tld]).rstrip("/") + "/"
+
     cache_file = _bootstrap_path(data_dir)
     bootstrap = None
 
@@ -104,9 +126,10 @@ def _parse_rdap(data: dict) -> dict:
     }
 
 
-def lookup_rdap(domain: str, data_dir: str, timeout: int = 20) -> dict | None:
+def lookup_rdap(domain: str, data_dir: str, timeout: int = 20,
+                connect_timeout: int = 6, overrides: dict | None = None) -> dict | None:
     tld = domain.rsplit(".", 1)[-1]
-    base = get_rdap_base(tld, data_dir, timeout=timeout)
+    base = get_rdap_base(tld, data_dir, timeout=timeout, overrides=overrides)
     urls = []
     if base:
         urls.append(base + "domain/" + quote(domain))
@@ -115,7 +138,7 @@ def lookup_rdap(domain: str, data_dir: str, timeout: int = 20) -> dict | None:
     for url in urls:
         try:
             r = requests.get(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT},
-                             timeout=timeout)
+                             timeout=(max(1, connect_timeout), max(1, timeout)))
         except requests.RequestException:
             continue
         if r.status_code != 200:
@@ -130,8 +153,9 @@ def lookup_rdap(domain: str, data_dir: str, timeout: int = 20) -> dict | None:
     return None
 
 
-def _whois_query(host: str, query: str, timeout: int = 15) -> str:
-    with socket.create_connection((host, 43), timeout=timeout) as sock:
+def _whois_query(host: str, query: str, timeout: int = 15, connect_timeout: int = 6) -> str:
+    with socket.create_connection((host, 43), timeout=max(1, connect_timeout)) as sock:
+        sock.settimeout(max(1, timeout))
         sock.sendall((query + "\r\n").encode("utf-8", "ignore"))
         chunks = []
         while True:
@@ -142,9 +166,9 @@ def _whois_query(host: str, query: str, timeout: int = 15) -> str:
     return b"".join(chunks).decode("utf-8", "ignore")
 
 
-def _whois_server_for_tld(tld: str, timeout: int = 15) -> str | None:
+def _whois_server_for_tld(tld: str, timeout: int = 15, connect_timeout: int = 6) -> str | None:
     try:
-        text = _whois_query(IANA_WHOIS_HOST, tld, timeout)
+        text = _whois_query(IANA_WHOIS_HOST, tld, timeout, connect_timeout)
     except OSError:
         return None
     m = re.search(r"(?im)^(?:refer|whois):\s*(\S+)", text)
@@ -181,13 +205,14 @@ def _parse_whois_text(text: str) -> dict:
     }
 
 
-def lookup_whois43(domain: str, timeout: int = 20) -> dict | None:
+def lookup_whois43(domain: str, timeout: int = 20, connect_timeout: int = 6,
+                   server_override: str | None = None) -> dict | None:
     tld = domain.rsplit(".", 1)[-1]
-    server = _whois_server_for_tld(tld, timeout)
+    server = server_override or _whois_server_for_tld(tld, timeout, connect_timeout)
     if not server:
         return None
     try:
-        text = _whois_query(server, domain, timeout)
+        text = _whois_query(server, domain, timeout, connect_timeout)
     except OSError:
         return None
     if not text.strip():
@@ -198,21 +223,45 @@ def lookup_whois43(domain: str, timeout: int = 20) -> dict | None:
 
 
 def lookup_domain(domain: str, data_dir: str, timeout: int = 20,
-                  rdap_only: bool = False, whois_fallback: bool = True) -> dict:
-    """Look up a domain's registration data. Always returns a dict (never raises)."""
+                  rdap_only: bool = False, whois_fallback: bool = True,
+                  connect_timeout: int = 6,
+                  overrides: dict | None = None,
+                  whois_overrides: dict | None = None,
+                  disabled_tlds: set | None = None) -> dict:
+    """Look up a domain's registration data. Always returns a dict (never raises).
+
+    ``disabled_tlds`` defaults to :data:`DEFAULT_RESTRICTED_TLDS` (registries
+    that need authorized IPs or publish no data). Pass an explicit set to change
+    it; an empty set disables the shortcut entirely.
+    """
     domain = domain.lower().strip()
-    result = lookup_rdap(domain, data_dir, timeout=timeout)
+    tld = domain.rsplit(".", 1)[-1]
+
+    empty = {
+        "domain": domain,
+        "creation_date": None,
+        "expiration_date": None,
+        "registrar": None,
+        "name_servers": [],
+    }
+
+    restricted = DEFAULT_RESTRICTED_TLDS if disabled_tlds is None else {
+        str(t).lower().lstrip(".") for t in disabled_tlds
+    }
+    if tld in restricted:
+        return {**empty, "status": "unsupported", "source": "none"}
+
+    result = lookup_rdap(domain, data_dir, timeout=timeout,
+                         connect_timeout=connect_timeout, overrides=overrides)
     if result is not None:
         return result
 
     if not rdap_only and whois_fallback:
-        result = lookup_whois43(domain, timeout=timeout)
+        server_override = (whois_overrides or {}).get(tld)
+        result = lookup_whois43(domain, timeout=timeout, connect_timeout=connect_timeout,
+                                server_override=server_override)
         if result is not None:
             return result
-        return {"domain": domain, "status": "error", "source": "none",
-                "creation_date": None, "expiration_date": None,
-                "registrar": None, "name_servers": []}
+        return {**empty, "status": "error", "source": "none"}
 
-    return {"domain": domain, "status": "unsupported", "source": "none",
-            "creation_date": None, "expiration_date": None,
-            "registrar": None, "name_servers": []}
+    return {**empty, "status": "unsupported", "source": "none"}

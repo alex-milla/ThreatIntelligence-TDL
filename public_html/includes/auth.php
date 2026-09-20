@@ -266,6 +266,20 @@ function canAddKeyword(PDO $db, int $userId): bool {
     return $current < $limit;
 }
 
+/**
+ * Earliest time a domain was seen in the zone data for this user. Used as a
+ * registration-date proxy when the registry does not publish WHOIS (e.g. .es).
+ */
+function getDomainFirstSeen(PDO $db, int $userId, string $domain): ?string {
+    $stmt = $db->prepare(
+        "SELECT MIN(m.first_seen) FROM matches m JOIN keywords k ON k.id = m.keyword_id "
+        . "WHERE k.user_id = ? AND m.domain = ?"
+    );
+    $stmt->execute([$userId, $domain]);
+    $val = $stmt->fetchColumn();
+    return ($val === false || $val === null || $val === '') ? null : (string)$val;
+}
+
 /* ---------- API Rate Limiting ---------- */
 
 function checkApiRateLimit(PDO $db, string $ip, string $apiKey = '', string $endpoint = ''): bool {

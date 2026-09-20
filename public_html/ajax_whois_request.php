@@ -53,11 +53,13 @@ foreach ($db->query("SELECT id, payload FROM commands WHERE command = 'whois_loo
     }
 }
 
-// Skip domains already cached unless a refresh was requested.
+// Skip domains already resolved successfully unless a refresh was requested.
+// Rows with status != 'ok' (registry restriction, network error, no data) are
+// intentionally retried instead of being treated as cached.
 $cached = [];
 if (!$force) {
     $placeholders = implode(',', array_fill(0, count($clean), '?'));
-    $stmt = $db->prepare("SELECT domain FROM domain_whois WHERE domain IN ($placeholders)");
+    $stmt = $db->prepare("SELECT domain FROM domain_whois WHERE domain IN ($placeholders) AND status = 'ok'");
     $stmt->execute($clean);
     foreach ($stmt->fetchAll() as $r) {
         $cached[strtolower($r['domain'])] = true;

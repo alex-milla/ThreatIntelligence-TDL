@@ -428,6 +428,30 @@ def record_run(conn: sqlite3.Connection, tld: str, filename: str | None, status:
 # WHOIS confirmation
 # --------------------------------------------------------------------------
 
+def _whois_cfg_bool(value, default: bool) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _whois_cfg_map(value) -> dict:
+    out: dict = {}
+    for item in str(value or "").split(","):
+        item = item.strip()
+        if "=" not in item:
+            continue
+        key, val = item.split("=", 1)
+        key = key.strip().lower().lstrip(".")
+        val = val.strip()
+        if key and val:
+            out[key] = val
+    return out
+
+
+def _whois_cfg_set(value) -> set:
+    return {t.strip().lower().lstrip(".") for t in str(value or "").split(",") if t.strip()}
+
+
 def confirm_recent(matches: list[dict], data_dir: str, whois_cfg: dict,
                    max_age_days: int, max_lookups: int) -> list[dict]:
     """Drop candidates whose registration date is older than max_age_days.
@@ -452,9 +476,14 @@ def confirm_recent(matches: list[dict], data_dir: str, whois_cfg: dict,
             try:
                 info = whois.lookup_domain(
                     domain, data_dir,
-                    timeout=int(whois_cfg.get("timeout", 20)),
-                    rdap_only=bool(whois_cfg.get("rdap_only", False)),
-                    whois_fallback=bool(whois_cfg.get("whois_fallback", True)),
+                    timeout=int(whois_cfg.get("timeout", 20) or 20),
+                    connect_timeout=int(whois_cfg.get("connect_timeout", 6) or 6),
+                    rdap_only=_whois_cfg_bool(whois_cfg.get("rdap_only"), False),
+                    whois_fallback=_whois_cfg_bool(whois_cfg.get("whois_fallback"), True),
+                    overrides=_whois_cfg_map(whois_cfg.get("rdap_overrides")),
+                    whois_overrides=_whois_cfg_map(whois_cfg.get("whois_overrides")),
+                    disabled_tlds=(_whois_cfg_set(whois_cfg.get("disabled_tlds"))
+                                   if "disabled_tlds" in whois_cfg else None),
                 )
                 lookups += 1
                 created = _parse_date(info.get("creation_date"))

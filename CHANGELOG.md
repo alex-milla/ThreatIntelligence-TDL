@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.7] - 2026-09-20
+
+### Fixed - WHOIS for restricted ccTLDs (.es and similar)
+
+- **Fail fast**: new `[whois] connect_timeout` (default 6s) so registries that refuse/block port 43 no longer stall ~20s per domain.
+- **Statuses**: lookups now return `ok` / `unsupported` / `error`; the domain panel explains the reason ("This registry does not publish WHOIS/RDAP data (e.g. .es)") instead of a silent `N/A`.
+- **Retry failed lookups**: `ajax_whois_request.php` only treats `status='ok'` rows as cached, so `error`/`unsupported` domains can be retried with the bulk button.
+- **First seen fallback**: the panel now shows **First Seen (zone)** (`MIN(matches.first_seen)`, from CZDS/OpenINTEL) as a registration-date proxy when the registry publishes no creation date. The per-keyword match page already exposes this as its First Seen column.
+- **Per-TLD overrides**: `[whois] rdap_overrides` (e.g. `de=https://rdap.denic.de/`), `whois_overrides` and `disabled_tlds` (default `es`), so restricted registries return `unsupported` without any network call.
+- **Correct booleans**: `whois_confirm` (OpenINTEL) now parses `rdap_only`/`whois_fallback` properly (before, any non-empty string — including `"false"` — was truthy).
+
 ## [v1.6.6] - 2026-09-20
 
 ### Added - Bulk WHOIS and VirusTotal on the per-keyword match list

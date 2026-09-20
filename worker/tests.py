@@ -12,6 +12,7 @@ import matcher
 import scheduler
 import openintel
 import virustotal
+import whois
 
 
 def create_test_zone(filepath: str, records: list[str]) -> None:
@@ -467,6 +468,49 @@ def test_openintel_baseline_and_diff() -> None:
     print("[PASS] test_openintel_baseline_and_diff")
 
 
+def test_whois_rdap_override() -> None:
+    # Built-in override for RDAP servers missing from the IANA bootstrap.
+    assert whois.get_rdap_base("de", tempfile.gettempdir()) == "https://rdap.denic.de/"
+    assert whois.get_rdap_base("de", tempfile.gettempdir(),
+                               overrides={"de": "https://example.test/rdap"}) == "https://example.test/rdap/"
+    print("[PASS] test_whois_rdap_override")
+
+
+def test_whois_restricted_tld() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        info = whois.lookup_domain("example.es", tmpdir, disabled_tlds=None)
+        assert info["status"] == "unsupported", info
+        assert info["creation_date"] is None
+    print("[PASS] test_whois_restricted_tld")
+
+
+def test_whois_parse_text() -> None:
+    text = (
+        "Domain: example.com\n"
+        "Registrar: Example Registrar, Inc.\n"
+        "Creation Date: 2020-01-02T03:04:05Z\n"
+        "Registry Expiry Date: 2030-01-02T03:04:05Z\n"
+        "Name Server: NS1.EXAMPLE.COM\n"
+        "Name Server: ns2.example.com\n"
+    )
+    parsed = whois._parse_whois_text(text)
+    assert parsed["registrar"] == "Example Registrar, Inc.", parsed
+    assert parsed["creation_date"] == "2020-01-02T03:04:05Z", parsed
+    assert "ns1.example.com" in parsed["name_servers"], parsed
+    print("[PASS] test_whois_parse_text")
+
+
+def test_whois_cfg_parsing() -> None:
+    assert scheduler._parse_tld_map("de=https://rdap.denic.de/, fr=whois.nic.fr") == {
+        "de": "https://rdap.denic.de/", "fr": "whois.nic.fr"
+    }
+    assert scheduler._parse_tld_set("ES, .de ,") == {"es", "de"}
+    assert openintel._whois_cfg_bool("false", True) is False
+    assert openintel._whois_cfg_bool("true", False) is True
+    assert openintel._whois_cfg_bool(None, True) is True
+    print("[PASS] test_whois_cfg_parsing")
+
+
 def test_openintel_parquet_read() -> None:
     try:
         import pyarrow as pa
@@ -505,5 +549,9 @@ if __name__ == "__main__":
     test_openintel_json_available()
     test_openintel_recheck_cached()
     test_openintel_baseline_and_diff()
+    test_whois_rdap_override()
+    test_whois_restricted_tld()
+    test_whois_parse_text()
+    test_whois_cfg_parsing()
     test_openintel_parquet_read()
     print("\nAll tests passed.")
