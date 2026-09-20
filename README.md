@@ -230,8 +230,9 @@ CZDS only covers gTLDs. For **country-code TLDs** (`.io`, `.es`, `.fr`, ...) the
   [openintel]
   enabled = true
   accept_terms = true     # you must accept the OpenINTEL terms
-  tlds = io,es,fr         # empty = use the active ccTLDs selected in the web panel
+  tlds =                  # fallback only; ccTLDs activated in the web panel (TLDs → ccTLD) are the source of truth
   ```
+- **ccTLDs are managed in the web panel**: any ccTLD you add/activate under **Admin → TLDs → ccTLD (OpenINTEL)** is picked up automatically by the weekly run; adding one also queues an import to baseline it (the first run caches everything and reports nothing). `[openintel] tlds` is only a fallback used if the panel is unreachable or has no active ccTLD.
 - **License:** the OpenINTEL data is **CC BY-NC-SA 4.0** (non-commercial, attribution required). Commercial use requires a license from OpenINTEL. Attribution:
   > The research leading to these results was made possible by OpenINTEL (https://www.openintel.nl/), a joint project of the University of Twente, SIDN, NLnet Labs and SURF.
 - The lists are "domains seen in a valid certificate", not a registry's registration date; the WHOIS confirmation (or the web "old validated domain" filter) is what decides whether a domain is genuinely new.

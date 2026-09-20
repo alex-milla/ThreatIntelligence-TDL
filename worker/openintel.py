@@ -698,14 +698,23 @@ def resolve_tlds(cfg: configparser.ConfigParser, args, session: requests.Session
                  host_url: str, api_key: str) -> list[str]:
     if args.tlds:
         return [t.strip().lower() for t in args.tlds.split(",") if t.strip()]
-    configured = cfg.get("openintel", "tlds", fallback="").strip()
-    if configured:
-        return [t.strip().lower() for t in configured.split(",") if t.strip()]
+    # The web panel is the source of truth: any ccTLD activated there is picked
+    # up automatically by the weekly timer, with no config.ini edit needed.
     try:
-        return sync_client.get_openintel_tlds(host_url, api_key)
+        panel = sync_client.get_openintel_tlds(host_url, api_key)
     except Exception as e:
         log.warning("Could not fetch OpenINTEL TLDs from the hosting API: %s", e)
-        return []
+        panel = []
+    if panel:
+        log.info("OpenINTEL TLDs from web panel: %s", ",".join(panel))
+        return panel
+    # Fallback: [openintel] tlds in config.ini (used only if the panel is
+    # unreachable or has no active ccTLD).
+    configured = cfg.get("openintel", "tlds", fallback="").strip()
+    if configured:
+        log.info("OpenINTEL TLDs from config.ini fallback (panel empty/unreachable): %s", configured)
+        return [t.strip().lower() for t in configured.split(",") if t.strip()]
+    return []
 
 
 def main() -> int:

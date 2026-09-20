@@ -298,6 +298,30 @@ def test_openintel_resolve_latest() -> None:
     print("[PASS] test_openintel_resolve_latest")
 
 
+def test_openintel_resolve_tlds_precedence() -> None:
+    cfg = configparser.ConfigParser()
+    cfg.add_section("openintel")
+    cfg.set("openintel", "tlds", "io,de")
+    args = type("Args", (), {"tlds": None})()
+
+    original = openintel.sync_client.get_openintel_tlds
+    try:
+        # Web panel is the source of truth: active ccTLDs win over config.
+        openintel.sync_client.get_openintel_tlds = lambda host, key: ["es", "fr"]
+        assert openintel.resolve_tlds(cfg, args, None, "http://host", "key") == ["es", "fr"]
+
+        # Panel empty/unreachable -> config.ini fallback.
+        openintel.sync_client.get_openintel_tlds = lambda host, key: []
+        assert openintel.resolve_tlds(cfg, args, None, "http://host", "key") == ["io", "de"]
+
+        # Explicit --tlds wins over both.
+        args.tlds = "io, es"
+        assert openintel.resolve_tlds(cfg, args, None, "http://host", "key") == ["io", "es"]
+    finally:
+        openintel.sync_client.get_openintel_tlds = original
+    print("[PASS] test_openintel_resolve_tlds_precedence")
+
+
 def test_search_cached_domains_with_cctld() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
@@ -540,6 +564,7 @@ if __name__ == "__main__":
     test_openintel_version_key()
     test_openintel_parse_date()
     test_openintel_resolve_latest()
+    test_openintel_resolve_tlds_precedence()
     test_openintel_csv_gz_read()
     test_search_cached_domains_with_cctld()
     test_virustotal_classify()

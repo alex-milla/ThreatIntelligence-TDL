@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.9] - 2026-09-20
+
+### Changed - ccTLD (OpenINTEL) TLDs are managed from the web panel
+
+- **The web panel is now the source of truth** for which ccTLDs are imported. `resolve_tlds()` fetches the active OpenINTEL ccTLDs from the panel first; `[openintel] tlds` in `config.ini` is kept only as a **fallback** (used when the panel is unreachable or has no active ccTLD). Activating a ccTLD under **Admin → TLDs → ccTLD (OpenINTEL)** is enough — no config edit needed to have it picked up by the weekly timer.
+- **Auto-baseline on add**: adding a ccTLD now queues a `run_openintel` for the active ccTLDs, so the new TLD is baselined immediately instead of waiting for the next Sunday (the first run caches everything and reports nothing; use **Recheck** for immediate matches on already-seen domains).
+- Docs: `README.md`, `md/CONFIGURACION-worker.md` and `worker/config.ini.example` clarify that `tlds` is a fallback; fixed the OpenINTEL timer day in the install message and the docs (Sundays 17:00 Europe/Madrid).
+- Test: `test_openintel_resolve_tlds_precedence` covers panel > config > `--tlds` precedence.
+
 ## [v1.6.8] - 2026-09-20
 
 ### Added - Printable reports by keyword (and keyword groups)

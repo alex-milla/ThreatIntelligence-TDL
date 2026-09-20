@@ -96,9 +96,11 @@ timeout = 20
 ;   https://www.openintel.nl/download/terms/
 enabled = false
 accept_terms = false
-; Comma-separated ccTLDs to process (e.g. io,es,fr). Leave empty to use the
-; active OpenINTEL TLDs selected in the web panel.
-tlds = io
+; Comma-separated ccTLDs to process. This is only a FALLBACK used when the
+; web panel is unreachable or has no active ccTLD: the ccTLDs activated in the
+; panel (TLDs -> ccTLD) are the source of truth and are processed automatically.
+; Recommended: leave empty.
+tlds =
 ; Where the parquet files and the local seen-set database are stored.
 data_dir = ./data/openintel
 ; Optional explicit DB path (defaults to <data_dir>/openintel.db).

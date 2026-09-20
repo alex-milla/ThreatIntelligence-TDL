@@ -68,7 +68,7 @@ if [ -f "${SCRIPT_DIR}/tdl-worker.service" ] && command -v systemctl >/dev/null 
             cp "${SCRIPT_DIR}/tdl-openintel.timer" "/etc/systemd/system/tdl-openintel.timer"
             systemctl daemon-reload
             systemctl enable --now tdl-openintel.timer >/dev/null 2>&1 || true
-            echo "[+] systemd timer 'tdl-openintel.timer' installed (Mondays)."
+            echo "[+] systemd timer 'tdl-openintel.timer' installed (Sundays 17:00 Europe/Madrid)."
             echo "    Enable the import in config.ini ([openintel] enabled = true)."
         fi
     else

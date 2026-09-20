@@ -74,7 +74,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                ->execute([$name]);
             $db->prepare("UPDATE tlds SET is_active = 1 WHERE name = ? AND source = 'openintel'")
                ->execute([$name]);
-            $_SESSION['flash_message'] = ".{$name} added and activated. Run the import to baseline it.";
+            // Baseline the new ccTLD now instead of waiting for the weekly timer.
+            if (hasPendingCommand($db, 'run_openintel')) {
+                $_SESSION['flash_message'] = ".{$name} added and activated. An OpenINTEL run is already queued or running.";
+            } else {
+                $activeTlds = $db->query("SELECT name FROM tlds WHERE source = 'openintel' AND is_active = 1 ORDER BY name")
+                    ->fetchAll(PDO::FETCH_COLUMN);
+                $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")
+                   ->execute(['run_openintel', json_encode(['tlds' => array_values($activeTlds)])]);
+                $_SESSION['flash_message'] = ".{$name} added and activated. OpenINTEL import queued to baseline it.";
+            }
         }
         header('Location: /admin/tlds.php?source=openintel');
         exit;
