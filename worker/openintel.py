@@ -588,12 +588,14 @@ def run_tld(tld: str, session: requests.Session, conn: sqlite3.Connection,
 
 def recheck_cached(conn: sqlite3.Connection, tlds: list[str], host_url: str,
                    api_key: str, settings: dict, progress_cb=None,
-                   max_domains: int = 0) -> dict:
+                   max_domains: int = 0, keyword_ids: list | None = None) -> dict:
     """Match already-cached ccTLD domains against the current keywords.
 
     The cached domains are existing registrations, so the matches are flagged
     as historical (hidden from the default "new" listings; visible with the
     "Include tagged / historical" toggle), mirroring the CZDS recheck.
+
+    `keyword_ids` limits the matching to those keyword ids (None/empty = all).
 
     `progress_cb(checked, total, matches)` is called periodically so the web UI
     can show progress while a long recheck runs.
@@ -601,6 +603,7 @@ def recheck_cached(conn: sqlite3.Connection, tlds: list[str], host_url: str,
     stats = {"domains_checked": 0, "total_domains": 0, "matches_found": 0}
     try:
         keywords = sync_client.get_keywords(host_url, api_key)
+        keywords = matcher.filter_keywords(keywords, keyword_ids)
     except Exception as e:
         log.error("OpenINTEL recheck: could not fetch keywords: %s", e)
         return stats

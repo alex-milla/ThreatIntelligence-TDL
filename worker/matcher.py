@@ -95,3 +95,30 @@ class Matcher:
 def match_domains(domains: Iterable[str], keywords: list[dict]) -> list[dict]:
     """Convenience wrapper that builds a Matcher for a single call."""
     return Matcher(keywords).match(domains)
+
+
+def filter_keywords(keywords: list[dict], keyword_ids: Iterable[int] | None) -> list[dict]:
+    """Return only the keywords whose id is in ``keyword_ids``.
+
+    ``None`` or an empty collection means "all keywords" (no filter). Used by
+    the recheck to scan the cached domains against a user-selected subset.
+    """
+    if not keyword_ids:
+        return keywords
+    wanted = set()
+    for value in keyword_ids:
+        try:
+            wanted.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    if not wanted:
+        return keywords
+    return [k for k in keywords if _as_int(k.get("id")) in wanted]
+
+
+def _as_int(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return -1
+

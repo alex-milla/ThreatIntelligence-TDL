@@ -322,6 +322,19 @@ def test_openintel_resolve_tlds_precedence() -> None:
     print("[PASS] test_openintel_resolve_tlds_precedence")
 
 
+def test_filter_keywords() -> None:
+    kws = [{"id": 1, "keyword": "acme"}, {"id": 2, "keyword": "nasa"}, {"id": 3, "keyword": "globex"}]
+    # None/empty = all keywords (no filter).
+    assert matcher.filter_keywords(kws, None) == kws
+    assert matcher.filter_keywords(kws, []) == kws
+    # Subset, including string ids, keeps only the wanted ones.
+    assert [k["id"] for k in matcher.filter_keywords(kws, [2])] == [2]
+    assert [k["id"] for k in matcher.filter_keywords(kws, ["1", 3])] == [1, 3]
+    # Unknown/blank ids do not match anything.
+    assert matcher.filter_keywords(kws, [99]) == []
+    print("[PASS] test_filter_keywords")
+
+
 def test_search_cached_domains_with_cctld() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
@@ -565,6 +578,7 @@ if __name__ == "__main__":
     test_openintel_parse_date()
     test_openintel_resolve_latest()
     test_openintel_resolve_tlds_precedence()
+    test_filter_keywords()
     test_openintel_csv_gz_read()
     test_search_cached_domains_with_cctld()
     test_virustotal_classify()

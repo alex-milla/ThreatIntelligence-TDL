@@ -919,11 +919,13 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
 
 def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str,
                         max_age_days: int = 30, tlds: list | None = None,
-                        max_domains: int = 0, source: str = "czds") -> dict:
+                        max_domains: int = 0, source: str = "czds",
+                        keyword_ids: list | None = None) -> dict:
     """Re-check cached CZDS domains against current keywords. Returns stats.
 
     `tlds` limits the scan to the given TLDs (None/empty = all) and
     `max_domains` caps the number of domains checked (0 = no cap).
+    `keyword_ids` limits the matching to those keyword ids (None/empty = all).
     """
     stats = {
         "domains_checked": 0,
@@ -944,6 +946,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str,
 
     try:
         keywords = sync_client.get_keywords(host_url, api_key)
+        keywords = matcher.filter_keywords(keywords, keyword_ids)
         log.info(f"Keywords loaded: {len(keywords)}")
     except Exception as e:
         log.error(f"Failed to fetch keywords: {e}")
@@ -1106,8 +1109,12 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str,
 
 
 def recheck_cctld(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str,
-                  api_key: str, tlds: list | None = None, max_domains: int = 0) -> dict:
-    """Recheck the OpenINTEL ccTLD cache (cctld_seen) against current keywords."""
+                  api_key: str, tlds: list | None = None, max_domains: int = 0,
+                  keyword_ids: list | None = None) -> dict:
+    """Recheck the OpenINTEL ccTLD cache (cctld_seen) against current keywords.
+
+    `keyword_ids` limits the matching to those keyword ids (None/empty = all).
+    """
     stats = {"domains_checked": 0, "matches_found": 0}
     oi_db = get_openintel_db_path(cfg)
     if not os.path.exists(oi_db):
@@ -1149,7 +1156,8 @@ def recheck_cctld(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_u
             })
 
         r = openintel.recheck_cached(conn, tld_list, host_url, api_key, settings,
-                                     progress_cb=progress, max_domains=max_domains)
+                                     progress_cb=progress, max_domains=max_domains,
+                                     keyword_ids=keyword_ids)
         stats["domains_checked"] = r.get("domains_checked", 0)
         stats["matches_found"] = r.get("matches_found", 0)
         sync_client.send_recheck_status(host_url, api_key, {
@@ -1404,6 +1412,18 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                     sources = ["openintel"]
                 sources = [str(s).lower() for s in sources if str(s).lower() in ("openintel", "czds")]
                 tlds = opts.get("tlds") if isinstance(opts.get("tlds"), list) else []
+                # Optional subset of keywords to recheck (ids). Empty/absent = all.
+                keyword_ids = None
+                raw_ids = opts.get("keyword_ids")
+                if isinstance(raw_ids, list):
+                    parsed_ids = []
+                    for v in raw_ids:
+                        try:
+                            parsed_ids.append(int(v))
+                        except (TypeError, ValueError):
+                            continue
+                    if parsed_ids:
+                        keyword_ids = parsed_ids
                 try:
                     max_age = int(opts.get("max_age_days",
                                            cfg.getint("worker", "max_domain_age_days", fallback=30)))
@@ -1423,9 +1443,11 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                     "current_command_id": cmd_id,
                 })
 
-                total = {"domains_checked": 0, "matches_found": 0, "sources": sources, "tlds": tlds}
+                total = {"domains_checked": 0, "matches_found": 0, "sources": sources, "tlds": tlds,
+                         "keyword_ids": keyword_ids or []}
                 if "openintel" in sources:
-                    s = recheck_cctld(db, cfg, host_url, api_key, tlds=tlds, max_domains=max_domains)
+                    s = recheck_cctld(db, cfg, host_url, api_key, tlds=tlds, max_domains=max_domains,
+                                      keyword_ids=keyword_ids)
                     total["domains_checked"] += int(s.get("domains_checked", 0))
                     total["matches_found"] += int(s.get("matches_found", 0))
                 if "czds" in sources:
@@ -1435,7 +1457,8 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                                      "to avoid scanning the whole cache."})
                     else:
                         s = recheck_all_domains(db, host_url, api_key, max_age,
-                                                tlds=tlds, max_domains=max_domains, source="czds")
+                                                tlds=tlds, max_domains=max_domains, source="czds",
+                                                keyword_ids=keyword_ids)
                         total["domains_checked"] += int(s.get("domains_checked", 0))
                         total["matches_found"] += int(s.get("matches_found", 0))
                 result = json.dumps(total)

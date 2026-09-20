@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.10] - 2026-09-20
+
+### Added - Recheck selected keywords (Keyword page)
+
+- The admin **Recheck** on the Keywords page now has a checkbox per keyword and a **select all** header, so you can recheck **all** cached domains (when nothing is selected, as before) or only a **chosen subset** of keywords.
+- The selected keyword ids travel in the command payload (validated server-side: only the admin's own keywords are accepted). The button label shows how many keywords are selected.
+- Worker: `recheck_keywords` accepts a `keyword_ids` list. `recheck_all_domains` (CZDS) and `openintel.recheck_cached` (ccTLD) filter the keyword set with the new shared `matcher.filter_keywords()` before matching. Empty/absent = all keywords (unchanged behavior).
+- The quick Keywords button still targets the fast ccTLD/OpenINTEL cache; when CZDS is included (Admin → Recheck) the same subset filter applies.
+- Test: `test_filter_keywords`.
+
 ## [v1.6.9] - 2026-09-20
 
 ### Changed - ccTLD (OpenINTEL) TLDs are managed from the web panel

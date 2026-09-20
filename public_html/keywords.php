@@ -53,8 +53,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'recheck_keywords') {
     validateCsrf();
     if ($isAdmin) {
-        $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['recheck_keywords', '']);
-        $_SESSION['flash_message'] = 'Keyword recheck queued. The worker will scan all cached domains against current keywords.';
+        // Optional subset of keywords to recheck. Empty selection = all keywords.
+        $payload = '';
+        $raw = (string)($_POST['payload'] ?? '');
+        if ($raw !== '') {
+            $decoded = json_decode($raw, true);
+            $ids = (is_array($decoded) && !empty($decoded['keyword_ids']) && is_array($decoded['keyword_ids']))
+                ? array_values(array_unique(array_filter(array_map('intval', $decoded['keyword_ids']), fn($v) => $v > 0)))
+                : [];
+            if ($ids) {
+                // Never trust the client: keep only the admin's own keywords.
+                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+                $own = $db->prepare("SELECT id FROM keywords WHERE user_id = ? AND id IN ($placeholders)");
+                $own->execute(array_merge([$userId], $ids));
+                $ownedIds = array_map('intval', $own->fetchAll(PDO::FETCH_COLUMN));
+                if ($ownedIds) {
+                    $payload = json_encode(['keyword_ids' => $ownedIds]);
+                }
+            }
+        }
+        $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")->execute(['recheck_keywords', $payload]);
+        $_SESSION['flash_message'] = $payload !== ''
+            ? 'Keyword recheck queued for the selected keyword(s). The worker will scan cached domains against them.'
+            : 'Keyword recheck queued. The worker will scan all cached domains against current keywords.';
     } else {
         $_SESSION['flash_error'] = 'Only administrators can trigger a recheck.';
     }
@@ -196,11 +217,12 @@ require __DIR__ . '/templates/header.php';
     <?php if ($isAdmin): ?>
     <div id="live-recheck" data-live-section>
         <div class="section-actions">
-            <form method="POST">
+            <form method="POST" id="recheck-form" onsubmit="return prepareRecheck()">
                 <?php csrfField(); ?>
                 <input type="hidden" name="action" value="recheck_keywords">
-                <button type="submit" class="btn btn-outline waves-effect" <?= ($recheckRunning || $recheckPending > 0) ? 'disabled' : '' ?>>
-                    <i class="material-icons left">search</i><?= $recheckRunning ? 'Recheck in progress...' : 'Recheck All Cached Domains' ?>
+                <input type="hidden" name="payload" id="recheck-payload" value="">
+                <button type="submit" id="recheck-btn" class="btn btn-outline waves-effect" <?= ($recheckRunning || $recheckPending > 0) ? 'disabled' : '' ?>>
+                    <i class="material-icons left">search</i><span id="recheck-label"><?= $recheckRunning ? 'Recheck in progress...' : 'Recheck All Cached Domains' ?></span>
                 </button>
             </form>
             <?php if ($recheckRunning): ?>
@@ -239,6 +261,9 @@ require __DIR__ . '/templates/header.php';
         <table class="striped highlight responsive-table">
             <thead>
                 <tr>
+                    <?php if ($isAdmin): ?>
+                    <th style="width: 30px;"><label><input type="checkbox" id="select-all" aria-label="Select all keywords"><span></span></label></th>
+                    <?php endif; ?>
                     <th><?= kwSortLink('keyword', 'Keyword', $kwSort, $kwDir, $kwSortDefaults) ?></th>
                     <th><?= kwSortLink('matches', 'Matches', $kwSort, $kwDir, $kwSortDefaults) ?></th>
                     <th><?= kwSortLink('added', 'Added', $kwSort, $kwDir, $kwSortDefaults) ?></th>
@@ -248,6 +273,9 @@ require __DIR__ . '/templates/header.php';
             <tbody>
                 <?php foreach ($keywords as $k): ?>
                 <tr>
+                    <?php if ($isAdmin): ?>
+                    <td><label><input type="checkbox" class="row-check kw-check" value="<?= (int)$k['id'] ?>" aria-label="Select <?= htmlspecialchars($k['keyword']) ?>"><span></span></label></td>
+                    <?php endif; ?>
                     <td><strong><?= htmlspecialchars($k['keyword']) ?></strong></td>
                     <td>
                         <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" target="_blank" rel="noopener" title="Review all matched domains"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" target="_blank" rel="noopener" class="muted" title="Review all matched domains">(<?= (int)$k['match_count'] ?> total)</a><?php endif; ?>
@@ -269,5 +297,31 @@ require __DIR__ . '/templates/header.php';
     <?php endif; ?>
     </div>
 </div>
+
+<?php if ($isAdmin): ?>
+<script>
+// Recheck the selected keywords (or all when none is checked). The selected ids
+// are sent as a JSON payload; the server keeps only the admin's own keywords.
+function updateRecheckLabel() {
+    var label = document.getElementById('recheck-label');
+    var btn = document.getElementById('recheck-btn');
+    if (!label || (btn && btn.disabled)) return;
+    var checked = document.querySelectorAll('.kw-check:checked').length;
+    label.textContent = checked ? ('Recheck ' + checked + ' selected') : 'Recheck All Cached Domains';
+}
+function prepareRecheck() {
+    var ids = Array.prototype.map.call(document.querySelectorAll('.kw-check:checked'), function (cb) { return cb.value; });
+    var payload = document.getElementById('recheck-payload');
+    if (payload) payload.value = ids.length ? JSON.stringify({ keyword_ids: ids }) : '';
+    return true;
+}
+document.addEventListener('change', function (e) {
+    if (!e.target) return;
+    if (e.target.id === 'select-all' || (e.target.classList && e.target.classList.contains('kw-check'))) {
+        updateRecheckLabel();
+    }
+});
+</script>
+<?php endif; ?>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>
