@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.6] - 2026-09-20
+
+### Added - Bulk WHOIS and VirusTotal on the per-keyword match list
+
+- **`keyword_matches.php`**: per-row checkboxes + "Select all visible", and bulk buttons **Fetch WHOIS (worker)** and **Check VirusTotal (worker)** for the selected domains (all visible rows on the page when nothing is selected). A new **VT** column shows the cached verdict badge, and a **Refresh** button reloads to pick up worker results.
+- The two bulk actions (`fetchVisibleWhois` / `fetchVisibleVt`) were moved to a shared **`assets/bulk.js`** loaded from `templates/footer.php`, and the duplicate inline copies were removed from `notifications.php` (same behaviour; exports to workers respect the existing caps: WHOIS 200, VT 25 per request, cached domains skipped).
+
 ## [v1.6.5] - 2026-09-20
 
 ### Added - Per-keyword match review page

@@ -722,58 +722,6 @@ function htmlspecialchars(str) {
     div.textContent = str;
     return div.innerHTML;
 }
-function fetchVisibleWhois() {
-    const domains = [];
-    document.querySelectorAll('tr[data-domain]').forEach(tr => {
-        const cb = tr.querySelector('.row-check');
-        if (cb && cb.checked) domains.push(tr.dataset.domain);
-    });
-    if (!domains.length) {
-        document.querySelectorAll('tr[data-domain]').forEach(tr => domains.push(tr.dataset.domain));
-    }
-    if (!domains.length) { alert('No domains to fetch.'); return; }
-    const meta = document.querySelector('meta[name="csrf-token"]');
-    fetch('/ajax_whois_request.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': meta ? meta.content : ''},
-        body: JSON.stringify({domains: domains})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            alert('Queued ' + (data.queued || 0) + ' domain(s) for the worker. Reload in a moment to see results.');
-        } else {
-            alert(data.error || 'Failed to queue WHOIS lookup');
-        }
-    })
-    .catch(() => alert('Failed to queue WHOIS lookup'));
-}
-function fetchVisibleVt() {
-    const domains = [];
-    document.querySelectorAll('tr[data-domain]').forEach(tr => {
-        const cb = tr.querySelector('.row-check');
-        if (cb && cb.checked) domains.push(tr.dataset.domain);
-    });
-    if (!domains.length) {
-        document.querySelectorAll('tr[data-domain]').forEach(tr => domains.push(tr.dataset.domain));
-    }
-    if (!domains.length) { alert('No domains to check.'); return; }
-    const meta = document.querySelector('meta[name="csrf-token"]');
-    fetch('/ajax_vt_request.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': meta ? meta.content : ''},
-        body: JSON.stringify({domains: domains})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            alert('Queued ' + (data.queued || 0) + ' domain(s) for VirusTotal. The free API allows 4 requests/min and 500/day; reload in a moment to see verdicts.');
-        } else {
-            alert(data.error || 'Failed to queue VirusTotal lookup');
-        }
-    })
-    .catch(() => alert('Failed to queue VirusTotal lookup'));
-}
 </script>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>

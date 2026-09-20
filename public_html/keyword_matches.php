@@ -135,6 +135,18 @@ if (!empty($rows)) {
     }
 }
 
+// Cached VirusTotal verdicts for the visible rows (shown in the VT column).
+$domainVt = [];
+if (!empty($rows)) {
+    $domains = array_column($rows, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domains), '?'));
+    $vtStmt = $db->prepare("SELECT domain, verdict FROM domain_vt WHERE domain IN ($placeholders)");
+    $vtStmt->execute($domains);
+    foreach ($vtStmt->fetchAll() as $v) {
+        $domainVt[$v['domain']] = $v;
+    }
+}
+
 // ---------- URL helpers (preserve id + filters) ----------
 function kwmSortLink(string $col, string $label, string $currentSort, string $currentDir, array $defaults): string {
     $dir = ($col === $currentSort) ? ($currentDir === 'asc' ? 'desc' : 'asc') : ($defaults[$col] ?? 'asc');
@@ -198,14 +210,28 @@ require __DIR__ . '/templates/header.php';
         <?php endif; ?>
     </form>
 
+    <?php if (!empty($rows)): ?>
+    <div class="section-actions">
+        <label class="check-inline">
+            <input type="checkbox" id="select-all">
+            <span><strong>Select all visible</strong></span>
+        </label>
+        <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
+        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="location.reload()"><i class="material-icons left">refresh</i>Refresh</button>
+    </div>
+    <?php endif; ?>
+
     <?php if (empty($rows)): ?>
         <p class="muted">No domains match your filters.</p>
     <?php else: ?>
         <table class="striped highlight responsive-table">
             <thead>
                 <tr>
+                    <th style="width: 30px;"></th>
                     <th><?= kwmSortLink('domain', 'Domain', $sort, $dir, $sortDefaults) ?></th>
                     <th><?= kwmSortLink('tld', 'TLD', $sort, $dir, $sortDefaults) ?></th>
+                    <th>VT</th>
                     <th>Tag</th>
                     <th>Watchlist</th>
                     <th>Source</th>
@@ -234,10 +260,19 @@ require __DIR__ . '/templates/header.php';
                     }
                     $creationDisplay = $creationDate ? substr(fmt_date($creationDate), 0, 10) : '—';
                     $sourceLabel = ((string)$r['source'] === 'ct') ? 'OpenINTEL' : 'CZDS';
+
+                    $vtRow = $domainVt[$r['domain']] ?? null;
+                    $vtVerdict = $vtRow ? (string)$vtRow['verdict'] : '';
+                    $vtLabels = ['malicious' => 'MALICIOUS', 'dga' => 'DGA', 'suspicious' => 'SUSPICIOUS', 'clean' => 'CLEAN'];
+                    $vtCell = isset($vtLabels[$vtVerdict])
+                        ? '<span class="vt-badge vt-' . $vtVerdict . '">' . $vtLabels[$vtVerdict] . '</span>'
+                        : '<span class="muted">&mdash;</span>';
                 ?>
-                <tr>
+                <tr data-domain="<?= htmlspecialchars($r['domain']) ?>">
+                    <td><label><input type="checkbox" class="row-check"><span></span></label></td>
                     <td><strong><?= htmlspecialchars($r['domain']) ?></strong></td>
                     <td><?= htmlspecialchars($r['tld']) ?></td>
+                    <td><?= $vtCell ?></td>
                     <td><?= $tagCell ?></td>
                     <td><?= !empty($r['in_watchlist']) ? '<i class="material-icons tiny" title="In watchlist">star</i>' : '<span class="muted">&mdash;</span>' ?></td>
                     <td><?= $sourceLabel ?></td>
