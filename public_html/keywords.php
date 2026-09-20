@@ -249,7 +249,10 @@ require __DIR__ . '/templates/header.php';
                 <?php foreach ($keywords as $k): ?>
                 <tr>
                     <td><strong><?= htmlspecialchars($k['keyword']) ?></strong></td>
-                    <td><a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <span class="muted">(<?= (int)$k['match_count'] ?> total)</span><?php endif; ?></td>
+                    <td>
+                        <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" target="_blank" rel="noopener" title="Review all matched domains"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" target="_blank" rel="noopener" class="muted" title="Review all matched domains">(<?= (int)$k['match_count'] ?> total)</a><?php endif; ?>
+                        <a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>" class="muted" title="View notifications for this keyword" aria-label="View notifications for this keyword"><i class="material-icons tiny">notifications</i></a>
+                    </td>
                     <td><?= htmlspecialchars(fmt_date($k['created_at'])) ?></td>
                     <td>
                         <form method="POST" style="display: inline;">

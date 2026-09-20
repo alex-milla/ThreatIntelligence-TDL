@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.5] - 2026-09-20
+
+### Added - Per-keyword match review page
+
+- **New `keyword_matches.php`**: from the Matches cell of a keyword you can now open (new tab) a read-only page listing **every domain ever matched** by that keyword, including those already discarded/validated (tagged good/bad), in the watchlist, or from a historical recheck — the ones with a visible count of 0.
+- **Search and filters**: free-text search (domain/TLD), state filter (All / Good / Bad / Observing / In watchlist / Historical / Untagged) and source filter (CZDS / OpenINTEL), plus sortable columns (Domain, TLD, First Seen, Discovered) and pagination (100/page).
+- **Access control**: reachable only from a keyword you own; `id` + `user_id` are enforced and a foreign/unknown id returns 404. Not linked from the navigation.
+- The keyword **Matches** cell now links the visible count and the `(N total)` figure to the new page, and keeps a small icon to the Notifications view filtered by keyword.
+
 ## [v1.6.4] - 2026-09-20
 
 ### Added - Live keyword-recheck status and a manual Refresh button
