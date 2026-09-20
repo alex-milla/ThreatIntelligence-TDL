@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.8] - 2026-09-20
+
+### Added - Printable reports by keyword (and keyword groups)
+
+- **New "Informes" tab**: a report builder (`reports.php`) where you select one or more keywords (or a whole group) and generate a report with **all the data** collected for each matched domain.
+- **Keyword groups**: keywords can be organised into named groups (a keyword belongs to **at most one** group). Group CRUD from the Reports page; deleting a group ungroups its keywords. New `keyword_groups` table + `keywords.group_id` migration.
+- **Printable report** (`report_view.php`): header (generated at, user, keywords, filters), a **Summary** table (domains, new, good/bad/observing/untagged, malicious/suspicious) and a **per-keyword section** listing Domain, TLD, First Seen, Created (+NEW), Expiration, Registrar, Name Servers, Tag, VT, Watchlist, Source and Historical. Sections break per keyword when printing and interactive controls are hidden by the print stylesheet. Use the browser's **Print / Save as PDF**.
+- **Filters**: period (all / 24h / 7d / 30d), state (all / good / bad / observing / untagged / watchlist / historical), source (CZDS / OpenINTEL) and an "include tagged / historical / old" toggle. Default view follows the same visibility rules as Notifications.
+- The default visibility rules were extracted to `includes/report.php` (`matchVisibilityClauses()`) and are now shared by `notifications.php` and the reports, so both stay in sync.
+
 ## [v1.6.7] - 2026-09-20
 
 ### Fixed - WHOIS for restricted ccTLDs (.es and similar)

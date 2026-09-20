@@ -54,6 +54,7 @@ $isAdminArea = strpos($curPath, '/admin') === 0;
                         <li><a href="/keywords.php" class="<?= $current === 'keywords.php' ? 'active' : '' ?>" aria-current="<?= $current === 'keywords.php' ? 'page' : 'false' ?>">Keywords</a></li>
                         <li><a href="/notifications.php" class="<?= $current === 'notifications.php' ? 'active' : '' ?>" aria-current="<?= $current === 'notifications.php' ? 'page' : 'false' ?>">Notifications</a></li>
                         <li><a href="/watchlist.php" class="<?= $current === 'watchlist.php' ? 'active' : '' ?>" aria-current="<?= $current === 'watchlist.php' ? 'page' : 'false' ?>">Watchlist</a></li>
+                        <li><a href="/reports.php" class="<?= in_array($current, ['reports.php', 'report_view.php'], true) ? 'active' : '' ?>" aria-current="<?= in_array($current, ['reports.php', 'report_view.php'], true) ? 'page' : 'false' ?>">Informes</a></li>
                         <?php if ($isAdmin): ?>
                             <li><a href="/admin/tlds.php" class="<?= $current === 'tlds.php' ? 'active' : '' ?>" aria-current="<?= $current === 'tlds.php' ? 'page' : 'false' ?>">TLDs</a></li>
                             <li>
@@ -92,6 +93,7 @@ $isAdminArea = strpos($curPath, '/admin') === 0;
         <li><a href="/keywords.php" class="<?= $current === 'keywords.php' ? 'active' : '' ?>"><i class="material-icons">search</i>Keywords</a></li>
         <li><a href="/notifications.php" class="<?= $current === 'notifications.php' ? 'active' : '' ?>"><i class="material-icons">notifications</i>Notifications</a></li>
         <li><a href="/watchlist.php" class="<?= $current === 'watchlist.php' ? 'active' : '' ?>"><i class="material-icons">visibility</i>Watchlist</a></li>
+        <li><a href="/reports.php" class="<?= in_array($current, ['reports.php', 'report_view.php'], true) ? 'active' : '' ?>"><i class="material-icons">assessment</i>Informes</a></li>
         <?php if ($isAdmin): ?>
             <li><div class="divider"></div></li>
             <li><a href="/admin/tlds.php" class="<?= $current === 'tlds.php' ? 'active' : '' ?>"><i class="material-icons">public</i>TLDs</a></li>

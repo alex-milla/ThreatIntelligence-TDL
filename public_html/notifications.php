@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/report.php';
 requireAuth();
 
 $db = Database::get();
@@ -15,15 +16,11 @@ $validDateFilters = ['24h' => '-1 day', '7d' => '-7 days', '30d' => '-30 days', 
 //  - hidden: historical (recheck) matches, domains tagged good/bad, and domains
 //    registered before the last successful scan of their TLD (validated via WHOIS);
 //  - kept:  domains under observation ('observing') are never hidden by date.
-$goodBadClause = "NOT EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain AND dt.tag IN ('good','bad'))";
-$observingClause = "EXISTS (SELECT 1 FROM domain_tags dob WHERE dob.domain = m.domain AND dob.tag = 'observing')";
-$oldDomainClause = "EXISTS (SELECT 1 FROM domain_whois dw JOIN tlds t ON t.name = m.tld "
-    . "WHERE dw.domain = m.domain AND t.last_ok_sync IS NOT NULL "
-    . "AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) IS NOT NULL "
-    . "AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) < datetime(t.last_ok_sync, '-{$defaultNewDays} days'))";
-$hiddenPredicate = "m.is_historical = 1"
-    . " OR NOT (" . $goodBadClause . ")"
-    . " OR (NOT (" . $observingClause . ") AND (" . $oldDomainClause . "))";
+$visibility = matchVisibilityClauses($db);
+$goodBadClause = $visibility['good_bad'];
+$observingClause = $visibility['observing'];
+$oldDomainClause = $visibility['old_domain'];
+$hiddenPredicate = $visibility['hidden'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();

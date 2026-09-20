@@ -196,6 +196,17 @@ class Database {
         )");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_watchlist_groups_user ON watchlist_groups(user_id)");
 
+        // Keyword groups for reports. A keyword belongs to at most one group
+        // (keywords.group_id), so deleting a group only ungroups its keywords.
+        $db->exec("CREATE TABLE IF NOT EXISTS keyword_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_keyword_groups_user ON keyword_groups(user_id)");
+
         // tag has no CHECK so new classification states (e.g. observing) can be
         // added without migrating; values are validated in PHP.
         $db->exec("CREATE TABLE IF NOT EXISTS domain_tags (
@@ -249,6 +260,16 @@ class Database {
         } catch (PDOException $e) {
             // Column already exists
         }
+
+        // Safe migration: a keyword belongs to at most one report group.
+        try {
+            $db->exec("ALTER TABLE keywords ADD COLUMN group_id INTEGER DEFAULT NULL");
+        } catch (PDOException $e) {
+            // Column already exists
+        }
+        try {
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_keywords_group ON keywords(group_id)");
+        } catch (PDOException $e) { }
 
         // Safe migration: add live progress columns to worker_status
         try {
