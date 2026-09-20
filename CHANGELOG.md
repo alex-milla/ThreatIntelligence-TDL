@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.1] - 2026-09-20
+
+### Fixed - Misaligned login fields and top navigation
+
+- **Full-width text fields**: Materialize v2 dropped the v1 `width: 100%` on `.input-field` inputs and textareas, so they collapsed to the browser default size and no longer lined up with the submit button (visible on Login/Register). Restored the full-width rule.
+- **Navbar baseline**: the dropdown triggers (Admin, account) and the theme toggle sat off the text baseline because Materialize v2 renders nav links as blocks and the caret icon floats. Nav links are now flex rows with the caret inline and vertically centred.
+
 ## [v1.6.0] - 2026-09-20
 
 ### Added - Automatic daily ICANN run + weekly OpenINTEL schedule

@@ -191,6 +191,14 @@ select {
     font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
 }
 
+/* Materialize v2 dropped the v1 `width: 100%` on text fields, so inputs and
+   textareas collapsed to the browser default size and no longer filled the
+   form. Restore it so fields line up with the submit buttons. */
+.input-field input:not([type="checkbox"]):not([type="radio"]),
+.input-field textarea {
+    width: 100%;
+}
+
 body {
     background-color: var(--bg);
     color: var(--text);
@@ -266,6 +274,22 @@ nav.app-nav {
 
 .app-nav ul a {
     font-size: 0.95rem;
+}
+
+/* Keep every top-nav item on the same baseline. In Materialize v2 the links
+   are plain blocks, so a dropdown trigger's floated 24px caret raises its own
+   text ~4px above the sibling text links. Lay the links out as flex rows and
+   drop the caret float so text and icons share one vertical centre. */
+.app-nav .nav-wrapper > ul > li > a {
+    display: flex;
+    align-items: center;
+    line-height: 1.2;
+}
+
+.app-nav .nav-wrapper > ul > li > a > i.material-icons {
+    float: none;
+    top: 0;
+    margin-left: 2px;
 }
 
 .app-nav ul.right > li > a.active {
