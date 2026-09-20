@@ -1224,6 +1224,28 @@ table.highlight > tbody > tr:hover {
     margin: 48px auto 0;
 }
 
+/* Uniform "filled" fields: the username is autofocused, and the global
+   `input:focus-visible` rule draws a 2px outline 2px outside the box, which
+   made only that field look bigger and shifted next to the password. Give
+   every auth field the same surface and keep focus on the field itself. */
+.auth-card .input-field input:not([type="checkbox"]):not([type="radio"]) {
+    background-color: var(--surface-2);
+}
+
+.auth-card .input-field input:focus-visible {
+    outline: none;
+}
+
+/* Chrome paints autofilled fields with its own background, breaking the
+   uniform look; keep our surface and text colours instead. */
+.auth-card .input-field input:-webkit-autofill,
+.auth-card .input-field input:-webkit-autofill:hover,
+.auth-card .input-field input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px var(--surface-2) inset;
+    -webkit-text-fill-color: var(--text);
+    caret-color: var(--text);
+}
+
 .auth-card .auth-logo {
     display: flex;
     align-items: center;

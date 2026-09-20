@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.2] - 2026-09-20
+
+### Fixed - Login fields still looked misaligned
+
+- **Offset focus ring**: the global `input:focus-visible` rule draws a 2px outline 2px *outside* the box, so the autofocused username looked bigger and shifted next to the password. Auth fields now keep the focus indication on the field itself (no offset outline).
+- **Uniform fields**: auth inputs now share the same surface background, and Chrome's autofill background/text colours are neutralised so the prefilled username matches the password field.
+
 ## [v1.6.1] - 2026-09-20
 
 ### Fixed - Misaligned login fields and top navigation
