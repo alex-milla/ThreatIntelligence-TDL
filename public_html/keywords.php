@@ -54,10 +54,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     validateCsrf();
     if ($isAdmin) {
         $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)") ->execute(['recheck_keywords', '']);
-        $message = 'Keyword recheck queued. The worker will scan all cached domains against current keywords.';
+        $_SESSION['flash_message'] = 'Keyword recheck queued. The worker will scan all cached domains against current keywords.';
     } else {
-        $error = 'Only administrators can trigger a recheck.';
+        $_SESSION['flash_error'] = 'Only administrators can trigger a recheck.';
     }
+    // PRG so a refresh (button or browser) does not resubmit the form.
+    header('Location: /keywords.php');
+    exit;
 }
 
 // Admin stop recheck
@@ -131,17 +134,39 @@ function kwSortLink(string $col, string $label, string $currentSort, string $cur
         . htmlspecialchars($label) . $arrow . '</a>';
 }
 
-// Recheck status for admin stop button
+// Live recheck status (admin only): powers the stop button, the progress line
+// and the auto-refresh watcher on this page.
 $recheckStatus = null;
 $recheckRunning = false;
+$recheckTotal = 0;
+$recheckChecked = 0;
+$recheckMatches = 0;
+$recheckPct = 0;
+$recheckPending = 0;
+$activity = null;
 if ($isAdmin) {
     $recheckStatus = $db->query("SELECT * FROM recheck_status WHERE id = 1")->fetch();
     $recheckRunning = !empty($recheckStatus['is_running']);
+    $recheckTotal = (int)($recheckStatus['total_domains'] ?? 0);
+    $recheckChecked = (int)($recheckStatus['checked_domains'] ?? 0);
+    $recheckMatches = (int)($recheckStatus['matches_found'] ?? 0);
+    $recheckPct = $recheckTotal > 0 ? round($recheckChecked / $recheckTotal * 100, 1) : 0;
+    $recheckPending = (int)$db->query("SELECT COUNT(*) FROM commands WHERE command = 'recheck_keywords' AND status = 'pending'")->fetchColumn();
+    $activity = getWorkerActivity($db);
 }
 
 $pageTitle = 'My Keywords';
 require __DIR__ . '/templates/header.php';
 ?>
+
+<?php if ($isAdmin): ?>
+<span id="activity-watcher" hidden
+      data-url="/ajax_worker_activity.php"
+      data-interval="5000"
+      data-refresh-interval="5000"
+      data-active="<?= !empty($activity['active']) ? '1' : '0' ?>"
+      data-version="<?= htmlspecialchars($activity['worker_version'] ?? '') ?>"></span>
+<?php endif; ?>
 
 <div class="card">
     <div class="card-head">
@@ -169,25 +194,45 @@ require __DIR__ . '/templates/header.php';
     </form>
 
     <?php if ($isAdmin): ?>
-    <div class="section-actions">
-        <form method="POST">
-            <?php csrfField(); ?>
-            <input type="hidden" name="action" value="recheck_keywords">
-            <button type="submit" class="btn btn-outline waves-effect" <?= $recheckRunning ? 'disabled' : '' ?>>
-                <i class="material-icons left">search</i><?= $recheckRunning ? 'Recheck in progress...' : 'Recheck All Cached Domains' ?>
+    <div id="live-recheck" data-live-section>
+        <div class="section-actions">
+            <form method="POST">
+                <?php csrfField(); ?>
+                <input type="hidden" name="action" value="recheck_keywords">
+                <button type="submit" class="btn btn-outline waves-effect" <?= ($recheckRunning || $recheckPending > 0) ? 'disabled' : '' ?>>
+                    <i class="material-icons left">search</i><?= $recheckRunning ? 'Recheck in progress...' : 'Recheck All Cached Domains' ?>
+                </button>
+            </form>
+            <?php if ($recheckRunning): ?>
+            <form method="POST">
+                <?php csrfField(); ?>
+                <input type="hidden" name="action" value="stop_recheck">
+                <button type="submit" class="btn waves-effect btn-danger"><i class="material-icons left">stop</i>Stop Recheck</button>
+            </form>
+            <?php endif; ?>
+            <button type="button" class="btn btn-outline waves-effect" data-refresh-live title="Check the recheck status now">
+                <i class="material-icons left">refresh</i>Refresh
             </button>
-        </form>
-        <?php if ($recheckRunning): ?>
-        <form method="POST">
-            <?php csrfField(); ?>
-            <input type="hidden" name="action" value="stop_recheck">
-            <button type="submit" class="btn waves-effect btn-danger"><i class="material-icons left">stop</i>Stop Recheck</button>
-        </form>
-        <?php endif; ?>
-        <span class="muted">Scans all previously downloaded domains against current keywords (admin only)</span>
+            <span class="muted">Scans all previously downloaded domains against current keywords (admin only)</span>
+        </div>
+        <div class="recheck-status">
+            <?php if ($recheckRunning): ?>
+                <p><strong>Status:</strong> <span class="status-badge status-running">Running</span></p>
+                <div class="progress"><div class="determinate" style="width: <?= $recheckPct ?>%;"></div></div>
+                <p>Checked <strong><?= number_format($recheckChecked) ?></strong> of <strong><?= number_format($recheckTotal) ?></strong> domains (<?= $recheckPct ?>%) — <strong><?= number_format($recheckMatches) ?></strong> matches found</p>
+            <?php elseif ($recheckPending > 0): ?>
+                <p><strong>Status:</strong> <span class="status-badge status-running">Queued</span> — waiting for the worker to start.</p>
+            <?php elseif ($recheckStatus && $recheckStatus['completed_at']): ?>
+                <p><strong>Status:</strong> <span class="status-badge status-completed">Completed</span> at <?= htmlspecialchars(fmt_date($recheckStatus['completed_at'])) ?></p>
+                <p>Checked <strong><?= number_format($recheckChecked) ?></strong> domains — <strong><?= number_format($recheckMatches) ?></strong> matches found</p>
+            <?php else: ?>
+                <p><strong>Status:</strong> <span class="status-badge status-cancelled">Idle</span></p>
+            <?php endif; ?>
+        </div>
     </div>
     <?php endif; ?>
 
+    <div id="live-keywords" data-live-section>
     <?php if (empty($keywords)): ?>
         <p class="muted">No keywords yet. Add your first keyword above.</p>
     <?php else: ?>
@@ -219,6 +264,7 @@ require __DIR__ . '/templates/header.php';
             </tbody>
         </table>
     <?php endif; ?>
+    </div>
 </div>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>

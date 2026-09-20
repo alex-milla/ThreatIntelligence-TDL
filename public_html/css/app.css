@@ -935,6 +935,11 @@ table.highlight > tbody > tr:hover {
 
 .section-actions form { margin: 0; }
 
+/* Recheck status block (Keywords page, admin) */
+.recheck-status { margin: 0 0 20px; }
+.recheck-status p { margin: 4px 0; }
+.recheck-status .progress { margin: 8px 0; }
+
 .filter-form {
     display: flex;
     gap: 12px;

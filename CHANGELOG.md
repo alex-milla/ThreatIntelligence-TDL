@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.4] - 2026-09-20
+
+### Added - Live keyword-recheck status and a manual Refresh button
+
+- **Keywords page auto-refresh**: the admin recheck controls are now a live section with an `#activity-watcher`, so after queuing "Recheck All Cached Domains" the status (Running with a progress bar, Queued, Completed or Idle) and the Stop button update on their own, and refresh once when the worker finishes. The keyword table is a live section too, so its *Matches* counts catch up automatically.
+- **Manual Refresh button**: a new `[data-refresh-live]` button refreshes those sections **in place** (AJAX GET, no page reload, no lost scroll) via the exposed `App.refreshLiveSections()`; it falls back to a GET navigation.
+- **PRG on recheck**: queuing a recheck now stores a flash message and redirects to `/keywords.php` (like Stop Recheck), so refreshing never resubmits the form.
+
 ## [v1.6.3] - 2026-09-20
 
 ### Fixed - Admin hit the keyword limit and was told to contact themselves

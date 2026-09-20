@@ -16,6 +16,7 @@ var App = {
         this.initCharacterCounters();
         this.bindConfirms();
         this.initAutoRefresh();
+        this.initLiveRefresh();
     },
 
     /* ---------- Partial auto-refresh of live sections ----------
@@ -68,6 +69,10 @@ var App = {
                 .then(function () { refreshing = false; });
         }
 
+        // Expose the in-place refresh so a manual "Refresh" button can trigger
+        // the same update without a full page reload.
+        App.refreshLiveSections = refreshSections;
+
         function tick() {
             fetch(activityUrl, {
                 headers: { 'Accept': 'application/json' },
@@ -99,6 +104,23 @@ var App = {
 
         setInterval(tick, pollInterval);
         tick();
+    },
+
+    /* ---------- Manual "Refresh" buttons ----------
+     * Buttons marked [data-refresh-live] reuse the in-place section refresh
+     * (no full reload / no lost scroll). Falls back to a GET navigation.
+     * Delegated on document so it survives section replacements. */
+    initLiveRefresh: function () {
+        document.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-refresh-live]');
+            if (!btn) return;
+            e.preventDefault();
+            if (typeof App.refreshLiveSections === 'function') {
+                App.refreshLiveSections();
+            } else {
+                window.location.href = window.location.pathname + window.location.search;
+            }
+        });
     },
 
     /* ---------- Theme (light / dark) ---------- */
