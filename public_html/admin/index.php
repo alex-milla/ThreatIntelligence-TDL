@@ -127,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if ($action === 'set_max_keywords') {
         $uid = (int)($_POST['user_id'] ?? 0);
-        $max = (int)($_POST['max_keywords'] ?? 10);
+        $max = (int)($_POST['max_keywords'] ?? DEFAULT_MAX_KEYWORDS);
         if ($max < 0) $max = 0;
         $db->prepare("UPDATE users SET max_keywords = ? WHERE id = ?")->execute([$max, $uid]);
         $message = 'Keyword limit updated.';
@@ -542,6 +542,9 @@ if (!empty($workerStatus['last_heartbeat'])) {
                 <td><?= $u['is_active'] ? '<span class="text-success">Yes</span>' : '<span class="muted">No</span>' ?></td>
                 <td><?= $u['is_admin'] ? '<span class="text-success">Yes</span>' : '<span class="muted">No</span>' ?></td>
                 <td>
+                    <?php if ($u['is_admin']): ?>
+                        <span class="text-success" title="Admins are always unlimited">Unlimited</span>
+                    <?php else: ?>
                     <form method="POST" class="inline-form-nowrap">
                         <?php csrfField(); ?>
                         <input type="hidden" name="action" value="set_max_keywords">
@@ -549,6 +552,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
                         <input type="number" name="max_keywords" value="<?= (int)$u['max_keywords'] ?>" min="0" class="browser-default compact num-input">
                         <button type="submit" class="btn btn-small waves-effect" title="0 = unlimited">Set</button>
                     </form>
+                    <?php endif; ?>
                 </td>
                 <td class="mono-sm"><?= substr(htmlspecialchars($u['api_key']), 0, 16) ?>...</td>
                 <td>

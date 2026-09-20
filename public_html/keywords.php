@@ -26,7 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $error = 'Keyword can only contain letters, numbers, and hyphens.';
     } elseif (!canAddKeyword($db, $userId)) {
         $limit = getMaxKeywords($db, $userId);
-        $error = "You have reached your keyword limit ({$limit}). Contact the administrator.";
+        $error = $isAdmin
+            ? 'You have reached your keyword limit. Increase it in Admin → Users.'
+            : "You have reached your keyword limit ({$limit}). Contact the administrator.";
     } else {
         $stmt = $db->prepare("INSERT INTO keywords (user_id, keyword) VALUES (?, ?)");
         try {

@@ -28,9 +28,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $db = Database::get();
             $hash = password_hash($password, PASSWORD_DEFAULT);
-            $stmt = $db->prepare("INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)");
+            $stmt = $db->prepare("INSERT INTO users (username, email, password_hash, max_keywords) VALUES (?, ?, ?, ?)");
             try {
-                $stmt->execute([$username, $email, $hash]);
+                $stmt->execute([$username, $email, $hash, DEFAULT_MAX_KEYWORDS]);
                 header('Location: /login.php?registered=1');
                 exit;
             } catch (PDOException $e) {

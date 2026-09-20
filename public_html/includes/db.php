@@ -208,9 +208,17 @@ class Database {
 
         // Safe migration: add max_keywords if it doesn't exist yet
         try {
-            $db->exec("ALTER TABLE users ADD COLUMN max_keywords INTEGER DEFAULT 10");
+            $db->exec("ALTER TABLE users ADD COLUMN max_keywords INTEGER DEFAULT 20");
         } catch (PDOException $e) {
             // Column already exists
+        }
+
+        // One-time: raise regular users still on the old default (10) to 20.
+        // Guarded by a settings marker so an admin can later set a user back to 10.
+        $mkMigrated = $db->query("SELECT value FROM settings WHERE key = 'max_keywords_default_20' LIMIT 1")->fetchColumn();
+        if ($mkMigrated === false) {
+            $db->exec("UPDATE users SET max_keywords = 20 WHERE is_admin = 0 AND max_keywords = 10");
+            $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('max_keywords_default_20', '1')");
         }
 
         // Safe migration: add first_seen to matches

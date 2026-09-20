@@ -7,6 +7,12 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+/**
+ * Default keyword allowance for a regular (non-admin) user. 0 means unlimited.
+ * Admins are always unlimited regardless of their stored max_keywords value.
+ */
+const DEFAULT_MAX_KEYWORDS = 20;
+
 /* ---------- Date formatting (UTC → local) ---------- */
 
 /**
@@ -236,10 +242,17 @@ function workerVersionMismatch(PDO $db): ?array {
 }
 
 function getMaxKeywords(PDO $db, int $userId): int {
-    $stmt = $db->prepare("SELECT max_keywords FROM users WHERE id = ? LIMIT 1");
+    $stmt = $db->prepare("SELECT max_keywords, is_admin FROM users WHERE id = ? LIMIT 1");
     $stmt->execute([$userId]);
-    $val = $stmt->fetchColumn();
-    return $val !== false ? (int)$val : 10;
+    $row = $stmt->fetch();
+    if ($row === false) {
+        return DEFAULT_MAX_KEYWORDS;
+    }
+    // Admins are always unlimited; the stored value is only used for regular users.
+    if (!empty($row['is_admin'])) {
+        return 0;
+    }
+    return $row['max_keywords'] !== null ? (int)$row['max_keywords'] : DEFAULT_MAX_KEYWORDS;
 }
 
 function canAddKeyword(PDO $db, int $userId): bool {

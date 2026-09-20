@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.3] - 2026-09-20
+
+### Fixed - Admin hit the keyword limit and was told to contact themselves
+
+- **Admins are now unlimited**: `getMaxKeywords()` returns `0` (unlimited) when the user `is_admin = 1`, so an administrator can no longer be blocked by the stored `users.max_keywords`. The value keeps governing regular users, which the admin sets per user in **Admin → Users**.
+- **New default raised to 20** for regular users (was 10): `register.php` now sets it explicitly, the schema migration uses `DEFAULT 20`, and a guarded one-time migration raises existing regular users still on the old default of 10. It records `settings.max_keywords_default_20`, so a later manual value is respected, and admins are left untouched.
+- **Message**: "Contact the administrator" is only shown to regular users; an admin sees "Increase it in Admin → Users".
+- **Admin → Users**: admin rows now display *Unlimited* instead of the numeric limit.
+
 ## [v1.6.2] - 2026-09-20
 
 ### Fixed - Login fields still looked misaligned
