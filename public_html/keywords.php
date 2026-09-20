@@ -53,8 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'recheck_keywords') {
     validateCsrf();
     if ($isAdmin) {
-        // Optional subset of keywords to recheck. Empty selection = all keywords.
-        $payload = '';
+        // Recheck both caches (ccTLD/OpenINTEL + ICANN/CZDS). The source list is
+        // decided server-side; the client may only add an optional subset of
+        // keywords (empty = all keywords).
+        $payloadData = ['sources' => ['openintel', 'czds']];
         $raw = (string)($_POST['payload'] ?? '');
         if ($raw !== '') {
             $decoded = json_decode($raw, true);
@@ -68,14 +70,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $own->execute(array_merge([$userId], $ids));
                 $ownedIds = array_map('intval', $own->fetchAll(PDO::FETCH_COLUMN));
                 if ($ownedIds) {
-                    $payload = json_encode(['keyword_ids' => $ownedIds]);
+                    $payloadData['keyword_ids'] = $ownedIds;
                 }
             }
         }
-        $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")->execute(['recheck_keywords', $payload]);
-        $_SESSION['flash_message'] = $payload !== ''
-            ? 'Keyword recheck queued for the selected keyword(s). The worker will scan cached domains against them.'
-            : 'Keyword recheck queued. The worker will scan all cached domains against current keywords.';
+        $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")
+           ->execute(['recheck_keywords', json_encode($payloadData)]);
+        $_SESSION['flash_message'] = !empty($payloadData['keyword_ids'])
+            ? 'Keyword recheck queued for the selected keyword(s). The worker will scan the ccTLD + ICANN cached domains against them.'
+            : 'Keyword recheck queued. The worker will scan the ccTLD + ICANN cached domains against all current keywords.';
     } else {
         $_SESSION['flash_error'] = 'Only administrators can trigger a recheck.';
     }
@@ -222,7 +225,7 @@ require __DIR__ . '/templates/header.php';
                 <input type="hidden" name="action" value="recheck_keywords">
                 <input type="hidden" name="payload" id="recheck-payload" value="">
                 <button type="submit" id="recheck-btn" class="btn btn-outline waves-effect" <?= ($recheckRunning || $recheckPending > 0) ? 'disabled' : '' ?>>
-                    <i class="material-icons left">search</i><span id="recheck-label"><?= $recheckRunning ? 'Recheck in progress...' : 'Recheck All Cached Domains' ?></span>
+                    <i class="material-icons left">search</i><span id="recheck-label"><?= $recheckRunning ? 'Recheck in progress...' : 'Recheck Cached Domains (ccTLD + ICANN)' ?></span>
                 </button>
             </form>
             <?php if ($recheckRunning): ?>
@@ -307,13 +310,16 @@ function updateRecheckLabel() {
     var btn = document.getElementById('recheck-btn');
     if (!label || (btn && btn.disabled)) return;
     var checked = document.querySelectorAll('.kw-check:checked').length;
-    label.textContent = checked ? ('Recheck ' + checked + ' selected') : 'Recheck All Cached Domains';
+    label.textContent = checked ? ('Recheck ' + checked + ' selected') : 'Recheck Cached Domains (ccTLD + ICANN)';
 }
 function prepareRecheck() {
     var ids = Array.prototype.map.call(document.querySelectorAll('.kw-check:checked'), function (cb) { return cb.value; });
     var payload = document.getElementById('recheck-payload');
     if (payload) payload.value = ids.length ? JSON.stringify({ keyword_ids: ids }) : '';
-    return true;
+    var msg = ids.length
+        ? ('Recheck the ccTLD + ICANN cached domains against ' + ids.length + ' selected keyword(s)?\n\nThe ICANN scan can take a while.')
+        : 'Recheck the ccTLD + ICANN cached domains against ALL keywords?\n\nThe ICANN scan can take a while.';
+    return confirm(msg);
 }
 document.addEventListener('change', function (e) {
     if (!e.target) return;

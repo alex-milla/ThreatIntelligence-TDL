@@ -1451,10 +1451,10 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                     total["domains_checked"] += int(s.get("domains_checked", 0))
                     total["matches_found"] += int(s.get("matches_found", 0))
                 if "czds" in sources:
-                    if not tlds and not max_domains:
+                    if not tlds and not max_domains and max_age <= 0:
                         logs.append({"level": "warning", "message":
-                                     "CZDS recheck skipped: select ICANN TLDs or set a max_domains cap "
-                                     "to avoid scanning the whole cache."})
+                                     "CZDS recheck skipped: select ICANN TLDs, set a max_domains cap, "
+                                     "or set a max age to bound the scan."})
                     else:
                         s = recheck_all_domains(db, host_url, api_key, max_age,
                                                 tlds=tlds, max_domains=max_domains, source="czds",

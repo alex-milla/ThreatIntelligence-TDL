@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.11] - 2026-09-20
+
+### Fixed - Keyword recheck now covers the ICANN cache too
+
+- The Keywords page **Recheck** button only scanned the ccTLD (OpenINTEL) cache, because it sent no `sources` and the worker defaults to `["openintel"]`. It now rechecks **both caches** (ccTLD + ICANN/CZDS) for the selected keywords (or all keywords when none is selected). The source list is decided server-side; the button label and a confirmation warn that the ICANN scan can take a while.
+- **Worker**: the CZDS recheck guard no longer requires selected TLDs or a max-domains cap when a **max age** bounds the scan (`[worker] max_domain_age_days`, default 30). A recheck with no TLDs, no cap and no age limit is still skipped.
+- **Admin → Recheck**: the advanced form now has a **keywords** multi-select (active keywords, with their user); leaving it empty rechecks all keywords. Selected ids are sent as `keyword_ids` in the command payload.
+- Note: hash-cached huge TLDs (e.g. `.com`) remain excluded from rechecks (no domain text to match).
+
 ## [v1.6.10] - 2026-09-20
 
 ### Added - Recheck selected keywords (Keyword page)

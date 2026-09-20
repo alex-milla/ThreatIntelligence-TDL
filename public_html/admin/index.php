@@ -84,12 +84,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tlds = is_array($_POST['tlds'] ?? null)
                     ? array_values(array_filter(array_map('strval', $_POST['tlds'])))
                     : [];
-                $payload = json_encode([
+                $keywordIds = is_array($_POST['keyword_ids'] ?? null)
+                    ? array_values(array_filter(array_map('intval', $_POST['keyword_ids']), fn($v) => $v > 0))
+                    : [];
+                $payloadData = [
                     'sources' => $sources,
                     'tlds' => $tlds,
                     'max_age_days' => max(0, (int)($_POST['max_age_days'] ?? 30)),
                     'max_domains' => max(0, (int)($_POST['max_domains'] ?? 0)),
-                ]);
+                ];
+                if ($keywordIds) {
+                    $payloadData['keyword_ids'] = $keywordIds;
+                }
+                $payload = json_encode($payloadData);
             } else {
                 // Quick action: the worker defaults to the fast ccTLD cache only.
                 $payload = '';
@@ -181,6 +188,7 @@ $versionMismatch = workerVersionMismatch($db);
 $activity = getWorkerActivity($db);
 $recheckCzdsTlds = $db->query("SELECT name, records_total FROM tlds WHERE source = 'czds' AND is_active = 1 ORDER BY name")->fetchAll();
 $recheckCcTlds = $db->query("SELECT name, records_total FROM tlds WHERE source = 'openintel' AND is_active = 1 ORDER BY name")->fetchAll();
+$recheckKeywords = $db->query("SELECT k.id, k.keyword, u.username FROM keywords k JOIN users u ON u.id = k.user_id WHERE k.is_active = 1 ORDER BY k.keyword ASC, u.username ASC")->fetchAll();
 
 $pageTitle = 'Admin Panel';
 require __DIR__ . '/../templates/header.php';
@@ -354,8 +362,19 @@ require __DIR__ . '/../templates/header.php';
                     </optgroup>
                     <?php endif; ?>
                 </select>
-                <span class="helper-text">Leave TLDs empty to recheck the whole ccTLD cache. ICANN requires selected TLDs or a max-domains cap.</span>
+                <span class="helper-text">Leave TLDs empty to recheck the whole ccTLD cache. For ICANN, select TLDs, set a max-domains cap, or set a max age (bounded by time).</span>
             </div>
+            <?php if ($recheckKeywords): ?>
+            <div class="input-field">
+                <label for="recheck-keywords" style="position:static;">Keywords to recheck (optional; empty = all keywords)</label>
+                <select name="keyword_ids[]" id="recheck-keywords" class="browser-default" multiple size="6" style="height:auto;">
+                    <?php foreach ($recheckKeywords as $kw): ?>
+                    <option value="<?= (int)$kw['id'] ?>"><?= htmlspecialchars($kw['keyword']) ?> — <?= htmlspecialchars($kw['username']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <span class="helper-text">Only the selected keywords are matched during this recheck.</span>
+            </div>
+            <?php endif; ?>
             <div class="section-actions">
                 <label class="nowrap">Max age (days) <input type="number" name="max_age_days" value="30" min="0" max="3650" class="browser-default compact num-input"></label>
                 <label class="nowrap">Max domains <input type="number" name="max_domains" value="0" min="0" class="browser-default compact num-input" title="0 = no cap"></label>
@@ -689,7 +708,7 @@ function recheckEstimate() {
     });
     let msg = selected ? (selected + ' TLD(s) selected · ~' + total.toLocaleString() + ' cached domains') : 'No TLDs selected';
     if (czds && czds.checked && selected === 0) {
-        msg += ' — ICANN needs selected TLDs or a max-domains cap.';
+        msg += ' — ICANN needs selected TLDs, a max-domains cap, or a max age to bound the scan.';
     }
     out.textContent = msg;
 }
