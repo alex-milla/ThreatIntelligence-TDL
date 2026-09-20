@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.12] - 2026-09-20
+
+### Fixed - ccTLD counts blanked on "unchanged" runs
+
+- On weeks when the OpenINTEL weekly file is the same as the last processed one, `run_tld` returned early with `records_total = 0`, and `cctld_sync.php` overwrote the stored total with 0, so the **ccTLD (OpenINTEL)** table showed `—` for **Domains** on every `Unchanged` TLD (only freshly `Baselined`/`Updated` ones kept their count).
+- The unchanged branch now reports the last known total from `cctld_runs`, so **Domains** stays populated while **New** correctly shows `—` (nothing new that run). No web-side change was needed.
+
 ## [v1.6.11] - 2026-09-20
 
 ### Fixed - Keyword recheck now covers the ICANN cache too

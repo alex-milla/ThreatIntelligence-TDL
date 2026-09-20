@@ -526,7 +526,14 @@ def run_tld(tld: str, session: requests.Session, conn: sqlite3.Connection,
             if not args.force:
                 row = conn.execute("SELECT last_file, status FROM cctld_runs WHERE tld = ?", (tld,)).fetchone()
                 if row and row[0] == filename and row[1] in OK_STATUSES:
+                    # Keep the last known domain total so the panel does not blank
+                    # it out on weeks when the weekly file has not changed.
+                    cached = conn.execute(
+                        "SELECT records_total FROM cctld_runs WHERE tld = ?", (tld,)
+                    ).fetchone()
                     report["status"] = "unchanged"
+                    report["records_total"] = int(cached[0]) if cached else 0
+                    report["records_new"] = 0
                     return report
             if args.force or not os.path.exists(source_path) or os.path.getsize(source_path) == 0:
                 if not download_file(session, resolved["url"], source_path, settings["sleep_between"]):
