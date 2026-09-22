@@ -1,13 +1,11 @@
 <?php
 /**
- * Printable report.
+ * Printable report (saved snapshot).
  *
- * Renders the domains matched by the selected keywords, grouped by keyword,
- * with all the data collected for each domain (WHOIS, VirusTotal, tags,
- * watchlist, first seen, source...). Sections for keywords with no matching
- * domains are omitted, so a report only contains the keywords from the last
- * sync. Designed to be printed (browser "Print / Save as PDF"): sections break
- * per keyword and interactive controls are hidden by the print stylesheet.
+ * Reports are generated from the Reports builder and stored (immutably) in
+ * `report_history`. This page loads one by id, decodes the gzip-compressed
+ * snapshot and renders it with all the WHOIS/VirusTotal data collected at
+ * generation time. Designed to be printed (browser "Print / Save as PDF").
  */
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
@@ -16,57 +14,26 @@ requireAuth();
 $db = Database::get();
 $userId = (int)$_SESSION['user_id'];
 
-// ---------- Selected keywords ----------
-$idsParam = (string)($_GET['keywords'] ?? '');
-$ids = array_values(array_unique(array_filter(array_map('intval', explode(',', $idsParam)), fn($v) => $v > 0)));
-$ids = array_slice($ids, 0, 50);
-
-// ---------- Filters (whitelisted) ----------
-$validStates = ['all', 'good', 'bad', 'observing', 'untagged', 'watchlist', 'historical'];
-$state = (string)($_GET['state'] ?? 'all');
-if (!in_array($state, $validStates, true)) {
-    $state = 'all';
-}
-$validSources = ['all', 'czds', 'ct'];
-$source = (string)($_GET['source'] ?? 'all');
-if (!in_array($source, $validSources, true)) {
-    $source = 'all';
-}
-$validDateFilters = ['24h' => '-1 day', '7d' => '-7 days', '30d' => '-30 days', 'all' => ''];
-$date = (string)($_GET['date'] ?? '24h');
-if (!array_key_exists($date, $validDateFilters)) {
-    $date = '24h';
-}
-$includeArchived = isset($_GET['archived']) && $_GET['archived'] === '1';
-
-// ---------- Optional group (for the report header) ----------
-$groupParam = (string)($_GET['group'] ?? 'all');
-$groupName = '';
-if (ctype_digit($groupParam)) {
-    $gStmt = $db->prepare("SELECT name FROM keyword_groups WHERE id = ? AND user_id = ? LIMIT 1");
-    $gStmt->execute([(int)$groupParam, $userId]);
-    $groupName = (string)($gStmt->fetchColumn() ?: '');
-} elseif ($groupParam === 'ungrouped') {
-    $groupName = 'Ungrouped';
+$id = (int)($_GET['id'] ?? 0);
+if ($id <= 0) {
+    header('Location: /reports.php');
+    exit;
 }
 
-// ---------- Validate keyword ownership ----------
-$keywords = [];
-if (!empty($ids)) {
-    $placeholders = implode(',', array_fill(0, count($ids), '?'));
-    $stmt = $db->prepare("SELECT id, keyword FROM keywords WHERE user_id = ? AND id IN ($placeholders) ORDER BY keyword ASC");
-    $stmt->execute(array_merge([$userId], $ids));
-    $keywords = $stmt->fetchAll();
-}
+$stmt = $db->prepare("SELECT title, group_name, filters, keywords, data, domains, created_at
+    FROM report_history WHERE id = ? AND user_id = ? LIMIT 1");
+$stmt->execute([$id, $userId]);
+$row = $stmt->fetch();
 
 $pageTitle = 'Report';
-require __DIR__ . '/templates/header.php';
 
-if (empty($keywords)) {
+if (!$row) {
+    http_response_code(404);
+    require __DIR__ . '/templates/header.php';
     ?>
     <div class="card">
-        <div class="card-head"><h2>No keywords selected</h2></div>
-        <p class="muted">Pick at least one keyword to generate a report.</p>
+        <div class="card-head"><h2>Report not found</h2></div>
+        <p class="muted">This report does not exist or does not belong to your account.</p>
         <a href="/reports.php" class="btn waves-effect"><i class="material-icons left">arrow_back</i>Back to Reports</a>
     </div>
     <?php
@@ -74,145 +41,44 @@ if (empty($keywords)) {
     exit;
 }
 
-// ---------- Collect the data ----------
-$newDomainDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
-$maxRows = 2000; // per keyword, to keep printing manageable
-$truncated = false;
-
-$report = [];
-$totalDomains = 0;
-$grandTag = ['good' => 0, 'bad' => 0, 'observing' => 0, 'untagged' => 0];
-$grandVt = ['malicious' => 0, 'suspicious' => 0, 'dga' => 0, 'clean' => 0];
-$grandNew = 0;
-$grandWatchlist = 0;
-
-foreach ($keywords as $kw) {
-    $kwId = (int)$kw['id'];
-
-    $from = "FROM matches m
-        LEFT JOIN domain_tags dt ON dt.domain = m.domain
-        LEFT JOIN watchlist w ON w.user_id = ? AND w.domain = m.domain
-        LEFT JOIN domain_whois dw ON dw.domain = m.domain
-        LEFT JOIN domain_vt dv ON dv.domain = m.domain";
-
-    $where = "WHERE m.keyword_id = ?";
-    $params = [$userId, $kwId];
-
-    // Reports include every domain discovered in the period; only explicitly
-    // excluded domains are hidden. Historical (recheck) matches are hidden
-    // unless the user asks for them (state = historical or "include archived").
-    $where .= " AND NOT EXISTS (SELECT 1 FROM domain_tags dx WHERE dx.domain = m.domain AND dx.tag = 'excluded')";
-    if (!$includeArchived && $state !== 'historical') {
-        $where .= " AND m.is_historical = 0";
+$snapshot = [];
+if (!empty($row['data'])) {
+    $raw = @gzuncompress((string)$row['data']);
+    if ($raw !== false) {
+        $snapshot = json_decode($raw, true) ?: [];
     }
-
-    if (in_array($state, ['good', 'bad', 'observing'], true)) {
-        $where .= " AND dt.tag = ?";
-        $params[] = $state;
-    } elseif ($state === 'untagged') {
-        $where .= " AND dt.tag IS NULL";
-    } elseif ($state === 'watchlist') {
-        $where .= " AND w.id IS NOT NULL";
-    } elseif ($state === 'historical') {
-        $where .= " AND m.is_historical = 1";
-    }
-
-    if ($source !== 'all') {
-        $where .= " AND m.source = ?";
-        $params[] = $source;
-    }
-
-    if ($validDateFilters[$date] !== '') {
-        $where .= " AND m.discovered_at >= datetime('now', ?)";
-        $params[] = $validDateFilters[$date];
-    }
-
-    $sql = "SELECT m.domain, m.tld, m.discovered_at, m.first_seen, m.is_historical, m.source,
-            dt.tag AS tag,
-            CASE WHEN w.id IS NULL THEN 0 ELSE 1 END AS in_watchlist,
-            dw.creation_date, dw.expiration_date, dw.registrar, dw.name_servers, dw.status AS whois_status,
-            dv.verdict, dv.malicious, dv.suspicious, dv.harmless, dv.undetected, dv.reputation, dv.last_analysis_date
-        $from
-        $where
-        ORDER BY m.discovered_at DESC, m.domain ASC
-        LIMIT " . ($maxRows + 1);
-
-    $stmt = $db->prepare($sql);
-    $stmt->execute($params);
-    $rows = $stmt->fetchAll();
-
-    if (count($rows) > $maxRows) {
-        $rows = array_slice($rows, 0, $maxRows);
-        $truncated = true;
-    }
-
-    // Keywords without domains in this period are omitted from the report.
-    if (empty($rows)) {
-        continue;
-    }
-
-    // Per-keyword counters
-    $counts = ['domains' => count($rows), 'new' => 0, 'good' => 0, 'bad' => 0, 'observing' => 0, 'untagged' => 0,
-               'malicious' => 0, 'suspicious' => 0, 'dga' => 0, 'clean' => 0, 'watchlist' => 0];
-
-    foreach ($rows as &$r) {
-        $tag = (string)($r['tag'] ?? '');
-        if (isset($counts[$tag])) {
-            $counts[$tag]++;
-        } else {
-            $counts['untagged']++;
-        }
-
-        $verdict = (string)($r['verdict'] ?? '');
-        if (isset($counts[$verdict])) {
-            $counts[$verdict]++;
-        }
-
-        if (!empty($r['in_watchlist'])) {
-            $counts['watchlist']++;
-        }
-
-        $isNew = false;
-        if (!empty($r['creation_date'])) {
-            $ts = strtotime((string)$r['creation_date']);
-            if ($ts && $ts > strtotime("-{$newDomainDays} days")) {
-                $isNew = true;
-                $counts['new']++;
-            }
-        }
-        $r['_is_new'] = $isNew;
-
-        $ns = json_decode((string)($r['name_servers'] ?? '[]'), true);
-        $r['_ns'] = is_array($ns) ? $ns : [];
-    }
-    unset($r);
-
-    $report[$kwId] = ['keyword' => $kw['keyword'], 'counts' => $counts, 'rows' => $rows];
-
-    $totalDomains += $counts['domains'];
-    $grandNew += $counts['new'];
-    $grandWatchlist += $counts['watchlist'];
-    foreach ($grandTag as $t => $_) { $grandTag[$t] += $counts[$t]; }
-    foreach ($grandVt as $v => $_) { $grandVt[$v] += $counts[$v]; }
 }
 
-$includedKeywords = array_values(array_map(fn($d) => $d['keyword'], $report));
+$report = is_array($snapshot['report'] ?? null) ? $snapshot['report'] : [];
+$includedKeywords = is_array($snapshot['keywords'] ?? null) ? $snapshot['keywords'] : [];
+$groupName = (string)($row['group_name'] ?? ($snapshot['group_name'] ?? ''));
+$filterSummary = (string)($snapshot['filter_summary'] ?? '');
+$reportTitle = (string)($row['title'] ?? '');
+$generatedAt = fmt_date((string)($row['created_at'] ?? ($snapshot['generated_at'] ?? gmdate('Y-m-d H:i:s'))));
+$truncated = !empty($snapshot['truncated']);
+$maxRows = 2000;
 
-// Human-readable filter summary
-$dateLabels = ['all' => 'All time', '24h' => 'Last 24h', '7d' => 'Last 7 days', '30d' => 'Last 30 days'];
-$stateLabels = ['all' => 'All states', 'good' => 'Good', 'bad' => 'Bad', 'observing' => 'Observing',
-                'untagged' => 'Untagged', 'watchlist' => 'In watchlist', 'historical' => 'Historical'];
-$sourceLabels = ['all' => 'All sources', 'czds' => 'CZDS (zone files)', 'ct' => 'OpenINTEL (CT)'];
-$filterSummary = $dateLabels[$date] . ' · ' . $stateLabels[$state] . ' · ' . $sourceLabels[$source]
-    . ($includeArchived ? ' · including tagged/historical/old' : '');
+// Grand totals from the per-keyword counters.
+$totalDomains = 0;
+$grandNew = 0;
+$grandWatchlist = 0;
+$grandTag = ['good' => 0, 'bad' => 0, 'observing' => 0, 'untagged' => 0];
+$grandVt = ['malicious' => 0, 'suspicious' => 0, 'dga' => 0, 'clean' => 0];
+foreach ($report as $data) {
+    $c = $data['counts'] ?? [];
+    $totalDomains += (int)($c['domains'] ?? 0);
+    $grandNew += (int)($c['new'] ?? 0);
+    $grandWatchlist += (int)($c['watchlist'] ?? 0);
+    foreach ($grandTag as $t => $_) { $grandTag[$t] += (int)($c[$t] ?? 0); }
+    foreach ($grandVt as $v => $_) { $grandVt[$v] += (int)($c[$v] ?? 0); }
+}
 
-$generatedAt = fmt_date(gmdate('Y-m-d H:i:s'));
 $vtLabels = ['malicious' => 'MALICIOUS', 'dga' => 'DGA', 'suspicious' => 'SUSPICIOUS', 'clean' => 'CLEAN'];
 $tagLabels = ['good' => 'GOOD', 'bad' => 'BAD', 'observing' => 'OBSERVING'];
 
 // Small helper: render the cached VirusTotal cell (verdict + engine counts).
 function reportVtCell(array $r, array $vtLabels): string {
-    if ($r['verdict'] === null) {
+    if (($r['verdict'] ?? null) === null) {
         return '<span class="muted">Not checked</span>';
     }
     $val = (string)$r['verdict'];
@@ -220,12 +86,15 @@ function reportVtCell(array $r, array $vtLabels): string {
         ? '<span class="vt-badge vt-' . $val . '">' . $vtLabels[$val] . '</span>'
         : '<span class="muted">' . htmlspecialchars($val) . '</span>';
     $detail = sprintf('M %d · S %d · H %d · U %d',
-        (int)$r['malicious'], (int)$r['suspicious'], (int)$r['harmless'], (int)$r['undetected']);
-    if ((int)$r['reputation'] !== 0) {
+        (int)($r['malicious'] ?? 0), (int)($r['suspicious'] ?? 0),
+        (int)($r['harmless'] ?? 0), (int)($r['undetected'] ?? 0));
+    if ((int)($r['reputation'] ?? 0) !== 0) {
         $detail .= ' · rep ' . (int)$r['reputation'];
     }
     return '<div class="vt-cell">' . $badge . '<span class="vt-detail">' . htmlspecialchars($detail) . '</span></div>';
 }
+
+require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="report-toolbar no-print">
@@ -237,16 +106,18 @@ function reportVtCell(array $r, array $vtLabels): string {
     <header class="report-cover">
         <div class="report-cover-brand">ThreatIntelligence-TDL</div>
         <h1>Domain Threat Report</h1>
+        <?php if ($reportTitle !== ''): ?>
+            <div class="report-cover-title"><?= htmlspecialchars($reportTitle) ?></div>
+        <?php endif; ?>
         <div class="report-cover-sub">
             <?php if ($groupName !== ''): ?><span>Group: <strong><?= htmlspecialchars($groupName) ?></strong></span><?php endif; ?>
-            <span>Period: <strong><?= htmlspecialchars($dateLabels[$date]) ?></strong></span>
+            <span>Filters: <strong><?= htmlspecialchars($filterSummary) ?></strong></span>
             <span>Generated: <strong><?= htmlspecialchars($generatedAt) ?></strong> (Europe/Madrid)</span>
-            <span>User: <strong><?= htmlspecialchars($_SESSION['username'] ?? '') ?></strong></span>
         </div>
     </header>
 
     <?php if (empty($report)): ?>
-        <p class="muted">No domains matched the current filters for the selected keywords. Widen the period or include tagged/historical domains.</p>
+        <p class="muted">This report has no domains.</p>
     <?php else: ?>
 
     <section class="report-kpis">
@@ -265,7 +136,7 @@ function reportVtCell(array $r, array $vtLabels): string {
     </div>
     <div class="report-keywords">
         <?php foreach ($includedKeywords as $name): ?>
-            <span class="report-keyword-chip"><?= htmlspecialchars($name) ?></span>
+            <span class="report-keyword-chip"><?= htmlspecialchars((string)$name) ?></span>
         <?php endforeach; ?>
     </div>
 
@@ -286,18 +157,18 @@ function reportVtCell(array $r, array $vtLabels): string {
             </tr>
         </thead>
         <tbody>
-            <?php foreach ($report as $data): $c = $data['counts']; ?>
+            <?php foreach ($report as $data): $c = $data['counts'] ?? []; ?>
             <tr>
-                <td><strong><?= htmlspecialchars($data['keyword']) ?></strong></td>
-                <td class="num"><?= number_format($c['domains']) ?></td>
-                <td class="num"><?= number_format($c['new']) ?></td>
-                <td class="num"><?= number_format($c['good']) ?></td>
-                <td class="num"><?= number_format($c['bad']) ?></td>
-                <td class="num"><?= number_format($c['observing']) ?></td>
-                <td class="num"><?= number_format($c['untagged']) ?></td>
-                <td class="num"><?= number_format($c['watchlist']) ?></td>
-                <td class="num"><?= number_format($c['malicious']) ?></td>
-                <td class="num"><?= number_format($c['suspicious']) ?></td>
+                <td><strong><?= htmlspecialchars((string)($data['keyword'] ?? '')) ?></strong></td>
+                <td class="num"><?= number_format((int)($c['domains'] ?? 0)) ?></td>
+                <td class="num"><?= number_format((int)($c['new'] ?? 0)) ?></td>
+                <td class="num"><?= number_format((int)($c['good'] ?? 0)) ?></td>
+                <td class="num"><?= number_format((int)($c['bad'] ?? 0)) ?></td>
+                <td class="num"><?= number_format((int)($c['observing'] ?? 0)) ?></td>
+                <td class="num"><?= number_format((int)($c['untagged'] ?? 0)) ?></td>
+                <td class="num"><?= number_format((int)($c['watchlist'] ?? 0)) ?></td>
+                <td class="num"><?= number_format((int)($c['malicious'] ?? 0)) ?></td>
+                <td class="num"><?= number_format((int)($c['suspicious'] ?? 0)) ?></td>
             </tr>
             <?php endforeach; ?>
         </tbody>
@@ -318,21 +189,25 @@ function reportVtCell(array $r, array $vtLabels): string {
     </table>
 
     <?php if ($truncated): ?>
-        <p class="muted no-print">Some keyword sections were truncated to <?= number_format($maxRows) ?> domains each. Narrow the filters to print everything.</p>
+        <p class="muted no-print">Some keyword sections were truncated to <?= number_format($maxRows) ?> domains each.</p>
     <?php endif; ?>
 
-    <?php foreach ($report as $data): $c = $data['counts']; ?>
+    <?php foreach ($report as $data): $c = $data['counts'] ?? []; ?>
         <section class="report-section">
             <h2 class="report-section-title report-keyword-title">
-                <span class="report-keyword-name"><?= htmlspecialchars($data['keyword']) ?></span>
+                <span class="report-keyword-name"><?= htmlspecialchars((string)($data['keyword'] ?? '')) ?></span>
                 <span class="report-keyword-stats">
-                    <span class="report-pill"><?= number_format($c['domains']) ?> domains</span>
-                    <?php if ($c['new'] > 0): ?><span class="report-pill new"><?= number_format($c['new']) ?> new</span><?php endif; ?>
-                    <?php if ($c['malicious'] > 0): ?><span class="report-pill danger"><?= number_format($c['malicious']) ?> malicious</span><?php endif; ?>
-                    <?php if ($c['suspicious'] > 0): ?><span class="report-pill warning"><?= number_format($c['suspicious']) ?> suspicious</span><?php endif; ?>
+                    <span class="report-pill"><?= number_format((int)($c['domains'] ?? 0)) ?> domains</span>
+                    <?php if ((int)($c['new'] ?? 0) > 0): ?><span class="report-pill new"><?= number_format((int)$c['new']) ?> new</span><?php endif; ?>
+                    <?php if ((int)($c['malicious'] ?? 0) > 0): ?><span class="report-pill danger"><?= number_format((int)$c['malicious']) ?> malicious</span><?php endif; ?>
+                    <?php if ((int)($c['suspicious'] ?? 0) > 0): ?><span class="report-pill warning"><?= number_format((int)$c['suspicious']) ?> suspicious</span><?php endif; ?>
                 </span>
             </h2>
 
+            <?php $rows = is_array($data['rows'] ?? null) ? $data['rows'] : []; ?>
+            <?php if (empty($rows)): ?>
+                <p class="muted">No domains in this section.</p>
+            <?php else: ?>
             <table class="striped report-table report-detail">
                 <thead>
                     <tr>
@@ -352,7 +227,7 @@ function reportVtCell(array $r, array $vtLabels): string {
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($data['rows'] as $r):
+                    <?php foreach ($rows as $r):
                         $tagVal = (string)($r['tag'] ?? '');
                         $tagCell = isset($tagLabels[$tagVal])
                             ? '<span class="tag-chip ' . $tagVal . '">' . $tagLabels[$tagVal] . '</span>'
@@ -362,21 +237,23 @@ function reportVtCell(array $r, array $vtLabels): string {
 
                         $creation = !empty($r['creation_date']) ? substr(fmt_date((string)$r['creation_date']), 0, 10) : '—';
                         $expiration = !empty($r['expiration_date']) ? substr(fmt_date((string)$r['expiration_date']), 0, 10) : '—';
-                        $sourceLabel = ((string)$r['source'] === 'ct') ? 'OpenINTEL' : 'CZDS';
+                        $sourceLabel = ((string)($r['source'] ?? '') === 'ct') ? 'OpenINTEL' : 'CZDS';
                         $whoisStatus = (string)($r['whois_status'] ?? '');
                         $whoisCell = $whoisStatus === '' ? '<span class="muted">&mdash;</span>'
                             : '<span class="whois-status whois-' . htmlspecialchars($whoisStatus) . '">' . htmlspecialchars($whoisStatus) . '</span>';
                         $lastAnalysis = !empty($r['last_analysis_date']) ? substr(fmt_date((string)$r['last_analysis_date']), 0, 10) : '';
+                        $ns = is_array($r['_ns'] ?? null) ? $r['_ns'] : [];
+                        $firstSeen = !empty($r['first_seen']) ? fmt_date((string)$r['first_seen']) : '—';
                     ?>
                     <tr>
-                        <td class="domain-cell"><?= htmlspecialchars($r['domain']) ?></td>
-                        <td><?= htmlspecialchars($r['tld']) ?></td>
+                        <td class="domain-cell"><?= htmlspecialchars((string)($r['domain'] ?? '')) ?></td>
+                        <td><?= htmlspecialchars((string)($r['tld'] ?? '')) ?></td>
                         <td><?= htmlspecialchars($sourceLabel) ?></td>
-                        <td><?= htmlspecialchars(fmt_date($r['first_seen'])) ?></td>
+                        <td><?= htmlspecialchars($firstSeen) ?></td>
                         <td><?= htmlspecialchars($creation) ?><?php if (!empty($r['_is_new'])): ?> <span class="badge-new">NEW</span><?php endif; ?></td>
                         <td><?= htmlspecialchars($expiration) ?></td>
-                        <td><?= $r['registrar'] ? htmlspecialchars((string)$r['registrar']) : '<span class="muted">&mdash;</span>' ?></td>
-                        <td class="ns-cell"><?= !empty($r['_ns']) ? htmlspecialchars(implode(', ', $r['_ns'])) : '<span class="muted">&mdash;</span>' ?></td>
+                        <td><?= !empty($r['registrar']) ? htmlspecialchars((string)$r['registrar']) : '<span class="muted">&mdash;</span>' ?></td>
+                        <td class="ns-cell"><?= !empty($ns) ? htmlspecialchars(implode(', ', $ns)) : '<span class="muted">&mdash;</span>' ?></td>
                         <td><?= $whoisCell ?></td>
                         <td><?= $tagCell ?></td>
                         <td><?= $vtCell ?><?php if ($lastAnalysis !== ''): ?><span class="vt-detail"><?= htmlspecialchars($lastAnalysis) ?></span><?php endif; ?></td>
@@ -386,6 +263,7 @@ function reportVtCell(array $r, array $vtLabels): string {
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            <?php endif; ?>
         </section>
     <?php endforeach; ?>
 

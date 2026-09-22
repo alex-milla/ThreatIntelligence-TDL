@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.7.0] - 2026-09-22
+
+### Added - Saved report history (immutable snapshots)
+
+- **Generating a report now saves it.** The **Generate Report** button stores an immutable snapshot in the new `report_history` table (gzip-compressed) and opens it at `report_view.php?id=...`. The snapshot keeps the WHOIS/VirusTotal data collected at generation time, so an old report never changes even if matches are updated later.
+- **History tab** inside Reports (`?tab=history`): lists the saved reports (date, title, group, keywords, domains) with **Open** and **Delete** actions, and can be **filtered by keyword group** with the same group tabs as the builder. Each user only sees their own reports.
+- **Cleanup**: delete one report, delete the selected ones, or **delete all shown** (respects the active group filter), each with a confirmation.
+- **Shared builder** (`includes/report_builder.php`): the report data collection was extracted so generating and rendering use the same logic.
+
+### Changed
+- `report_view.php` now loads a saved snapshot by `id` (a foreign/unknown id returns 404). Direct links without an `id` redirect to the Reports page.
+- Reports still include every domain discovered in the selected period (hiding only explicitly excluded domains; historical unless requested), and the professional layout/KPIs/VT detail is unchanged.
+
 ## [v1.6.16] - 2026-09-22
 
 ### Fixed - A keyword with today's matches no longer disappears from the report

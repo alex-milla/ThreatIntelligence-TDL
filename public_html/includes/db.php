@@ -207,6 +207,24 @@ class Database {
         )");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_keyword_groups_user ON keyword_groups(user_id)");
 
+        // Immutable snapshots of generated reports (history). The full report
+        // data is stored gzip-compressed so an old report never changes even if
+        // the underlying matches/WHOIS/VT data does.
+        $db->exec("CREATE TABLE IF NOT EXISTS report_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT,
+            group_id INTEGER,
+            group_name TEXT,
+            filters TEXT,
+            keywords TEXT,
+            data BLOB,
+            domains INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_report_history_user ON report_history(user_id, created_at DESC)");
+
         // tag has no CHECK so new classification states (e.g. observing) can be
         // added without migrating; values are validated in PHP.
         $db->exec("CREATE TABLE IF NOT EXISTS domain_tags (

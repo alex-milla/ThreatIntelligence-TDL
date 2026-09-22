@@ -1384,6 +1384,36 @@ td select.browser-default,
     margin: 4px 0 16px;
 }
 
+/* Builder / History sub-tabs */
+.report-tabs {
+    display: flex;
+    gap: 6px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+}
+
+.report-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -1px;
+}
+
+.report-tab:hover { color: var(--primary); }
+.report-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+.report-tab .material-icons.tiny { font-size: 1rem; }
+
+.report-cover-title {
+    font-size: 0.98rem;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+}
+
 /* Cover / header of the printed report */
 .report-cover {
     border-bottom: 3px solid var(--primary);
