@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.11.1] - 2026-09-22
+
+### Changed - Print / PDF opens in a popup window
+
+- The **Print / PDF** button no longer loads the document in the current tab: it opens the print view in a **sized popup window** (reused on repeat clicks) via `window.open`. If a browser blocks popups, the link's `target="_blank"` falls back to a new tab — never the current tab.
+- The print view toolbar now has a **Close** button (`window.close()`, with `history.back()` / Reports fallback when the window was not opened by a script) instead of "Back to report". No auto-close.
+- No server-side change: still no PDF engine, no temporary files and no cache. The PDF continues to be produced by the browser on the user's device, so no data is stored server-side.
+
 ## [v1.11.0] - 2026-09-22
 
 ### Changed - Isolated, self-contained print / PDF document

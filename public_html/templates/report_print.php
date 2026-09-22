@@ -11,7 +11,7 @@
 ?>
 <div class="rp">
     <div class="rp-toolbar" data-pagedjs-ignore>
-        <a href="/report_view.php?id=<?= (int)$id ?>">Back to report</a>
+        <button type="button" onclick="closePrintWindow()">Close</button>
         <a href="/report_view.php?id=<?= (int)$id ?>&print=1<?= empty($showRaw) ? '&raw=1' : '' ?>"><?= empty($showRaw) ? 'Include raw data' : 'Hide raw data' ?></a>
         <button type="button" onclick="window.print()">Print / Save as PDF</button>
     </div>
@@ -226,3 +226,17 @@
         Sources: WHOIS/RDAP + VirusTotal only (DNS, passive DNS, TLS and IP/ASN are not integrated).
     </div>
 </div>
+
+<script>
+// Close the popup window after printing. Falls back to going back / Reports when
+// the page was not opened by a script (where window.close() is ignored).
+function closePrintWindow() {
+    if (window.opener && !window.opener.closed) {
+        window.close();
+    } else if (window.history.length > 1) {
+        window.history.back();
+    } else {
+        window.location.href = '/reports.php';
+    }
+}
+</script>

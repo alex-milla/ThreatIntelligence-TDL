@@ -201,7 +201,7 @@ require __DIR__ . '/templates/header.php';
     <a href="/reports.php" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">arrow_back</i>Back to Reports</a>
     <button type="button" class="btn btn-small btn-outline waves-effect" onclick="toggleAllDetails(true)"><i class="material-icons left">unfold_more</i>Expand all</button>
     <button type="button" class="btn btn-small btn-outline waves-effect" onclick="toggleAllDetails(false)"><i class="material-icons left">unfold_less</i>Collapse all</button>
-    <a href="/report_view.php?id=<?= (int)$id ?>&print=1" class="btn btn-small waves-effect"><i class="material-icons left">picture_as_pdf</i>Print / PDF</a>
+    <a href="/report_view.php?id=<?= (int)$id ?>&print=1" target="_blank" rel="noopener" class="btn btn-small waves-effect" onclick="return openPrintWindow(this.href);"><i class="material-icons left">picture_as_pdf</i>Print / PDF</a>
 </div>
 
 <div class="card report-card">
@@ -505,6 +505,18 @@ require __DIR__ . '/templates/header.php';
 </div>
 
 <script>
+// Open the print / PDF view in a sized popup (reused) instead of the current
+// tab. Returns false when the popup opens; if the browser blocks it, the link's
+// target="_blank" opens a new tab as a fallback (never the current tab).
+function openPrintWindow(url) {
+    var w = window.open(url, 'tdl_print',
+        'width=1024,height=900,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes');
+    if (w) {
+        try { w.focus(); } catch (e) {}
+        return false;
+    }
+    return true;
+}
 // Expand/collapse a single domain detail row.
 function toggleDetail(btn) {
     var row = btn.closest('tr');
