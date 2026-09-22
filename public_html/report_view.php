@@ -507,6 +507,11 @@ require __DIR__ . '/templates/header.php';
                                         </ul>
                                     </div>
                                 </div>
+                                <?php if (($r['verdict'] ?? null) !== null): ?>
+                                <div class="dd-vt">
+                                    <a class="btn btn-small btn-outline info waves-effect" href="https://www.virustotal.com/gui/domain/<?= rawurlencode((string)($r['domain'] ?? '')) ?>" target="_blank" rel="noopener"><i class="material-icons left">shield</i>Open in VirusTotal</a>
+                                </div>
+                                <?php endif; ?>
                                 <details class="dd-raw">
                                     <summary>Raw data</summary>
                                     <pre><?= $rawJson ?></pre>

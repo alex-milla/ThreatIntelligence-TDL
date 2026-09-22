@@ -211,6 +211,10 @@
                 <?php endforeach; ?>
             </ul>
 
+            <?php if (($r['verdict'] ?? null) !== null): ?>
+                <p class="rp-vt"><b>VirusTotal:</b> <a href="https://www.virustotal.com/gui/domain/<?= rawurlencode((string)($r['domain'] ?? '')) ?>">https://www.virustotal.com/gui/domain/<?= htmlspecialchars((string)($r['domain'] ?? '')) ?></a></p>
+            <?php endif; ?>
+
             <?php if (!empty($showRaw)): ?>
                 <h4>Raw data</h4>
                 <pre class="rp-raw"><?= $rawJson ?></pre>

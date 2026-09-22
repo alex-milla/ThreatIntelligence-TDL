@@ -106,6 +106,7 @@ body.rp-body {
 .rp-timeline { list-style: none; margin: 2px 0 0; padding: 0; }
 .rp-timeline li { margin: 0; font-size: 11px; break-inside: avoid; }
 .rp-tl-date { font-weight: 600; }
+.rp-vt { margin: 2mm 0 0; font-size: 9pt; word-break: break-all; }
 .rp-raw {
     break-inside: avoid;
     columns: 2;

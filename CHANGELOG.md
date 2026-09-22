@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.11.6] - 2026-09-22
+
+### Added - VirusTotal link in the report detail
+
+- In the **report** (screen) and in the per-keyword **match list**, the domain detail now shows an **"Open in VirusTotal"** button (above *Raw data*), pointing to `https://www.virustotal.com/gui/domain/<domain>`, when the domain has a cached VirusTotal verdict.
+- In the **print / PDF document**, the same block shows the **visible URL** (and remains a clickable link in the saved PDF), so the link is readable on paper.
+- The link is derived from the domain, so **older saved reports** show it too (when they have a verdict); no schema or endpoint changes.
+
 ## [v1.11.5] - 2026-09-22
 
 ### Changed - Dashboard domain lookup is exact-only and Enter triggers it

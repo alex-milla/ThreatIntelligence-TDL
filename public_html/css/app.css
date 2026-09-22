@@ -1733,6 +1733,10 @@ td select.browser-default,
     margin-top: 10px;
 }
 
+.dd-vt {
+    margin-top: 10px;
+}
+
 .dd-raw pre {
     white-space: pre-wrap;
     word-break: break-word;
