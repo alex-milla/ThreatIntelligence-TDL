@@ -1380,6 +1380,75 @@ td select.browser-default,
     color: var(--text-muted);
 }
 
+.report-scope-form {
+    margin: 4px 0 16px;
+}
+
+/* Cover / header of the printed report */
+.report-cover {
+    border-bottom: 3px solid var(--primary);
+    padding-bottom: 14px;
+    margin-bottom: 18px;
+}
+
+.report-cover-brand {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--primary);
+}
+
+.report-cover h1 {
+    font-size: 1.7rem;
+    margin: 4px 0 8px;
+}
+
+.report-cover-sub {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 20px;
+    font-size: 0.86rem;
+    color: var(--text-muted);
+}
+
+/* KPI strip */
+.report-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 10px;
+    margin: 0 0 18px;
+}
+
+.report-kpi {
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--surface-2);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+}
+
+.report-kpi-value {
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.report-kpi-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.report-kpi.danger  { border-left-color: var(--danger); }
+.report-kpi.warning { border-left-color: var(--warning); }
+.report-kpi.good    { border-left-color: var(--success); }
+.report-kpi.bad     { border-left-color: var(--danger); }
+
 .report-header {
     border-bottom: 2px solid var(--border-strong);
     padding-bottom: 12px;
@@ -1419,6 +1488,87 @@ td select.browser-default,
     font-size: 0.82rem;
 }
 
+/* Per-keyword section heading with stat pills */
+.report-keyword-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+}
+
+.report-keyword-name {
+    font-weight: 700;
+}
+
+.report-keyword-stats {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.report-pill {
+    display: inline-block;
+    padding: 1px 9px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+}
+
+.report-pill.new     { background: var(--primary-soft); border-color: var(--primary-soft); color: var(--primary); }
+.report-pill.danger  { background: var(--danger-bg);  border-color: var(--danger-border);  color: var(--danger); }
+.report-pill.warning { background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning); }
+
+/* Detail table cells */
+.report-summary tfoot th {
+    border-top: 2px solid var(--border-strong);
+}
+
+.report-detail .domain-cell {
+    font-weight: 600;
+    word-break: break-all;
+}
+
+.report-detail .ns-cell {
+    max-width: 220px;
+    word-break: break-word;
+}
+
+.vt-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.vt-detail {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.whois-status {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.whois-status.whois-ok          { color: var(--success); }
+.whois-status.whois-unsupported { color: var(--warning); }
+.whois-status.whois-error       { color: var(--danger); }
+
+.report-foot {
+    margin-top: 22px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+
 .report-section-title {
     margin: 22px 0 8px;
     font-size: 1.1rem;
@@ -1443,8 +1593,12 @@ td select.browser-default,
    Print
    ------------------------------------------------------------ */
 @media print {
+    @page {
+        size: A4 landscape;
+        margin: 12mm;
+    }
     .app-nav, nav, .sidenav, .btn, .action-menu, .admin-tabs, .theme-toggle,
-    .no-print, .page-footer, .report-toolbar, .report-options,
+    .no-print, .page-footer, .report-toolbar, .report-options, .report-scope-form,
     .group-tabs, .group-create-form, input[type="checkbox"] {
         display: none !important;
     }

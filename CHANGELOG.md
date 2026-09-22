@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.15] - 2026-09-22
+
+### Changed - Reports show only the last sync, with a professional layout
+
+- **Report builder (`reports.php`)**: by default it now lists only the keywords that had matches in the **last sync (last 24h)**. A new **"Show all keywords"** checkbox lifts that restriction. Group tab counts follow the same scope.
+- **Report output (`report_view.php`)**: keywords with no matching domains are **omitted** (no more empty sections), so a report contains only the keywords from the last sync. The selected group name is shown in the header.
+- **Professional format**: new cover header (brand, title, group/period/generated/user), a **KPI strip** (Domains, New, Malicious, Suspicious, Good, Bad), a restyled per-keyword **Summary** table (now including Watchlist) and cleaner per-keyword detail sections with stat pills.
+- **All WHOIS/VirusTotal data**: the detail table now shows WHOIS status and the full cached VirusTotal data (verdict plus malicious/suspicious/harmless/undetected counts, reputation and last analysis date).
+- **Print**: A4 **landscape** with wider margins, per-keyword page breaks and repeated table headers.
+
 ## [v1.6.14] - 2026-09-22
 
 ### Changed - Per-keyword match list hides excluded domains and sorts by Created

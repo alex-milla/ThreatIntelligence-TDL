@@ -84,8 +84,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_g
 
 // ---------- Filters (whitelisted) ----------
 $groupFilter = (string)($_GET['group'] ?? 'all'); // 'all' | 'ungrouped' | numeric id
+// By default the builder lists only keywords with matches from the last sync
+// (last 24h). "Show all keywords" (?scope=all) lifts that restriction.
+$onlyRecent = (string)($_GET['scope'] ?? '') !== 'all';
 
-// Load groups + per-group keyword counts
+// Validate numeric group filter
+if ($groupFilter !== 'all' && $groupFilter !== 'ungrouped' && !ctype_digit($groupFilter)) {
+    $groupFilter = 'all';
+}
+
+// Load groups
 $groupStmt = $db->prepare("SELECT id, name FROM keyword_groups WHERE user_id = ? ORDER BY name ASC");
 $groupStmt->execute([$userId]);
 $groups = $groupStmt->fetchAll();
@@ -94,35 +102,13 @@ foreach ($groups as $g) {
     $groupsById[(int)$g['id']] = $g['name'];
 }
 
-$groupCounts = [];
-$countStmt = $db->prepare("SELECT group_id, COUNT(*) AS cnt FROM keywords WHERE user_id = ? GROUP BY group_id");
-$countStmt->execute([$userId]);
-foreach ($countStmt->fetchAll() as $c) {
-    $groupCounts[$c['group_id'] === null ? 'ungrouped' : (string)$c['group_id']] = (int)$c['cnt'];
-}
-$ungroupedCount = $groupCounts['ungrouped'] ?? 0;
-$totalKeywords = array_sum($groupCounts);
-
-// Validate numeric group filter
-if ($groupFilter !== 'all' && $groupFilter !== 'ungrouped' && !ctype_digit($groupFilter)) {
-    $groupFilter = 'all';
-}
-
-// ---------- Keyword list with visible match counts (same semantics as keywords.php) ----------
+// ---------- Keyword list with visible + recent match counts ----------
+// Same visibility semantics as keywords.php/notifications (good/bad, watchlist,
+// excluded and validated-old hidden; observing kept).
 $newDomainDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
 
-$where = "WHERE k.user_id = ?";
-$params = [$newDomainDays, $userId];
-if ($groupFilter === 'ungrouped') {
-    $where .= " AND k.group_id IS NULL";
-} elseif (ctype_digit($groupFilter)) {
-    $where .= " AND k.group_id = ?";
-    $params[] = (int)$groupFilter;
-}
-
-$kwStmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.group_id, k.created_at,
-    COUNT(CASE WHEN
-        n.id IS NOT NULL
+// Reused for both counters; it contains one bound parameter (the day window).
+$visible = "n.id IS NOT NULL
         AND w.user_id IS NULL
         AND dt.domain IS NULL
         AND NOT EXISTS (SELECT 1 FROM domain_tags dx WHERE dx.domain = m.domain AND dx.tag = 'excluded')
@@ -133,8 +119,11 @@ $kwStmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.group_id, k.cre
                 AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) IS NOT NULL
                 AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) < datetime(t.last_ok_sync, '-' || ? || ' days')
             )
-        )
-    THEN 1 END) AS visible_count
+        )";
+
+$kwStmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.group_id, k.created_at,
+    COUNT(CASE WHEN $visible THEN 1 END) AS visible_count,
+    COUNT(CASE WHEN $visible AND m.discovered_at >= datetime('now', '-1 day') THEN 1 END) AS recent_count
 FROM keywords k
 LEFT JOIN matches m ON m.keyword_id = k.id AND m.is_historical = 0
 LEFT JOIN notifications n ON n.match_id = m.id AND n.user_id = k.user_id
@@ -143,11 +132,36 @@ LEFT JOIN domain_tags dt ON dt.domain = m.domain AND dt.tag IN ('good','bad')
 LEFT JOIN domain_tags dob ON dob.domain = m.domain AND dob.tag = 'observing'
 LEFT JOIN domain_whois dw ON dw.domain = m.domain
 LEFT JOIN tlds t ON t.name = m.tld
-$where
+WHERE k.user_id = ?
 GROUP BY k.id
 ORDER BY k.keyword ASC");
-$kwStmt->execute($params);
-$keywords = $kwStmt->fetchAll();
+$kwStmt->execute([$newDomainDays, $newDomainDays, $userId]);
+$allKeywords = $kwStmt->fetchAll();
+
+// Scope filter: keep only keywords active in the last sync unless "show all".
+if ($onlyRecent) {
+    $allKeywords = array_values(array_filter($allKeywords, fn($k) => (int)$k['recent_count'] > 0));
+}
+
+// Per-group counts over the visible scope (used by the group tabs), then the
+// subset shown for the active tab.
+$groupCounts = [];
+foreach ($allKeywords as $k) {
+    $key = $k['group_id'] === null ? 'ungrouped' : (string)$k['group_id'];
+    $groupCounts[$key] = ($groupCounts[$key] ?? 0) + 1;
+}
+$ungroupedCount = $groupCounts['ungrouped'] ?? 0;
+$totalKeywords = count($allKeywords);
+
+$keywords = array_values(array_filter($allKeywords, function ($k) use ($groupFilter) {
+    if ($groupFilter === 'ungrouped') {
+        return $k['group_id'] === null;
+    }
+    if (ctype_digit($groupFilter)) {
+        return (string)$k['group_id'] === $groupFilter;
+    }
+    return true;
+}));
 
 $groupFilterLabel = 'All keywords';
 if ($groupFilter === 'ungrouped') {
@@ -163,9 +177,9 @@ require __DIR__ . '/templates/header.php';
 <div class="card">
     <div class="card-head">
         <h2><i class="material-icons left">assessment</i>Reports</h2>
-        <span class="muted"><?= $totalKeywords ?> keyword(s) in <?= count($groups) ?> group(s)</span>
+        <span class="muted"><?= $totalKeywords ?> keyword(s)<?= $onlyRecent ? ' with matches in the last 24h' : '' ?> in <?= count($groups) ?> group(s)</span>
     </div>
-    <p class="muted">Select one or more keywords (or a whole group) and generate a printable report with all the data collected for each matched domain.</p>
+    <p class="muted">Select one or more keywords (or a whole group) and generate a printable report with all the data collected for each matched domain. By default only the keywords that had matches in the last sync (last 24h) are listed.</p>
 
     <?php if ($message): ?>
         <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= htmlspecialchars($message) ?></div>
@@ -194,6 +208,15 @@ require __DIR__ . '/templates/header.php';
         <a href="/reports.php?group=ungrouped" class="group-tab <?= $groupFilter === 'ungrouped' ? 'active' : '' ?>">Ungrouped (<?= $ungroupedCount ?>)</a>
     </div>
 
+    <!-- Scope: last sync vs every keyword -->
+    <form method="GET" class="report-scope-form">
+        <input type="hidden" name="group" value="<?= htmlspecialchars($groupFilter) ?>">
+        <label class="check-inline" title="List every keyword, including those without recent matches">
+            <input type="checkbox" name="scope" value="all" <?= $onlyRecent ? '' : 'checked' ?> onchange="this.form.submit()">
+            <span>Show all keywords (not only the last sync)</span>
+        </label>
+    </form>
+
     <!-- Create group form -->
     <form method="POST" class="group-create-form">
         <?php csrfField(); ?>
@@ -207,7 +230,11 @@ require __DIR__ . '/templates/header.php';
     </form>
 
     <?php if (empty($keywords)): ?>
-        <p class="muted">No keywords in this view. <a href="/keywords.php">Add keywords</a> first or switch to another group.</p>
+        <p class="muted">
+            No keywords in this view<?= $onlyRecent ? ' with matches in the last 24h' : '' ?>.
+            <a href="/keywords.php">Add keywords</a>, switch to another group, or tick
+            <strong>Show all keywords</strong> to see every keyword.
+        </p>
     <?php else: ?>
         <div class="report-options">
             <div class="report-filter">
@@ -248,6 +275,7 @@ require __DIR__ . '/templates/header.php';
         <div class="section-actions">
             <button type="button" class="btn waves-effect" onclick="generateReport()"><i class="material-icons left">print</i>Generate Report</button>
             <span class="muted">Report for the selected keywords (all visible keywords if none is checked).</span>
+            <input type="hidden" id="report-group" value="<?= htmlspecialchars($groupFilter) ?>">
         </div>
 
         <table class="striped highlight responsive-table">
@@ -304,6 +332,8 @@ function generateReport() {
     p.set('date', document.getElementById('report-date').value);
     p.set('state', document.getElementById('report-state').value);
     p.set('source', document.getElementById('report-source').value);
+    var grp = document.getElementById('report-group');
+    if (grp && grp.value && grp.value !== 'all') p.set('group', grp.value);
     if (document.getElementById('report-archived').checked) p.set('archived', '1');
     window.location = '/report_view.php?' + p.toString();
 }
