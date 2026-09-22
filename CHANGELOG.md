@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.9.0] - 2026-09-22
+
+### Added - Report analysis (Phase B)
+
+- **Change since previous report**: when a previous saved report with the **same keyword set and group** exists, the report shows a comparison table (Domains, New, Review required, Confirmed malicious, Suspicious, Confirmed benign) with the delta.
+- **Shared infrastructure**: name servers / registrars used by more than one domain in the report (pure correlation of already-collected data, no external source).
+- **Per-domain timeline**: created / first seen / matching domain observed / report generated, with the source of each event.
+- **Explainable Risk + Confidence** per domain (no opaque score): risk from the intensity of the signals, confidence from data availability (WHOIS available + VirusTotal checked), with the reasons listed.
+- **Data availability & traceability in the detail panel**: WHOIS status + source + last updated and VirusTotal last analysis + checked time, plus the analyst note (`domain_tags.note`) when present.
+- **First seen / Last seen** of the report shown in the header meta.
+
+### Changed
+- The report snapshot (`report_builder.php`) now also stores `dw.source`, `dw.updated_at`, `dv.checked_at` and `dt.note`, so new reports include traceability and notes. Older saved reports still render (those fields show as `—`).
+- The footer states the integrated sources (WHOIS/RDAP + VirusTotal) and that DNS, passive DNS, TLS and IP/ASN are not integrated.
+
+### Verification
+- Real render of two saved reports (same keyword set): the previous-report comparison, shared infrastructure (shared name server), per-domain timeline, risk/confidence block, analyst note and traceability fields are all present, with no PHP errors.
+- `php -l` on all `public_html` files: 0 errors; `node --check assets/bulk.js`: OK; `worker/tests.py`: PASS.
+
 ## [v1.8.0] - 2026-09-22
 
 ### Added - Threat-intelligence report layout (Phase A)

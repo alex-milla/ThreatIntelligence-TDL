@@ -1753,6 +1753,91 @@ td select.browser-default,
 .avail-error        { color: var(--danger); }
 .avail-not_checked  { color: var(--text-muted); }
 
+/* Shared infrastructure */
+.report-shared {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 10px;
+    margin: 0 0 14px;
+}
+
+.shared-item {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-2);
+    padding: 8px 10px;
+}
+
+.shared-value {
+    display: block;
+    font-weight: 600;
+    word-break: break-all;
+}
+
+.shared-count {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.shared-domains {
+    display: block;
+    font-size: 0.78rem;
+    margin-top: 2px;
+    word-break: break-word;
+}
+
+/* Previous-report comparison */
+.report-compare td,
+.report-compare th {
+    font-size: 0.84rem;
+}
+
+/* Timeline */
+.report-timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.report-timeline li {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    padding: 3px 0 3px 16px;
+}
+
+.report-timeline .tl-dot {
+    position: absolute;
+    left: 0;
+    top: 9px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--primary);
+}
+
+.tl-date { font-weight: 600; font-size: 0.78rem; white-space: nowrap; }
+.tl-label { font-size: 0.82rem; }
+.tl-source { font-size: 0.72rem; }
+
+/* Risk pill */
+.risk-pill {
+    display: inline-block;
+    padding: 1px 9px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+}
+.risk-high   { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
+.risk-medium { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
+.risk-low    { background: var(--surface-3);  color: var(--text-muted); border-color: var(--border-strong); }
+
 .report-section-title {
     margin: 22px 0 8px;
     font-size: 1.1rem;

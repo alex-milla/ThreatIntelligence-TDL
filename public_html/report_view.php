@@ -5,13 +5,14 @@
  * Reports are generated from the Reports builder and stored (immutably) in
  * `report_history`. This page loads one by id, decodes the gzip-compressed
  * snapshot and renders it as a threat-intelligence report: an executive
- * summary, mutually-exclusive assessment KPIs, and a triage table with an
- * expandable detail panel per domain. All the derived fields are computed from
- * the stored snapshot via `includes/report_present.php` (no schema changes), so
- * older saved reports render with the new layout too.
+ * summary, mutually-exclusive assessment KPIs, shared-infrastructure and
+ * previous-report comparisons, and a triage table with an expandable detail
+ * panel per domain (assessment, timeline, registration, reputation, detection
+ * and raw data).
  *
- * Printing expands every domain detail (see the print stylesheet and the
- * `beforeprint` handler) so nothing is lost on paper / PDF.
+ * All derived fields are computed from the stored snapshot via
+ * `includes/report_present.php` (no schema changes), so older saved reports
+ * render with the new layout too. Printing expands every domain detail.
  */
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
@@ -27,7 +28,7 @@ if ($id <= 0) {
     exit;
 }
 
-$stmt = $db->prepare("SELECT title, group_name, filters, keywords, data, domains, created_at
+$stmt = $db->prepare("SELECT title, group_id, group_name, filters, keywords, data, domains, created_at
     FROM report_history WHERE id = ? AND user_id = ? LIMIT 1");
 $stmt->execute([$id, $userId]);
 $row = $stmt->fetch();
@@ -71,14 +72,8 @@ $tagLabels = ['good' => 'GOOD', 'bad' => 'BAD', 'observing' => 'OBSERVING'];
 
 // ---------- Derive the presentation model + aggregates ----------
 $sections = [];
-$statusCounts = ['malicious' => 0, 'suspicious' => 0, 'benign' => 0, 'review_required' => 0, 'unknown' => 0];
-$totalDomains = 0;
-$newCount = 0;
-$watchlistCount = 0;
-$notCheckedVt = 0;
-$grandCounts = ['good' => 0, 'bad' => 0, 'observing' => 0, 'untagged' => 0, 'watchlist' => 0,
-                'new' => 0, 'malicious' => 0, 'suspicious' => 0];
-
+$firstSeenTs = null;
+$lastSeenTs = null;
 foreach ($report as $data) {
     $kw = (string)($data['keyword'] ?? '');
     $counts = $data['counts'] ?? [];
@@ -88,28 +83,75 @@ foreach ($report as $data) {
         $age = reportDomainAge($r['creation_date'] ?? null, $refUtc);
         $status = reportDomainStatus($r, $rules);
         $rep = reportReputation($r);
+        $avail = reportAvailability($r);
         $enriched[] = [
-            'row'    => $r,
-            'age'    => $age,
-            'status' => $status,
-            'rep'    => $rep,
-            'why'    => reportWhyFlagged($r),
-            'avail'  => reportAvailability($r),
+            'row'      => $r,
+            'age'      => $age,
+            'status'   => $status,
+            'rep'      => $rep,
+            'why'      => reportWhyFlagged($r),
+            'avail'    => $avail,
+            'risk'     => reportRiskAssessment($r, $status, $avail),
+            'timeline' => reportTimeline($r, $refUtc),
         ];
-        $statusCounts[$status]++;
-        $totalDomains++;
-        if (!empty($r['_is_new'])) { $newCount++; }
-        if (!empty($r['in_watchlist'])) { $watchlistCount++; }
-        if ($rep['state'] === 'not_checked') { $notCheckedVt++; }
+        $fs = $r['first_seen'] ?? ($r['discovered_at'] ?? null);
+        if ($fs && ($t = strtotime((string)$fs)) !== false && ($firstSeenTs === null || $t < $firstSeenTs)) {
+            $firstSeenTs = $t;
+        }
+        if (!empty($r['discovered_at']) && ($t = strtotime((string)$r['discovered_at'])) !== false && ($lastSeenTs === null || $t > $lastSeenTs)) {
+            $lastSeenTs = $t;
+        }
     }
     $sections[] = ['keyword' => $kw, 'counts' => $counts, 'rows' => $enriched];
-
-    foreach ($grandCounts as $k => $_) {
-        if (isset($counts[$k])) { $grandCounts[$k] += (int)$counts[$k]; }
-    }
 }
 
-// Executive summary notes (never turn "no verdict" into "safe").
+$currentAgg = reportAggregateReport($report, $rules, $refUtc);
+$statusCounts = $currentAgg['status'];
+$totalDomains = $currentAgg['domains'];
+$newCount = $currentAgg['new'];
+$watchlistCount = $currentAgg['watchlist'];
+$notCheckedVt = $currentAgg['not_checked_vt'];
+
+// ---------- Shared infrastructure (correlation of collected data) ----------
+$shared = reportSharedInfrastructure($sections);
+$hasShared = !empty($shared['nameservers']) || !empty($shared['registrars']);
+
+// ---------- Previous report comparison (same keyword set + group) ----------
+$prevSnapshot = null;
+$prevId = 0;
+$prevCreated = '';
+$currentKeywords = is_array($snapshot['keywords'] ?? null) ? $snapshot['keywords'] : [];
+sort($currentKeywords);
+$gid = $row['group_id'] ?? null;
+$prevStmt = $db->prepare("SELECT id, group_id, keywords, data, created_at
+    FROM report_history WHERE user_id = ? AND id < ? ORDER BY id DESC LIMIT 20");
+$prevStmt->execute([$userId, $id]);
+foreach ($prevStmt->fetchAll() as $p) {
+    $pkw = json_decode((string)$p['keywords'], true) ?: [];
+    sort($pkw);
+    $sameGroup = (($p['group_id'] === null && ($gid === null || $gid === ''))
+        || ((string)$p['group_id'] === (string)$gid));
+    if (!$sameGroup || $pkw !== $currentKeywords) {
+        continue;
+    }
+    $raw2 = @gzuncompress((string)$p['data']);
+    $cand = $raw2 !== false ? (json_decode($raw2, true) ?: null) : null;
+    if ($cand && !empty($cand['report'])) {
+        $prevSnapshot = $cand;
+        $prevId = (int)$p['id'];
+        $prevCreated = (string)$p['created_at'];
+    }
+    break;
+}
+$prevAgg = $prevSnapshot
+    ? reportAggregateReport($prevSnapshot['report'] ?? [], $rules, (string)($prevSnapshot['generated_at'] ?? ''))
+    : null;
+$delta = function (int $old, int $new): string {
+    $d = $new - $old;
+    return $d > 0 ? '+' . $d : ($d < 0 ? (string)$d : '0');
+};
+
+// ---------- Executive summary notes (never "no verdict" => "safe") ----------
 $execNotes = [];
 $execNotes[] = count($sections) === 1
     ? 'All domains match the monitored keyword "' . (string)($sections[0]['keyword'] ?? '') . '".'
@@ -117,17 +159,16 @@ $execNotes[] = count($sections) === 1
 if ($newCount > 0) {
     $execNotes[] = $newCount . ' were recently registered.';
 }
-if ($statusCounts['malicious'] > 0) {
-    $execNotes[] = $statusCounts['malicious'] . ' confirmed malicious (VirusTotal or analyst).';
-} else {
-    $execNotes[] = 'No confirmed malicious verdict.';
-}
+$execNotes[] = $statusCounts['malicious'] > 0
+    ? $statusCounts['malicious'] . ' confirmed malicious (VirusTotal or analyst).'
+    : 'No confirmed malicious verdict.';
 $execNotes[] = $notCheckedVt > 0
     ? 'No external reputation verdict was available for ' . $notCheckedVt . ' domain(s) at generation time.'
     : 'Every domain has a cached VirusTotal verdict.';
 if ($watchlistCount > 0) {
     $execNotes[] = $watchlistCount . ' domain(s) are in the watchlist.';
 }
+$fmtTs = fn($t) => $t ? fmt_date(gmdate('Y-m-d H:i:s', $t)) : '—';
 
 require __DIR__ . '/templates/header.php';
 ?>
@@ -183,6 +224,8 @@ require __DIR__ . '/templates/header.php';
     <div class="report-meta">
         <div><span class="report-meta-label">Keywords included</span> <?= count($sections) ?></div>
         <div><span class="report-meta-label">Domains</span> <?= number_format($totalDomains) ?></div>
+        <div><span class="report-meta-label">First seen</span> <?= htmlspecialchars($fmtTs($firstSeenTs)) ?></div>
+        <div><span class="report-meta-label">Last seen</span> <?= htmlspecialchars($fmtTs($lastSeenTs)) ?></div>
         <div><span class="report-meta-label">Filters</span> <?= htmlspecialchars($filterSummary) ?></div>
     </div>
     <div class="report-keywords">
@@ -228,17 +271,67 @@ require __DIR__ . '/templates/header.php';
             <tr>
                 <th>Total</th>
                 <th class="num"><?= number_format($totalDomains) ?></th>
-                <th class="num"><?= number_format($grandCounts['new']) ?></th>
+                <th class="num"><?= number_format($newCount) ?></th>
                 <th class="num"><?= number_format($statusCounts['review_required']) ?></th>
-                <th class="num"><?= number_format($grandCounts['good']) ?></th>
-                <th class="num"><?= number_format($grandCounts['bad']) ?></th>
-                <th class="num"><?= number_format($grandCounts['observing']) ?></th>
-                <th class="num"><?= number_format($grandCounts['untagged']) ?></th>
-                <th class="num"><?= number_format($grandCounts['malicious']) ?></th>
-                <th class="num"><?= number_format($grandCounts['suspicious']) ?></th>
+                <th class="num"><?= number_format($statusCounts['benign']) ?></th>
+                <th class="num">&mdash;</th>
+                <th class="num">&mdash;</th>
+                <th class="num">&mdash;</th>
+                <th class="num"><?= number_format($statusCounts['malicious']) ?></th>
+                <th class="num"><?= number_format($statusCounts['suspicious']) ?></th>
             </tr>
         </tfoot>
     </table>
+
+    <?php if ($hasShared): ?>
+        <h2 class="report-section-title">Shared infrastructure</h2>
+        <div class="report-shared">
+            <?php foreach ($shared['nameservers'] as $ns => $doms): ?>
+                <div class="shared-item">
+                    <span class="shared-value"><?= htmlspecialchars($ns) ?></span>
+                    <span class="shared-count"><?= count($doms) ?> domains</span>
+                    <span class="shared-domains"><?= htmlspecialchars(implode(', ', array_slice($doms, 0, 8))) ?><?= count($doms) > 8 ? ' …' : '' ?></span>
+                </div>
+            <?php endforeach; ?>
+            <?php foreach ($shared['registrars'] as $reg => $doms): ?>
+                <div class="shared-item">
+                    <span class="shared-value"><?= htmlspecialchars($reg) ?></span>
+                    <span class="shared-count"><?= count($doms) ?> domains (registrar)</span>
+                    <span class="shared-domains"><?= htmlspecialchars(implode(', ', array_slice($doms, 0, 8))) ?><?= count($doms) > 8 ? ' …' : '' ?></span>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <p class="muted">Domains sharing the same name server or registrar. Correlation of already-collected data (no external source).</p>
+    <?php endif; ?>
+
+    <?php if ($prevAgg !== null): ?>
+        <h2 class="report-section-title">Change since previous report</h2>
+        <table class="striped report-table report-compare">
+            <thead>
+                <tr><th>Metric</th><th class="num">Previous</th><th class="num">Current</th><th class="num">Change</th></tr>
+            </thead>
+            <tbody>
+                <?php
+                $compareRows = [
+                    'Domains' => [$prevAgg['domains'], $totalDomains],
+                    'New' => [$prevAgg['new'], $newCount],
+                    'Review required' => [$prevAgg['status']['review_required'], $statusCounts['review_required']],
+                    'Confirmed malicious' => [$prevAgg['status']['malicious'], $statusCounts['malicious']],
+                    'Suspicious' => [$prevAgg['status']['suspicious'], $statusCounts['suspicious']],
+                    'Confirmed benign' => [$prevAgg['status']['benign'], $statusCounts['benign']],
+                ];
+                foreach ($compareRows as $label => $pair): ?>
+                <tr>
+                    <td><?= htmlspecialchars($label) ?></td>
+                    <td class="num"><?= number_format($pair[0]) ?></td>
+                    <td class="num"><?= number_format($pair[1]) ?></td>
+                    <td class="num"><?= htmlspecialchars($delta((int)$pair[0], (int)$pair[1])) ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <p class="muted">Compared with report #<?= (int)$prevId ?> generated <?= htmlspecialchars(fmt_date($prevCreated)) ?> (same keyword set and group).</p>
+    <?php endif; ?>
 
     <h2 class="report-section-title">Detections</h2>
 
@@ -279,6 +372,7 @@ require __DIR__ . '/templates/header.php';
                         $r = $er['row'];
                         $status = $er['status'];
                         $rep = $er['rep'];
+                        $risk = $er['risk'];
                         $whois = $er['avail']['whois'];
                         $ns = is_array($r['_ns'] ?? null) ? $r['_ns'] : [];
                         $sourceLabel = ((string)($r['source'] ?? '') === 'ct') ? 'OpenINTEL' : 'CZDS';
@@ -307,14 +401,24 @@ require __DIR__ . '/templates/header.php';
                             <div class="domain-detail">
                                 <div class="dd-grid">
                                     <div class="dd-block">
-                                        <h4>Timing</h4>
+                                        <h4>Assessment</h4>
                                         <dl class="dd-list">
-                                            <div><dt>First seen</dt><dd><?= htmlspecialchars($firstSeen) ?></dd></div>
-                                            <div><dt>Discovered</dt><dd><?= htmlspecialchars($discovered) ?></dd></div>
-                                            <div><dt>Created</dt><dd><?= htmlspecialchars($created) ?></dd></div>
-                                            <div><dt>Age</dt><dd><?= htmlspecialchars(reportAgeLabel($er['age'])) ?></dd></div>
-                                            <div><dt>Expiration</dt><dd><?= htmlspecialchars($expiration) ?></dd></div>
+                                            <div><dt>Risk</dt><dd><span class="risk-pill risk-<?= htmlspecialchars($risk['risk']) ?>"><?= htmlspecialchars(ucfirst($risk['risk'])) ?></span></dd></div>
+                                            <div><dt>Confidence</dt><dd><?= htmlspecialchars(ucfirst($risk['confidence'])) ?></dd></div>
                                         </dl>
+                                        <ul class="dd-findings">
+                                            <?php foreach ($risk['reasons'] as $reason): ?>
+                                                <li><?= htmlspecialchars($reason) ?></li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    </div>
+                                    <div class="dd-block">
+                                        <h4>Timeline</h4>
+                                        <ul class="report-timeline">
+                                            <?php foreach ($er['timeline'] as $ev): ?>
+                                                <li><span class="tl-dot"></span><span class="tl-date"><?= htmlspecialchars(fmt_date((string)$ev['at'])) ?></span><span class="tl-label"><?= htmlspecialchars($ev['label']) ?></span><span class="tl-source muted"><?= htmlspecialchars($ev['source']) ?></span></li>
+                                            <?php endforeach; ?>
+                                        </ul>
                                     </div>
                                     <div class="dd-block">
                                         <h4>Registration</h4>
@@ -322,6 +426,8 @@ require __DIR__ . '/templates/header.php';
                                             <div><dt>Registrar</dt><dd><?= !empty($r['registrar']) ? htmlspecialchars((string)$r['registrar']) : '<span class="muted">&mdash;</span>' ?></dd></div>
                                             <div><dt>Name servers</dt><dd><?= !empty($ns) ? htmlspecialchars(implode(', ', $ns)) : '<span class="muted">&mdash;</span>' ?></dd></div>
                                             <div><dt>WHOIS</dt><dd><span class="avail avail-<?= htmlspecialchars($whois['state']) ?>"><?= htmlspecialchars($whois['label']) ?></span></dd></div>
+                                            <div><dt>Source</dt><dd><?= !empty($r['whois_source']) ? htmlspecialchars((string)$r['whois_source']) : '<span class="muted">&mdash;</span>' ?></dd></div>
+                                            <div><dt>Updated</dt><dd><?= !empty($r['whois_updated_at']) ? htmlspecialchars(fmt_date((string)$r['whois_updated_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
                                         </dl>
                                     </div>
                                     <div class="dd-block">
@@ -329,6 +435,7 @@ require __DIR__ . '/templates/header.php';
                                         <dl class="dd-list">
                                             <div><dt>VirusTotal</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($rep['state']) ?>"><?= htmlspecialchars($rep['label']) ?></span><?php if ($rep['detail'] !== ''): ?> <span class="muted"><?= htmlspecialchars($rep['detail']) ?></span><?php endif; ?></dd></div>
                                             <div><dt>Last analysis</dt><dd><?= !empty($r['last_analysis_date']) ? htmlspecialchars(substr(fmt_date((string)$r['last_analysis_date']), 0, 10)) : '<span class="muted">&mdash;</span>' ?></dd></div>
+                                            <div><dt>Checked</dt><dd><?= !empty($r['vt_checked_at']) ? htmlspecialchars(fmt_date((string)$r['vt_checked_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
                                             <div><dt>Tag</dt><dd><?= $tagCell ?></dd></div>
                                             <div><dt>Watchlist</dt><dd><?= !empty($r['in_watchlist']) ? 'Yes' : '<span class="muted">No</span>' ?></dd></div>
                                         </dl>
@@ -339,6 +446,9 @@ require __DIR__ . '/templates/header.php';
                                             <div><dt>Keyword</dt><dd><?= htmlspecialchars($sec['keyword']) ?></dd></div>
                                             <div><dt>Source</dt><dd><?= htmlspecialchars($sourceLabel) ?></dd></div>
                                             <div><dt>Historical</dt><dd><?= !empty($r['is_historical']) ? 'Yes' : '<span class="muted">No</span>' ?></dd></div>
+                                            <?php if (!empty($r['tag_note'])): ?>
+                                                <div><dt>Analyst note</dt><dd><?= htmlspecialchars((string)$r['tag_note']) ?></dd></div>
+                                            <?php endif; ?>
                                         </dl>
                                         <ul class="dd-findings">
                                             <?php foreach (reportFindings($r, $sec['keyword'], $er['age']) as $f): ?>
@@ -364,6 +474,7 @@ require __DIR__ . '/templates/header.php';
     <footer class="report-foot">
         Generated by ThreatIntelligence-TDL on <?= htmlspecialchars($generatedAt) ?> — <?= number_format($totalDomains) ?> domain(s) across <?= count($sections) ?> keyword(s).
         Filters: <?= htmlspecialchars($filterSummary) ?>.
+        Sources: WHOIS/RDAP + VirusTotal only (DNS, passive DNS, TLS and IP/ASN are not integrated).
     </footer>
 
     <?php endif; ?>

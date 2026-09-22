@@ -122,10 +122,12 @@ function buildReportData(PDO $db, int $userId, array $keywordIds, array $filters
         }
 
         $sql = "SELECT m.domain, m.tld, m.discovered_at, m.first_seen, m.is_historical, m.source,
-                dt.tag AS tag,
+                dt.tag AS tag, dt.note AS tag_note,
                 CASE WHEN w.id IS NULL THEN 0 ELSE 1 END AS in_watchlist,
                 dw.creation_date, dw.expiration_date, dw.registrar, dw.name_servers, dw.status AS whois_status,
-                dv.verdict, dv.malicious, dv.suspicious, dv.harmless, dv.undetected, dv.reputation, dv.last_analysis_date
+                dw.source AS whois_source, dw.updated_at AS whois_updated_at,
+                dv.verdict, dv.malicious, dv.suspicious, dv.harmless, dv.undetected, dv.reputation,
+                dv.last_analysis_date, dv.checked_at AS vt_checked_at
             $from
             $where
             ORDER BY m.discovered_at DESC, m.domain ASC

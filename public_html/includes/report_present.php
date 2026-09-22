@@ -164,3 +164,144 @@ function reportAvailability(array $row): array {
         : ['state' => 'ok', 'label' => 'Checked'];
     return ['whois' => $whois, 'vt' => $vt];
 }
+
+/**
+ * Basic timeline (created / first seen / discovered / report generated).
+ * Returns events sorted by timestamp; unknown dates are simply omitted.
+ */
+function reportTimeline(array $row, string $generatedAtUtc): array {
+    $events = [];
+    if (!empty($row['creation_date'])) {
+        $events[] = ['at' => (string)$row['creation_date'], 'label' => 'Domain created', 'source' => 'WHOIS'];
+    }
+    if (!empty($row['first_seen'])) {
+        $events[] = ['at' => (string)$row['first_seen'], 'label' => 'First seen in zone', 'source' => 'CZDS/OpenINTEL'];
+    }
+    if (!empty($row['discovered_at'])) {
+        $events[] = ['at' => (string)$row['discovered_at'], 'label' => 'Matching domain observed', 'source' => 'Worker'];
+    }
+    if ($generatedAtUtc !== '') {
+        $events[] = ['at' => $generatedAtUtc, 'label' => 'Report generated', 'source' => 'Application'];
+    }
+    usort($events, function ($a, $b) {
+        return (strtotime($a['at']) ?: 0) <=> (strtotime($b['at']) ?: 0);
+    });
+    return $events;
+}
+
+/**
+ * Explainable risk + confidence. Risk is the intensity of the collected
+ * signals; confidence is the quality/quantity of the evidence (data
+ * availability). No opaque numeric score.
+ */
+function reportRiskAssessment(array $row, string $status, array $avail): array {
+    $reasons = [];
+    if ($status === 'malicious') {
+        $risk = 'high';
+        $reasons[] = 'Confirmed malicious verdict or analyst classification';
+    } elseif ($status === 'suspicious') {
+        $risk = 'high';
+        $reasons[] = 'Suspicious reputation verdict';
+    } elseif ($status === 'review_required') {
+        $risk = !empty($row['_is_new']) ? 'medium' : 'low';
+        if (!empty($row['_is_new'])) {
+            $reasons[] = 'Recently registered';
+        }
+        $reasons[] = 'Keyword match';
+        if (!empty($row['in_watchlist'])) {
+            $reasons[] = 'In watchlist';
+        }
+    } elseif ($status === 'benign') {
+        $risk = 'low';
+        $reasons[] = 'Classified good by an analyst';
+    } else {
+        $risk = 'low';
+        $reasons[] = 'No strong signal';
+    }
+
+    $whoisOk = (($avail['whois']['state'] ?? '') === 'ok');
+    $vtChecked = (($avail['vt']['state'] ?? '') === 'ok');
+    if ($whoisOk && $vtChecked) {
+        $confidence = 'high';
+    } elseif ($whoisOk || $vtChecked) {
+        $confidence = 'medium';
+    } else {
+        $confidence = 'low';
+    }
+    if (!$whoisOk) {
+        $reasons[] = 'WHOIS data not available';
+    }
+    if (!$vtChecked) {
+        $reasons[] = 'Reputation not checked';
+    }
+    return ['risk' => $risk, 'confidence' => $confidence, 'reasons' => $reasons];
+}
+
+/**
+ * Shared infrastructure inside the report: name servers / registrars used by
+ * more than one domain. Pure correlation of the collected data.
+ *
+ * @param array $sections Report sections (each with enriched 'rows').
+ * @return array{nameservers:array<string,string[]>,registrars:array<string,string[]>}
+ */
+function reportSharedInfrastructure(array $sections): array {
+    $nsMap = [];
+    $regMap = [];
+    foreach ($sections as $sec) {
+        foreach ($sec['rows'] as $er) {
+            $r = $er['row'];
+            $domain = (string)($r['domain'] ?? '');
+            if ($domain === '') {
+                continue;
+            }
+            foreach ((array)($r['_ns'] ?? []) as $ns) {
+                $ns = strtolower(trim((string)$ns));
+                if ($ns !== '') {
+                    $nsMap[$ns][$domain] = true;
+                }
+            }
+            $reg = trim((string)($r['registrar'] ?? ''));
+            if ($reg !== '') {
+                $regMap[$reg][$domain] = true;
+            }
+        }
+    }
+    $shared = ['nameservers' => [], 'registrars' => []];
+    foreach ($nsMap as $ns => $doms) {
+        if (count($doms) > 1) {
+            $shared['nameservers'][$ns] = array_keys($doms);
+        }
+    }
+    foreach ($regMap as $reg => $doms) {
+        if (count($doms) > 1) {
+            $shared['registrars'][$reg] = array_keys($doms);
+        }
+    }
+    uasort($shared['nameservers'], fn($a, $b) => count($b) <=> count($a));
+    uasort($shared['registrars'], fn($a, $b) => count($b) <=> count($a));
+    return $shared;
+}
+
+/**
+ * Aggregate a report (saved snapshot's `report` array) into the counters used
+ * for the Executive Summary and the previous-report comparison.
+ */
+function reportAggregateReport(array $report, array $rules, string $refUtc): array {
+    $agg = [
+        'domains' => 0, 'new' => 0, 'watchlist' => 0, 'not_checked_vt' => 0,
+        'status' => ['malicious' => 0, 'suspicious' => 0, 'benign' => 0, 'review_required' => 0, 'unknown' => 0],
+    ];
+    foreach ($report as $data) {
+        $rows = is_array($data['rows'] ?? null) ? $data['rows'] : [];
+        foreach ($rows as $r) {
+            $status = reportDomainStatus($r, $rules);
+            $rep = reportReputation($r);
+            $agg['domains']++;
+            if (!empty($r['_is_new'])) { $agg['new']++; }
+            if (!empty($r['in_watchlist'])) { $agg['watchlist']++; }
+            if ($rep['state'] === 'not_checked') { $agg['not_checked_vt']++; }
+            $agg['status'][$status]++;
+        }
+    }
+    return $agg;
+}
