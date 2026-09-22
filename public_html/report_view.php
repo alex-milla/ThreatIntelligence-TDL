@@ -183,13 +183,18 @@ if ($watchlistCount > 0) {
 }
 $fmtTs = fn($t) => $t ? fmt_date(gmdate('Y-m-d H:i:s', $t)) : '—';
 
-require __DIR__ . '/templates/header.php';
-
 if ($printMode) {
+    // Isolated, self-contained print / PDF document (no Materialize, no app.css).
+    $printTitle = 'Domain Threat Report #' . $id . ' — ' . date('Y-m-d');
+    $showRaw = isset($_GET['raw']) && $_GET['raw'] === '1';
+    $tlp = trim(getSetting($db, 'report_tlp', 'TLP:CLEAR'));
+    require __DIR__ . '/templates/print_header.php';
     require __DIR__ . '/templates/report_print.php';
-    require __DIR__ . '/templates/footer.php';
+    echo '</body></html>';
     exit;
 }
+
+require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="report-toolbar no-print">

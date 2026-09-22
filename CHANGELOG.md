@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.11.0] - 2026-09-22
+
+### Changed - Isolated, self-contained print / PDF document
+
+- The print document no longer loads **Materialize nor `app.css`**: it uses a new isolated `templates/print_header.php` and a dedicated `css/print.css`, so the browser tab renders exactly like the paper and there is nothing to fight against. The HTML and CSS payload drop dramatically.
+- **Dynamic `<title>`** (`Domain Threat Report #<id> — <date>`), so "Save as PDF" proposes a meaningful filename, and **cache-busting** via `?v=<VERSION>` on `print.css`.
+- **Real page footers with Paged.js**: report id + **TLP** on the left and **"Page X of Y"** on the right (injected as `@page` margin boxes). Degrades gracefully to the browser's own header/footer if the CDN is unavailable.
+- **TLP classification badge** (`TLP:CLEAR` by default) shown on the cover and footer; configurable via the `report_tlp` setting.
+- **Page budget**: the cover only forces a page break for large reports (`> 8 domains`); the executive stats and the KPI band were merged into a single KPI strip; `.rp-table thead` now repeats on every page and rows/sections avoid splitting.
+- **Raw data is optional** in the PDF: it is off by default and enabled with `?print=1&raw=1` (the screen view always shows it). When enabled it prints in two columns without splitting.
+
 ## [v1.10.0] - 2026-09-22
 
 ### Added - Dedicated print / PDF document
