@@ -305,3 +305,20 @@ function reportAggregateReport(array $report, array $rules, string $refUtc): arr
     }
     return $agg;
 }
+
+/**
+ * Format a stored date value for display. Handles Unix timestamps (e.g. the
+ * VirusTotal `last_analysis_date`) as well as ISO/SQLite date strings; returns
+ * an em dash when there is nothing to show.
+ */
+function reportFormatDate($value): string {
+    if ($value === null || $value === '') {
+        return '—';
+    }
+    $v = (string)$value;
+    if (ctype_digit($v)) {
+        $ts = (int)$v;
+        return $ts > 0 ? date('Y-m-d', $ts) : '—';
+    }
+    return fmt_date($v);
+}

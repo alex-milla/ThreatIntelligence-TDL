@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.10.0] - 2026-09-22
+
+### Added - Dedicated print / PDF document
+
+- New **Print / PDF** action opens `report_view.php?id=…&print=1`, a dedicated **A4 portrait technical-document layout** (`templates/report_print.php`): cover + Executive Summary + KPIs, compact per-keyword **triage tables**, shared infrastructure and previous-report comparison, and an **Appendix A** with the full per-domain detail (assessment, timeline, registration, reputation, detection) **including the raw data**.
+- The print document uses its **own light palette**, independent of the app theme, and print-safe semantics (coloured status symbols + borders instead of backgrounds), so it prints the same in light or dark mode and without "background graphics".
+- Printing is now **portrait** (`@page { size: A4 portrait }`), with a page break after the cover and before the appendix; the previous per-section page breaks that produced mostly-empty pages were removed.
+
+### Fixed
+- **VirusTotal last analysis date**: the epoch value is now rendered as a readable date (`reportFormatDate()`), both in the screen and print views.
+- **Summary totals row**: the Good/Bad/Observing/Untagged/Malicious/Suspicious totals are computed per column again instead of mixing tag and status counters.
+- The raw data block no longer clips on print (`max-height/overflow` removed for print).
+
 ## [v1.9.0] - 2026-09-22
 
 ### Added - Report analysis (Phase B)

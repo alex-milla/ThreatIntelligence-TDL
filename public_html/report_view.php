@@ -67,6 +67,10 @@ $refUtc = (string)($snapshot['generated_at'] ?? ($row['created_at'] ?? gmdate('Y
 $truncated = !empty($snapshot['truncated']);
 $maxRows = 2000;
 $rules = reportReviewRules($db);
+$printMode = isset($_GET['print']) && $_GET['print'] === '1';
+
+$statusSymbol = ['malicious' => '●', 'suspicious' => '⚠', 'review_required' => '⚠', 'benign' => '✓', 'unknown' => '○'];
+$repSymbol = ['malicious' => '●', 'suspicious' => '⚠', 'dga' => '⚠', 'clean' => '✓', 'not_checked' => '○'];
 
 $tagLabels = ['good' => 'GOOD', 'bad' => 'BAD', 'observing' => 'OBSERVING'];
 
@@ -111,6 +115,15 @@ $totalDomains = $currentAgg['domains'];
 $newCount = $currentAgg['new'];
 $watchlistCount = $currentAgg['watchlist'];
 $notCheckedVt = $currentAgg['not_checked_vt'];
+
+// Grand totals per Summary column (tags + VirusTotal verdicts).
+$grand = ['good' => 0, 'bad' => 0, 'observing' => 0, 'untagged' => 0, 'malicious' => 0, 'suspicious' => 0];
+foreach ($sections as $sec) {
+    $c = $sec['counts'];
+    foreach ($grand as $k => $_) {
+        if (isset($c[$k])) { $grand[$k] += (int)$c[$k]; }
+    }
+}
 
 // ---------- Shared infrastructure (correlation of collected data) ----------
 $shared = reportSharedInfrastructure($sections);
@@ -171,13 +184,19 @@ if ($watchlistCount > 0) {
 $fmtTs = fn($t) => $t ? fmt_date(gmdate('Y-m-d H:i:s', $t)) : '—';
 
 require __DIR__ . '/templates/header.php';
+
+if ($printMode) {
+    require __DIR__ . '/templates/report_print.php';
+    require __DIR__ . '/templates/footer.php';
+    exit;
+}
 ?>
 
 <div class="report-toolbar no-print">
     <a href="/reports.php" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">arrow_back</i>Back to Reports</a>
     <button type="button" class="btn btn-small btn-outline waves-effect" onclick="toggleAllDetails(true)"><i class="material-icons left">unfold_more</i>Expand all</button>
     <button type="button" class="btn btn-small btn-outline waves-effect" onclick="toggleAllDetails(false)"><i class="material-icons left">unfold_less</i>Collapse all</button>
-    <button type="button" class="btn btn-small waves-effect" onclick="window.print()"><i class="material-icons left">print</i>Print / Save as PDF</button>
+    <a href="/report_view.php?id=<?= (int)$id ?>&print=1" class="btn btn-small waves-effect"><i class="material-icons left">picture_as_pdf</i>Print / PDF</a>
 </div>
 
 <div class="card report-card">
@@ -273,12 +292,12 @@ require __DIR__ . '/templates/header.php';
                 <th class="num"><?= number_format($totalDomains) ?></th>
                 <th class="num"><?= number_format($newCount) ?></th>
                 <th class="num"><?= number_format($statusCounts['review_required']) ?></th>
-                <th class="num"><?= number_format($statusCounts['benign']) ?></th>
-                <th class="num">&mdash;</th>
-                <th class="num">&mdash;</th>
-                <th class="num">&mdash;</th>
-                <th class="num"><?= number_format($statusCounts['malicious']) ?></th>
-                <th class="num"><?= number_format($statusCounts['suspicious']) ?></th>
+                <th class="num"><?= number_format($grand['good']) ?></th>
+                <th class="num"><?= number_format($grand['bad']) ?></th>
+                <th class="num"><?= number_format($grand['observing']) ?></th>
+                <th class="num"><?= number_format($grand['untagged']) ?></th>
+                <th class="num"><?= number_format($grand['malicious']) ?></th>
+                <th class="num"><?= number_format($grand['suspicious']) ?></th>
             </tr>
         </tfoot>
     </table>
@@ -434,7 +453,7 @@ require __DIR__ . '/templates/header.php';
                                         <h4>Reputation</h4>
                                         <dl class="dd-list">
                                             <div><dt>VirusTotal</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($rep['state']) ?>"><?= htmlspecialchars($rep['label']) ?></span><?php if ($rep['detail'] !== ''): ?> <span class="muted"><?= htmlspecialchars($rep['detail']) ?></span><?php endif; ?></dd></div>
-                                            <div><dt>Last analysis</dt><dd><?= !empty($r['last_analysis_date']) ? htmlspecialchars(substr(fmt_date((string)$r['last_analysis_date']), 0, 10)) : '<span class="muted">&mdash;</span>' ?></dd></div>
+                                            <div><dt>Last analysis</dt><dd><?= htmlspecialchars(reportFormatDate($r['last_analysis_date'] ?? null)) ?></dd></div>
                                             <div><dt>Checked</dt><dd><?= !empty($r['vt_checked_at']) ? htmlspecialchars(fmt_date((string)$r['vt_checked_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
                                             <div><dt>Tag</dt><dd><?= $tagCell ?></dd></div>
                                             <div><dt>Watchlist</dt><dd><?= !empty($r['in_watchlist']) ? 'Yes' : '<span class="muted">No</span>' ?></dd></div>
