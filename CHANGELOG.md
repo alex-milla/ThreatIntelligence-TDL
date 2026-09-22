@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.11.3] - 2026-09-22
+
+### Added - Per-domain detail on the per-keyword match list
+
+- In the per-keyword match list (`keyword_matches.php`), **clicking a domain** now expands the **same detail block as the report** (Assessment, Timeline, Registration, Reputation, Detection + collapsible Raw data), so you can decide whether to exclude a domain at a glance **without sending it to VirusTotal**.
+- The domain cell is a link with the **keyword highlighted** and the **high-abuse TLD badge**; the row keeps its **Exclude / Unexclude** button, and several details can be open at once.
+- The detail reuses the report presentation helpers (`includes/report_present.php`) and the existing `.domain-detail` styling. The page now prefetches the full cached WHOIS (registrar, name servers, status/source/updated) and VirusTotal (verdict, malicious/suspicious/harmless/undetected, reputation, last analysis/checked) for the visible rows; nothing is sent to external APIs by the panel.
+- The data shown is the cached state at page load; after a bulk **Fetch WHOIS**, use **Refresh** to update it.
+
 ## [v1.11.2] - 2026-09-22
 
 ### Added - Visual risk hierarchy in reports

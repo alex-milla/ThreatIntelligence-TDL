@@ -10,10 +10,13 @@
  */
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/report_present.php';
 requireAuth();
 
 $db = Database::get();
 $userId = (int)$_SESSION['user_id'];
+$rules = reportReviewRules($db);
+$repSymbol = ['malicious' => '●', 'suspicious' => '⚠', 'dga' => '⚠', 'clean' => '✓', 'not_checked' => '○', 'unproven' => '○'];
 
 $keywordId = (int)($_GET['id'] ?? 0);
 
@@ -125,7 +128,7 @@ $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
 $sql = "SELECT m.id, m.domain, m.tld, m.discovered_at, m.first_seen, m.is_historical, m.source,
-        dt.tag AS tag,
+        dt.tag AS tag, dt.note AS tag_note,
         CASE WHEN w.id IS NULL THEN 0 ELSE 1 END AS in_watchlist
     $from
     $where
@@ -135,24 +138,28 @@ $stmt = $db->prepare($sql);
 $stmt->execute($queryParams);
 $rows = $stmt->fetchAll();
 
-// WHOIS creation date (only for the visible page) to flag recently registered domains.
+// WHOIS data for the visible page (used by the Created column and the detail panel).
 $domainWhois = [];
 if (!empty($rows)) {
     $domains = array_column($rows, 'domain');
     $placeholders = implode(',', array_fill(0, count($domains), '?'));
-    $whoisStmt = $db->prepare("SELECT domain, creation_date FROM domain_whois WHERE domain IN ($placeholders)");
+    $whoisStmt = $db->prepare("SELECT domain, creation_date, creation_ts, expiration_date, registrar,
+            name_servers, status, source, updated_at
+        FROM domain_whois WHERE domain IN ($placeholders)");
     $whoisStmt->execute($domains);
     foreach ($whoisStmt->fetchAll() as $w) {
         $domainWhois[$w['domain']] = $w;
     }
 }
 
-// Cached VirusTotal verdicts for the visible rows (shown in the VT column).
+// Cached VirusTotal data for the visible rows (VT column + detail panel).
 $domainVt = [];
 if (!empty($rows)) {
     $domains = array_column($rows, 'domain');
     $placeholders = implode(',', array_fill(0, count($domains), '?'));
-    $vtStmt = $db->prepare("SELECT domain, verdict FROM domain_vt WHERE domain IN ($placeholders)");
+    $vtStmt = $db->prepare("SELECT domain, verdict, malicious, suspicious, harmless, undetected,
+            reputation, last_analysis_date, checked_at
+        FROM domain_vt WHERE domain IN ($placeholders)");
     $vtStmt->execute($domains);
     foreach ($vtStmt->fetchAll() as $v) {
         $domainVt[$v['domain']] = $v;
@@ -290,17 +297,60 @@ require __DIR__ . '/templates/header.php';
                     $vtCell = isset($vtLabels[$vtVerdict])
                         ? '<span class="vt-badge vt-' . $vtVerdict . '">' . $vtLabels[$vtVerdict] . '</span>'
                         : '<span class="muted">&mdash;</span>';
+
+                    // Build a snapshot-like row so the report presentation helpers
+                    // render the same detail block as in the report view.
+                    $ns = (!empty($whoisRow['name_servers'])) ? (json_decode((string)$whoisRow['name_servers'], true) ?: []) : [];
+                    $present = [
+                        'domain'             => $r['domain'],
+                        'tld'                => $r['tld'],
+                        'discovered_at'      => $r['discovered_at'],
+                        'first_seen'         => $r['first_seen'],
+                        'is_historical'      => $r['is_historical'],
+                        'source'             => $r['source'],
+                        'tag'                => $tagVal,
+                        'tag_note'           => $r['tag_note'] ?? null,
+                        'in_watchlist'       => $r['in_watchlist'],
+                        'creation_date'      => $creationDate,
+                        'expiration_date'    => $whoisRow['expiration_date'] ?? null,
+                        'registrar'          => $whoisRow['registrar'] ?? null,
+                        'name_servers'       => $whoisRow['name_servers'] ?? null,
+                        'whois_status'       => $whoisRow['status'] ?? null,
+                        'whois_source'       => $whoisRow['source'] ?? null,
+                        'whois_updated_at'   => $whoisRow['updated_at'] ?? null,
+                        'verdict'            => $vtRow['verdict'] ?? null,
+                        'malicious'          => $vtRow['malicious'] ?? null,
+                        'suspicious'         => $vtRow['suspicious'] ?? null,
+                        'harmless'           => $vtRow['harmless'] ?? null,
+                        'undetected'         => $vtRow['undetected'] ?? null,
+                        'reputation'         => $vtRow['reputation'] ?? null,
+                        'last_analysis_date' => $vtRow['last_analysis_date'] ?? null,
+                        'vt_checked_at'      => $vtRow['checked_at'] ?? null,
+                        '_ns'                => $ns,
+                        '_is_new'            => $isNew,
+                    ];
+                    $age = reportDomainAge($present['creation_date'], gmdate('Y-m-d H:i:s'));
+                    $status = reportDomainStatus($present, $rules);
+                    $rep = reportReputationContextual(reportReputation($present), $age);
+                    $avail = reportAvailability($present);
+                    $whois = $avail['whois'];
+                    $risk = reportRiskAssessment($present, $status, $avail);
+                    $ttdH = reportTimeToDetectHours($present);
+                    $timeline = reportTimeline($present, '');
+                    $rawJson = htmlspecialchars(json_encode($present, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
                 ?>
                 <tr data-domain="<?= htmlspecialchars($r['domain']) ?>"<?= $isExcluded ? ' data-excluded="1"' : '' ?>>
                     <td><label><input type="checkbox" class="row-check"><span></span></label></td>
-                    <td><strong><?= htmlspecialchars($r['domain']) ?></strong></td>
+                    <td>
+                        <a href="javascript:void(0)" class="domain-link" onclick="toggleKwDetail(this)" aria-expanded="false"><?= reportHighlightKeyword((string)$r['domain'], (string)$keyword['keyword']) ?></a><?= reportTldBadge((string)$r['domain']) ?><?php if ($isNew): ?> <span class="badge-new">NEW</span><?php endif; ?>
+                    </td>
                     <td><?= htmlspecialchars($r['tld']) ?></td>
                     <td><?= $vtCell ?></td>
                     <td><?= $tagCell ?></td>
                     <td><?= !empty($r['in_watchlist']) ? '<i class="material-icons tiny" title="In watchlist">star</i>' : '<span class="muted">&mdash;</span>' ?></td>
                     <td><?= $sourceLabel ?></td>
                     <td><?= htmlspecialchars(fmt_date($r['first_seen'])) ?></td>
-                    <td><?= htmlspecialchars($creationDisplay) ?><?php if ($isNew): ?> <span class="badge-new">NEW</span><?php endif; ?></td>
+                    <td><?= htmlspecialchars($creationDisplay) ?></td>
                     <td><?= htmlspecialchars(fmt_date($r['discovered_at'])) ?></td>
                     <td>
                         <?php if ($isExcluded): ?>
@@ -310,6 +360,77 @@ require __DIR__ . '/templates/header.php';
                         <?php endif; ?>
                     </td>
                     <td><?= !empty($r['is_historical']) ? '<span class="status-badge status-cancelled">Yes</span>' : '<span class="muted">No</span>' ?></td>
+                </tr>
+                <tr class="domain-detail-row" style="display:none;">
+                    <td colspan="12">
+                        <div class="domain-detail">
+                            <div class="dd-grid">
+                                <div class="dd-block">
+                                    <h4>Assessment</h4>
+                                    <dl class="dd-list">
+                                        <div><dt>Risk</dt><dd><span class="risk-pill risk-<?= htmlspecialchars($risk['risk']) ?>"><?= htmlspecialchars(ucfirst($risk['risk'])) ?></span></dd></div>
+                                        <div><dt>Confidence</dt><dd><?= htmlspecialchars(ucfirst($risk['confidence'])) ?></dd></div>
+                                    </dl>
+                                    <ul class="dd-findings">
+                                        <?php foreach ($risk['reasons'] as $reason): ?>
+                                            <li class="<?= strpos($reason, 'registration period') !== false ? 'reason-warn' : '' ?>"><?= htmlspecialchars($reason) ?></li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                </div>
+                                <div class="dd-block">
+                                    <h4>Timeline</h4>
+                                    <ul class="report-timeline">
+                                        <?php foreach ($timeline as $ev): ?>
+                                            <li><span class="tl-dot"></span><span class="tl-date"><?= htmlspecialchars(fmt_date((string)$ev['at'])) ?></span><span class="tl-label"><?= htmlspecialchars($ev['label']) ?></span><span class="tl-source muted"><?= htmlspecialchars($ev['source']) ?></span></li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                </div>
+                                <div class="dd-block">
+                                    <h4>Registration</h4>
+                                    <dl class="dd-list">
+                                        <div><dt>Registrar</dt><dd><?= !empty($present['registrar']) ? htmlspecialchars((string)$present['registrar']) : '<span class="muted">&mdash;</span>' ?></dd></div>
+                                        <div><dt>Name servers</dt><dd><?= !empty($ns) ? htmlspecialchars(implode(', ', $ns)) : '<span class="muted">&mdash;</span>' ?></dd></div>
+                                        <div><dt>WHOIS</dt><dd><span class="avail avail-<?= htmlspecialchars($whois['state']) ?>"><?= htmlspecialchars($whois['label']) ?></span></dd></div>
+                                        <div><dt>Source</dt><dd><?= !empty($present['whois_source']) ? htmlspecialchars((string)$present['whois_source']) : '<span class="muted">&mdash;</span>' ?></dd></div>
+                                        <div><dt>Updated</dt><dd><?= !empty($present['whois_updated_at']) ? htmlspecialchars(fmt_date((string)$present['whois_updated_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
+                                    </dl>
+                                </div>
+                                <div class="dd-block">
+                                    <h4>Reputation</h4>
+                                    <dl class="dd-list">
+                                        <div><dt>VirusTotal</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($rep['state']) ?>"><?= htmlspecialchars($repSymbol[$rep['state']] ?? '') ?> <?= htmlspecialchars($rep['label']) ?></span><?php if ($rep['detail'] !== ''): ?> <span class="muted"><?= htmlspecialchars($rep['detail']) ?></span><?php endif; ?></dd></div>
+                                        <div><dt>Last analysis</dt><dd><?= htmlspecialchars(reportFormatDate($present['last_analysis_date'] ?? null)) ?></dd></div>
+                                        <div><dt>Checked</dt><dd><?= !empty($present['vt_checked_at']) ? htmlspecialchars(fmt_date((string)$present['vt_checked_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
+                                        <div><dt>Tag</dt><dd><?= $tagCell ?></dd></div>
+                                        <div><dt>Watchlist</dt><dd><?= !empty($r['in_watchlist']) ? 'Yes' : '<span class="muted">No</span>' ?></dd></div>
+                                    </dl>
+                                </div>
+                                <div class="dd-block">
+                                    <h4>Detection</h4>
+                                    <dl class="dd-list">
+                                        <div><dt>Keyword</dt><dd><?= htmlspecialchars((string)$keyword['keyword']) ?></dd></div>
+                                        <div><dt>Source</dt><dd><?= htmlspecialchars($sourceLabel) ?></dd></div>
+                                        <div><dt>Historical</dt><dd><?= !empty($r['is_historical']) ? 'Yes' : '<span class="muted">No</span>' ?></dd></div>
+                                        <?php if ($ttdH !== null): ?>
+                                            <div><dt>Time-to-detect</dt><dd><?= (int)$ttdH ?> h from registration to first observation</dd></div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($present['tag_note'])): ?>
+                                            <div><dt>Analyst note</dt><dd><?= htmlspecialchars((string)$present['tag_note']) ?></dd></div>
+                                        <?php endif; ?>
+                                    </dl>
+                                    <ul class="dd-findings">
+                                        <?php foreach (reportFindings($present, (string)$keyword['keyword'], $age) as $f): ?>
+                                            <li class="finding-<?= htmlspecialchars($f['severity']) ?>"><strong><?= htmlspecialchars($f['label']) ?></strong><?= $f['value'] !== '' ? ': <span class="muted">' . htmlspecialchars((string)$f['value']) . '</span>' : '' ?></li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                </div>
+                            </div>
+                            <details class="dd-raw">
+                                <summary>Raw data</summary>
+                                <pre><?= $rawJson ?></pre>
+                            </details>
+                        </div>
+                    </td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -347,6 +468,17 @@ require __DIR__ . '/templates/header.php';
 </div>
 
 <script>
+// Toggle the per-domain detail row (same layout as the report view). Several
+// details can be open at the same time.
+function toggleKwDetail(link) {
+    var row = link.closest('tr');
+    if (!row) return;
+    var detail = row.nextElementSibling;
+    if (!detail || !detail.classList.contains('domain-detail-row')) return;
+    var open = detail.style.display === 'none' || detail.style.display === '';
+    detail.style.display = open ? 'table-row' : 'none';
+    link.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
 // Exclude/unexclude a single domain through the shared tag endpoint. A reload
 // keeps the current state filter and counters consistent.
 document.addEventListener('click', function (e) {
