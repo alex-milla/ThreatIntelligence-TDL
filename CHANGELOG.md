@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.16] - 2026-09-22
+
+### Fixed - A keyword with today's matches no longer disappears from the report
+
+- **Report builder (`reports.php`)**: "last sync" is now decided by **discovery date only** — a keyword is listed when it has matches discovered in the last 24h, excluding only explicitly **excluded** domains. Classification (good/bad/observing/watchlist) and the WHOIS "registered before the last scan" heuristic no longer remove a keyword. This fixes the case where a keyword with domains found today was hidden just because their WHOIS registration date was old (auto-WHOIS populated it since v1.6.13). The **Matches** column now shows the last-sync count.
+- **Groups never come out empty**: if a group has no last-sync keywords, opening it now shows **all** its keywords (with a notice) so a report can still be generated. Every group tab is always rendered.
+- **Report output (`report_view.php`)**: a report now includes **every domain discovered in the period**, hiding only explicitly excluded domains; historical (recheck) matches stay hidden unless requested. `good/bad`, watchlist and old registrations are shown with their WHOIS/VirusTotal data. The Notifications/Dashboard/Keywords visibility rules are unchanged.
+
 ## [v1.6.15] - 2026-09-22
 
 ### Changed - Reports show only the last sync, with a professional layout

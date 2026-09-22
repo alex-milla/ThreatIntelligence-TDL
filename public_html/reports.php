@@ -102,58 +102,39 @@ foreach ($groups as $g) {
     $groupsById[(int)$g['id']] = $g['name'];
 }
 
-// ---------- Keyword list with visible + recent match counts ----------
-// Same visibility semantics as keywords.php/notifications (good/bad, watchlist,
-// excluded and validated-old hidden; observing kept).
-$newDomainDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
-
-// Reused for both counters; it contains one bound parameter (the day window).
-$visible = "n.id IS NOT NULL
-        AND w.user_id IS NULL
-        AND dt.domain IS NULL
-        AND NOT EXISTS (SELECT 1 FROM domain_tags dx WHERE dx.domain = m.domain AND dx.tag = 'excluded')
-        AND (
-            dob.domain IS NOT NULL
-            OR NOT (
-                dw.domain IS NOT NULL AND t.name IS NOT NULL
-                AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) IS NOT NULL
-                AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) < datetime(t.last_ok_sync, '-' || ? || ' days')
-            )
-        )";
-
+// ---------- Keyword list with last-sync match counts ----------
+// "Last sync" is defined by discovery date only: a keyword belongs to it when it
+// has matches discovered in the last 24h, excluding explicitly excluded domains.
+// Classification (good/bad/observing/watchlist) and the WHOIS "registered before
+// the last scan" heuristic do NOT remove a keyword from this list.
 $kwStmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.group_id, k.created_at,
-    COUNT(CASE WHEN $visible THEN 1 END) AS visible_count,
-    COUNT(CASE WHEN $visible AND m.discovered_at >= datetime('now', '-1 day') THEN 1 END) AS recent_count
+    COUNT(CASE WHEN m.id IS NOT NULL
+        AND m.discovered_at >= datetime('now', '-1 day')
+        AND NOT EXISTS (SELECT 1 FROM domain_tags dx WHERE dx.domain = m.domain AND dx.tag = 'excluded')
+    THEN 1 END) AS recent_count
 FROM keywords k
 LEFT JOIN matches m ON m.keyword_id = k.id AND m.is_historical = 0
-LEFT JOIN notifications n ON n.match_id = m.id AND n.user_id = k.user_id
-LEFT JOIN watchlist w ON w.user_id = k.user_id AND w.domain = m.domain
-LEFT JOIN domain_tags dt ON dt.domain = m.domain AND dt.tag IN ('good','bad')
-LEFT JOIN domain_tags dob ON dob.domain = m.domain AND dob.tag = 'observing'
-LEFT JOIN domain_whois dw ON dw.domain = m.domain
-LEFT JOIN tlds t ON t.name = m.tld
 WHERE k.user_id = ?
 GROUP BY k.id
 ORDER BY k.keyword ASC");
-$kwStmt->execute([$newDomainDays, $newDomainDays, $userId]);
+$kwStmt->execute([$userId]);
 $allKeywords = $kwStmt->fetchAll();
 
-// Scope filter: keep only keywords active in the last sync unless "show all".
-if ($onlyRecent) {
-    $allKeywords = array_values(array_filter($allKeywords, fn($k) => (int)$k['recent_count'] > 0));
-}
+// Scope: last sync by default, every keyword when "Show all keywords" is on.
+$recentKeywords = $onlyRecent
+    ? array_values(array_filter($allKeywords, fn($k) => (int)$k['recent_count'] > 0))
+    : $allKeywords;
 
-// Per-group counts over the visible scope (used by the group tabs), then the
-// subset shown for the active tab.
+// Per-group counts over the current scope. Every group tab is always rendered.
 $groupCounts = [];
-foreach ($allKeywords as $k) {
+foreach ($recentKeywords as $k) {
     $key = $k['group_id'] === null ? 'ungrouped' : (string)$k['group_id'];
     $groupCounts[$key] = ($groupCounts[$key] ?? 0) + 1;
 }
 $ungroupedCount = $groupCounts['ungrouped'] ?? 0;
-$totalKeywords = count($allKeywords);
+$totalKeywords = count($recentKeywords);
 
-$keywords = array_values(array_filter($allKeywords, function ($k) use ($groupFilter) {
+$matchesGroup = function ($k) use ($groupFilter) {
     if ($groupFilter === 'ungrouped') {
         return $k['group_id'] === null;
     }
@@ -161,7 +142,20 @@ $keywords = array_values(array_filter($allKeywords, function ($k) use ($groupFil
         return (string)$k['group_id'] === $groupFilter;
     }
     return true;
-}));
+};
+
+$keywords = array_values(array_filter($recentKeywords, $matchesGroup));
+
+// A group must never come out empty: if it has no last-sync keywords, show all
+// of its keywords instead (with a notice).
+$groupFallback = false;
+if ($onlyRecent && $groupFilter !== 'all' && empty($keywords)) {
+    $fallbackKeywords = array_values(array_filter($allKeywords, $matchesGroup));
+    if (!empty($fallbackKeywords)) {
+        $groupFallback = true;
+        $keywords = $fallbackKeywords;
+    }
+}
 
 $groupFilterLabel = 'All keywords';
 if ($groupFilter === 'ungrouped') {
@@ -236,6 +230,9 @@ require __DIR__ . '/templates/header.php';
             <strong>Show all keywords</strong> to see every keyword.
         </p>
     <?php else: ?>
+        <?php if ($groupFallback): ?>
+            <div class="alert alert-info"><i class="material-icons left">info</i>No keywords from the last sync in this group; showing <strong>all</strong> of its keywords so you can still generate the report.</div>
+        <?php endif; ?>
         <div class="report-options">
             <div class="report-filter">
                 <label for="report-date">Period</label>
@@ -283,7 +280,7 @@ require __DIR__ . '/templates/header.php';
                 <tr>
                     <th style="width: 30px;"><label><input type="checkbox" id="select-all" aria-label="Select all keywords"><span></span></label></th>
                     <th>Keyword</th>
-                    <th>Matches</th>
+                    <th>Matches (24h)</th>
                     <th>Group</th>
                     <th>Added</th>
                 </tr>
@@ -294,7 +291,7 @@ require __DIR__ . '/templates/header.php';
                     <td><label><input type="checkbox" class="row-check kw-check" value="<?= (int)$k['id'] ?>" aria-label="Select <?= htmlspecialchars($k['keyword']) ?>"><span></span></label></td>
                     <td><strong><?= htmlspecialchars($k['keyword']) ?></strong></td>
                     <td>
-                        <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" title="Review all matched domains"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <span class="muted" title="Total matches including hidden ones">(<?= (int)$k['match_count'] ?> total)</span><?php endif; ?>
+                        <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" title="Domains discovered in the last sync (24h)"><?= (int)$k['recent_count'] ?></a><?php if ((int)$k['recent_count'] !== (int)$k['match_count']): ?> <span class="muted" title="Total matches ever">(<?= (int)$k['match_count'] ?> total)</span><?php endif; ?>
                     </td>
                     <td>
                         <form method="POST" style="margin: 0;">

@@ -11,7 +11,6 @@
  */
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
-require_once __DIR__ . '/includes/report.php';
 requireAuth();
 
 $db = Database::get();
@@ -77,8 +76,6 @@ if (empty($keywords)) {
 
 // ---------- Collect the data ----------
 $newDomainDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
-$visibility = matchVisibilityClauses($db);
-$hidden = $visibility['hidden'];
 $maxRows = 2000; // per keyword, to keep printing manageable
 $truncated = false;
 
@@ -101,10 +98,12 @@ foreach ($keywords as $kw) {
     $where = "WHERE m.keyword_id = ?";
     $params = [$userId, $kwId];
 
-    // Default view hides historical, good/bad and WHOIS-validated-old domains.
-    // An explicit state filter or "include archived" reveals them.
-    if (!$includeArchived && $state === 'all') {
-        $where .= " AND NOT (" . $hidden . ")";
+    // Reports include every domain discovered in the period; only explicitly
+    // excluded domains are hidden. Historical (recheck) matches are hidden
+    // unless the user asks for them (state = historical or "include archived").
+    $where .= " AND NOT EXISTS (SELECT 1 FROM domain_tags dx WHERE dx.domain = m.domain AND dx.tag = 'excluded')";
+    if (!$includeArchived && $state !== 'historical') {
+        $where .= " AND m.is_historical = 0";
     }
 
     if (in_array($state, ['good', 'bad', 'observing'], true)) {
