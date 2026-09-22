@@ -1599,6 +1599,160 @@ td select.browser-default,
     text-align: center;
 }
 
+/* Executive summary */
+.report-exec {
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--primary);
+    border-radius: 6px;
+    background: var(--surface-2);
+    padding: 14px 16px;
+    margin-bottom: 18px;
+}
+
+.report-exec-title {
+    margin: 0 0 10px;
+    font-size: 1.15rem;
+}
+
+.report-exec-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    margin-bottom: 8px;
+}
+
+.report-exec-stats > div {
+    display: flex;
+    flex-direction: column;
+}
+
+.report-exec-num {
+    font-size: 1.8rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.report-exec-label {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+.report-exec-notes {
+    margin: 6px 0 0 18px;
+}
+
+.report-exec-notes li {
+    margin: 2px 0;
+}
+
+/* Assessment / reputation pills */
+.status-pill,
+.rep-pill {
+    display: inline-block;
+    padding: 1px 9px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+    border: 1px solid transparent;
+}
+
+.status-malicious,
+.rep-malicious      { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
+.status-suspicious,
+.rep-suspicious,
+.rep-dga             { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
+.status-review_required { background: var(--info-bg); color: var(--info); border-color: var(--info-border); }
+.status-benign,
+.rep-clean          { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+.status-unknown,
+.rep-not_checked    { background: var(--surface-3); color: var(--text-muted); border-color: var(--border-strong); }
+
+.rep-detail {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+/* Domain detail panel */
+.domain-detail {
+    padding: 12px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.dd-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+}
+
+.dd-block h4 {
+    margin: 0 0 6px;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+.dd-list {
+    margin: 0;
+}
+
+.dd-list > div {
+    display: flex;
+    gap: 8px;
+    padding: 2px 0;
+}
+
+.dd-list dt {
+    min-width: 100px;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.dd-list dd {
+    margin: 0;
+    word-break: break-word;
+}
+
+.dd-findings {
+    margin: 8px 0 0 16px;
+    padding: 0;
+}
+
+.dd-findings li {
+    margin: 2px 0;
+}
+
+.dd-raw {
+    margin-top: 10px;
+}
+
+.dd-raw pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--surface-3);
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    max-height: 320px;
+    overflow: auto;
+}
+
+.avail {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.avail-ok           { color: var(--success); }
+.avail-unsupported  { color: var(--warning); }
+.avail-error        { color: var(--danger); }
+.avail-not_checked  { color: var(--text-muted); }
+
 .report-section-title {
     margin: 22px 0 8px;
     font-size: 1.1rem;
@@ -1668,5 +1822,19 @@ td select.browser-default,
     }
     .report-detail thead {
         display: table-header-group;
+    }
+    .report-triage thead {
+        display: table-header-group;
+    }
+    /* Print every domain detail expanded. */
+    .domain-detail-row {
+        display: table-row !important;
+    }
+    .detail-toggle {
+        display: none !important;
+    }
+    .report-exec,
+    .domain-detail {
+        break-inside: avoid;
     }
 }

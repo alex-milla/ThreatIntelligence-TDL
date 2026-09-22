@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.8.0] - 2026-09-22
+
+### Added - Threat-intelligence report layout (Phase A)
+
+- **Executive Summary** at the top: domains detected / require review / confirmed malicious, plus derived notes (keyword matches, recently registered, missing reputation). It never turns "no verdict" into "safe".
+- **Reframed, mutually-exclusive KPI cards** by assessment: Domains · Review required · Confirmed malicious · Suspicious · Confirmed benign · Unknown / not checked.
+- **Assessment status per domain** (`malicious / suspicious / benign / review_required / unknown`) derived from the stored data, with documented rules: `bad` or VirusTotal `malicious` → malicious; VirusTotal `suspicious`/`dga` → suspicious; tag `good` → benign; a new domain or a keyword match → review required (configurable via `report_review_on_new` / `report_review_on_keyword`).
+- **Triage table** (Assessment, Domain, First seen, Age, Why flagged, Reputation, Source) and a **collapsible detail panel** per domain (Timing, Registration, Reputation, Detection, raw data).
+- **Reputation semantics** that keep `Not checked` ≠ `No detections` ≠ tag `good`, and show engine counts (`X of N engines`).
+- **Domain age** (today / N days) and clearer dates.
+- **Consistent color semantics** (red malicious, amber suspicious/review, green benign, grey unknown/not checked).
+- **Print**: the Executive Summary comes first and **every domain detail is expanded** on print/PDF (plus a `beforeprint` handler), with repeated table headers.
+- The derived fields are computed by the new `includes/report_present.php` transformation layer from the saved snapshot, so **existing saved reports render with the new layout** without any schema change or migration.
+
+### Verification
+- Real render of a snapshot with a new keyword-matched domain (no VT), a VirusTotal-malicious domain and a tag-`good` domain: Executive Summary, status pills (review/malicious/benign), "Not checked" reputation, the triage table, the collapsible detail rows and the raw-data block are all present, with no PHP errors.
+- `php -l` on all `public_html` files: 0 errors; `node --check assets/bulk.js`: OK; `worker/tests.py`: PASS.
+
 ## [v1.7.0] - 2026-09-22
 
 ### Added - Saved report history (immutable snapshots)
