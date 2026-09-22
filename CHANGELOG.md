@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.14] - 2026-09-22
+
+### Changed - Per-keyword match list hides excluded domains and sorts by Created
+
+- **`keyword_matches.php`**: the **All states** view now hides **excluded** domains, so after **Exclude selected** they disappear from the main list (consistent with the Keywords counter, Notifications and the Reports). A new **Include excluded** checkbox (and the existing **Excluded** state filter) brings them back.
+- **Created** is now a sortable column (by WHOIS creation date). Domains without a creation date (`NULL`) always sort **last**, in both ascending and descending order.
+
 ## [v1.6.13] - 2026-09-22
 
 ### Added - Automatic WHOIS after each download

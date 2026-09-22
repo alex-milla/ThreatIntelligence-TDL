@@ -54,20 +54,26 @@ if (!in_array($source, $validSources, true)) {
     $source = 'all';
 }
 
+// Excluded domains are hidden from the main "All states" view; "Include
+// excluded" (and the dedicated Excluded filter) brings them back.
+$includeExcluded = isset($_GET['incl']) && $_GET['incl'] === '1';
+
 // ---------- Column sorting (never interpolate user input into SQL) ----------
 $sortCols = [
     'domain'     => 'm.domain',
     'tld'        => 'm.tld',
     'first_seen' => 'm.first_seen',
+    'created'    => "COALESCE(dw.creation_ts, datetime(dw.creation_date))",
     'discovered' => 'm.discovered_at',
 ];
-$sortDefaults = ['domain' => 'asc', 'tld' => 'asc', 'first_seen' => 'desc', 'discovered' => 'desc'];
+$sortDefaults = ['domain' => 'asc', 'tld' => 'asc', 'first_seen' => 'desc', 'created' => 'desc', 'discovered' => 'desc'];
 $sort = (string)($_GET['sort'] ?? 'discovered');
 if (!isset($sortCols[$sort])) {
     $sort = 'discovered';
 }
 $dir = isset($_GET['dir']) ? (strtolower((string)$_GET['dir']) === 'asc' ? 'asc' : 'desc') : ($sortDefaults[$sort] ?? 'desc');
-$orderBy = $sortCols[$sort] . ' ' . strtoupper($dir);
+// Rows without a value (e.g. no WHOIS creation date) always sort last.
+$orderBy = $sortCols[$sort] . ' IS NULL ASC, ' . $sortCols[$sort] . ' ' . strtoupper($dir);
 
 // ---------- Pagination ----------
 $page = max(1, (int)($_GET['page'] ?? 1));
@@ -75,7 +81,8 @@ $perPage = 100;
 
 $from = "FROM matches m
     LEFT JOIN domain_tags dt ON dt.domain = m.domain
-    LEFT JOIN watchlist w ON w.user_id = ? AND w.domain = m.domain";
+    LEFT JOIN watchlist w ON w.user_id = ? AND w.domain = m.domain
+    LEFT JOIN domain_whois dw ON dw.domain = m.domain";
 $where = "WHERE m.keyword_id = ?";
 $params = [$keywordId];
 
@@ -86,7 +93,12 @@ if ($search !== '') {
     $params[] = $like;
 }
 
-if (in_array($state, ['good', 'bad', 'observing', 'excluded'], true)) {
+if ($state === 'all') {
+    // Main view: keep excluded domains out unless explicitly requested.
+    if (!$includeExcluded) {
+        $where .= " AND NOT EXISTS (SELECT 1 FROM domain_tags dx WHERE dx.domain = m.domain AND dx.tag = 'excluded')";
+    }
+} elseif (in_array($state, ['good', 'bad', 'observing', 'excluded'], true)) {
     $where .= " AND dt.tag = ?";
     $params[] = $state;
 } elseif ($state === 'untagged') {
@@ -181,6 +193,8 @@ require __DIR__ . '/templates/header.php';
     <p class="muted">
         Every domain ever matched by this keyword (<?= number_format((int)$keyword['match_count']) ?> total),
         including those tagged good/bad, in the watchlist or from a historical recheck.
+        Excluded domains are hidden by default &mdash; tick <strong>Include excluded</strong> or pick the
+        <strong>Excluded</strong> state to see them.
     </p>
 
     <form method="GET" class="filter-form">
@@ -205,8 +219,12 @@ require __DIR__ . '/templates/header.php';
             <option value="czds" <?= $source === 'czds' ? 'selected' : '' ?>>CZDS (zone files)</option>
             <option value="ct" <?= $source === 'ct' ? 'selected' : '' ?>>OpenINTEL (CT)</option>
         </select>
+        <label class="check-inline" title="Show excluded domains in the All states view">
+            <input type="checkbox" name="incl" value="1" <?= $includeExcluded ? 'checked' : '' ?>>
+            <span>Include excluded</span>
+        </label>
         <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">search</i>Search</button>
-        <?php if ($search !== '' || $state !== 'all' || $source !== 'all'): ?>
+        <?php if ($search !== '' || $state !== 'all' || $source !== 'all' || $includeExcluded): ?>
         <a href="/keyword_matches.php?id=<?= $keywordId ?>" class="btn btn-small btn-danger waves-effect"><i class="material-icons left">clear</i>Clear</a>
         <?php endif; ?>
     </form>
@@ -239,7 +257,7 @@ require __DIR__ . '/templates/header.php';
                     <th>Watchlist</th>
                     <th>Source</th>
                     <th><?= kwmSortLink('first_seen', 'First Seen', $sort, $dir, $sortDefaults) ?></th>
-                    <th>Created</th>
+                    <th><?= kwmSortLink('created', 'Created', $sort, $dir, $sortDefaults) ?></th>
                     <th><?= kwmSortLink('discovered', 'Discovered', $sort, $dir, $sortDefaults) ?></th>
                     <th>Exclude</th>
                     <th>Historical</th>
