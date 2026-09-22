@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.11.5] - 2026-09-22
+
+### Changed - Dashboard domain lookup is exact-only and Enter triggers it
+
+- Pressing **Enter** in the Dashboard **Domain lookup** now runs the search (the form submits to `runDomainLookup()`), same as clicking **Search**.
+- The field is clearly an **exact domain** lookup, not a keyword/partial search: label **"Exact domain (e.g. example.com)"**, card subtitle **"exact domain lookup"** and the help text updated accordingly.
+- The Dashboard now sends `mode: 'exact'`, so only a full-domain match is searched (covers every cached domain, including hash-cached TLDs like `.com`). If the text has **no dot**, it shows *"Enter the full domain, e.g. example.com"* and does not query the worker.
+- No server change: `ajax_domain_search.php` already supports `mode = exact`.
+
 ## [v1.11.4] - 2026-09-22
 
 ### Added - Refresh button on Notifications

@@ -161,19 +161,19 @@ $sparkNonZero = count(array_filter($sparkDays));
 
 <div class="card" id="domain-lookup">
     <div class="card-head">
-        <h2>Domain lookup <span class="card-sub">search the worker's cached domains</span></h2>
+        <h2>Domain lookup <span class="card-sub">exact domain lookup</span></h2>
     </div>
-    <form id="lookup-form" class="filter-form" onsubmit="return false;">
+    <form id="lookup-form" class="filter-form" onsubmit="runDomainLookup(); return false;">
         <div class="input-field">
             <i class="material-icons prefix">search</i>
-            <input id="lookup-q" type="text" placeholder=" " autocomplete="off">
-            <label for="lookup-q">Domain or part of it</label>
+            <input id="lookup-q" type="text" placeholder=" " autocomplete="off" spellcheck="false" autocapitalize="off">
+            <label for="lookup-q">Exact domain (e.g. example.com)</label>
         </div>
-        <button type="button" class="btn waves-effect" onclick="runDomainLookup()"><i class="material-icons left">travel_explore</i>Search</button>
+        <button type="submit" class="btn waves-effect"><i class="material-icons left">travel_explore</i>Search</button>
     </form>
     <p class="muted" style="font-size:.82rem; margin-top:-4px;">
-        Exact search covers every cached domain (including hash-cached TLDs like .com).
-        Prefix/contains only cover text-cached TLDs.
+        Enter the full domain, e.g. <code>example.com</code>. This is an <strong>exact domain</strong> lookup,
+        not a keyword search. Exact search covers every cached domain (including hash-cached TLDs like .com).
     </p>
     <div id="lookup-status" class="muted" style="display:none; padding:6px 0;"></div>
     <div id="lookup-results"></div>
@@ -254,17 +254,25 @@ function lookupCsrf() {
 }
 function runDomainLookup() {
     var qEl = document.getElementById('lookup-q');
-    var q = qEl ? qEl.value.trim() : '';
-    if (!q) return;
+    var q = qEl ? qEl.value.trim().toLowerCase() : '';
     var status = document.getElementById('lookup-status');
     var results = document.getElementById('lookup-results');
+    if (!q) return;
+    // Exact domain only: this is not a keyword/partial search.
+    if (q.indexOf('.') === -1) {
+        closeDomainDetail();
+        if (results) results.innerHTML = '';
+        if (status) { status.style.display = 'block'; status.textContent = 'Enter the full domain, e.g. example.com'; }
+        if (qEl) qEl.focus();
+        return;
+    }
     closeDomainDetail();
     if (results) results.innerHTML = '';
     if (status) { status.style.display = 'block'; status.textContent = 'Searching the worker cache\u2026 (the worker polls every ~20 s)'; }
     fetch('/ajax_domain_search.php', {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRF-Token': lookupCsrf()},
-        body: JSON.stringify({q: q})
+        body: JSON.stringify({q: q, mode: 'exact'})
     })
     .then(function (r) { return r.json(); })
     .then(function (d) {
