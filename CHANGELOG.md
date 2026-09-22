@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.11.4] - 2026-09-22
+
+### Added - Refresh button on Notifications
+
+- Added a **Refresh** button to the Notifications actions bar (next to *Fetch WHOIS* / *Check VirusTotal*), matching the other tabs. It reloads the list **keeping the current filters** (`location.reload()`).
+
 ## [v1.11.3] - 2026-09-22
 
 ### Added - Per-domain detail on the per-keyword match list
