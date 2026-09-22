@@ -33,7 +33,7 @@ if (!in_array($source, $validSources, true)) {
     $source = 'all';
 }
 $validDateFilters = ['24h' => '-1 day', '7d' => '-7 days', '30d' => '-30 days', 'all' => ''];
-$date = (string)($_GET['date'] ?? 'all');
+$date = (string)($_GET['date'] ?? '24h');
 if (!array_key_exists($date, $validDateFilters)) {
     $date = 'all';
 }

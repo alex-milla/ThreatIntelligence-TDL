@@ -40,6 +40,19 @@ if (empty($clean)) {
 
 $db = Database::get();
 
+// Explicitly excluded domains are never looked up (mirrors the report filter).
+$exclStmt = $db->prepare("SELECT domain FROM domain_tags WHERE tag = 'excluded' AND domain IN ("
+    . implode(',', array_fill(0, count($clean), '?')) . ")");
+$exclStmt->execute($clean);
+$excluded = array_flip(array_map('strtolower', $exclStmt->fetchAll(PDO::FETCH_COLUMN)));
+if ($excluded) {
+    $clean = array_values(array_filter($clean, fn($d) => !isset($excluded[$d])));
+    if (empty($clean)) {
+        echo json_encode(['success' => true, 'queued' => 0, 'message' => 'Excluded domains are skipped.']);
+        exit;
+    }
+}
+
 // Domains already queued in a pending/running whois_lookup command.
 $pendingCommandId = null;
 $pendingDomains = [];

@@ -22,6 +22,15 @@ max_domain_age_days = 30
 ; very long ICANN/CZDS recheck; the UI can override it per run.
 recheck_max_domains = 0
 
+; --- Automatic WHOIS after a download ---
+; Cache the WHOIS/RDAP registration data of newly matched domains right after
+; each download, so the panel and reports already show creation dates (no
+; manual "Fetch WHOIS"). Uses the [whois] settings (rate_delay, disabled_tlds,
+; overrides). Rechecks never trigger it. Set to false to disable.
+auto_whois = true
+; Cap the number of WHOIS lookups per run (protects the registries). 0 = skip.
+auto_whois_max = 200
+
 ; --- Automatic daily run (daemon mode) ---
 ; In daemon mode the worker triggers one full cycle per local day after this
 ; time, so no cron is needed. The daily guard still skips TLDs already

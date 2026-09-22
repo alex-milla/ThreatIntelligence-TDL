@@ -21,6 +21,7 @@ $oldDomainSql = "EXISTS (SELECT 1 FROM domain_whois dw JOIN tlds t ON t.name = m
     . "AND COALESCE(dw.creation_ts, datetime(dw.creation_date)) < datetime(t.last_ok_sync, '-{$newDomainDays} days'))";
 $archiveSql = " AND m.is_historical = 0"
     . " AND NOT EXISTS (SELECT 1 FROM domain_tags dt WHERE dt.domain = m.domain AND dt.tag IN ('good','bad'))"
+    . " AND NOT EXISTS (SELECT 1 FROM domain_tags dx WHERE dx.domain = m.domain AND dx.tag = 'excluded')"
     . " AND (EXISTS (SELECT 1 FROM domain_tags do WHERE do.domain = m.domain AND do.tag = 'observing')"
     . " OR NOT " . $oldDomainSql . ")";
 

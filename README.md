@@ -210,9 +210,11 @@ sqlite_synchronous_parse = OFF  ; skip fsync during parse (NORMAL to revert)
 - **Dashboard**: Statistics and a **domain lookup** that searches the worker's cached domains (exact match covers every cached domain, including huge hash-cached TLDs like `.com`; prefix/contains cover text-cached TLDs only). It is served by the worker through the command queue, so it needs the worker in **daemon mode** and waits for the current run to finish.
 - **Admin Panel**: Manage users, keyword limits, API keys, sync logs, and system updates.
 
-## WHOIS / RDAP enrichment (on demand)
+## WHOIS / RDAP enrichment (on demand + automatic)
 
 From any domain modal you can click **Fetch WHOIS (worker)**. The web queues a `whois_lookup` command; the **worker** performs the RDAP query (with a WHOIS port 43 fallback) and posts the result back. The modal shows registrar, creation/expiration dates and nameservers. The Notifications page also has a batch **Fetch WHOIS (worker)** button for the selected/visible domains.
+
+Additionally, after each download the worker automatically caches the WHOIS/RDAP data of the **newly matched** domains (`[worker] auto_whois = true`, capped by `auto_whois_max`), so the panel, the per-keyword match list and the reports already show creation dates without any manual step. Rechecks never trigger it, and it uses the `[whois]` settings (rate limit, restricted TLDs, overrides). The OpenINTEL import also caches the data it already collects during confirmation.
 
 - Registration data is cached in `domain_whois`, so repeat views are instant.
 - RDAP/WHOIS is **not DNS**: nameservers come from the registration response, not a resolver. No local DNS server is involved.

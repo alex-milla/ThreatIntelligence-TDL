@@ -453,20 +453,22 @@ def _whois_cfg_set(value) -> set:
 
 
 def confirm_recent(matches: list[dict], data_dir: str, whois_cfg: dict,
-                   max_age_days: int, max_lookups: int) -> list[dict]:
+                   max_age_days: int, max_lookups: int) -> tuple[list[dict], list[dict]]:
     """Drop candidates whose registration date is older than max_age_days.
 
     Candidates without a parseable date are kept (we do not want to lose a
-    potentially new domain because a registry did not answer).
+    potentially new domain because a registry did not answer). Returns the kept
+    matches and the WHOIS/RDAP entries looked up, so the caller can cache them.
     """
     if not matches:
-        return []
+        return [], []
     by_domain: dict[str, list[dict]] = {}
     for m in matches:
         by_domain.setdefault(m["domain"], []).append(m)
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, max_age_days))
     kept: list[dict] = []
+    entries: list[dict] = []
     lookups = 0
     rate_delay = float(whois_cfg.get("rate_delay", 1.0) or 0)
 
@@ -486,6 +488,7 @@ def confirm_recent(matches: list[dict], data_dir: str, whois_cfg: dict,
                                    if "disabled_tlds" in whois_cfg else None),
                 )
                 lookups += 1
+                entries.append(info)
                 created = _parse_date(info.get("creation_date"))
                 if created and created < cutoff:
                     keep = False
@@ -495,7 +498,7 @@ def confirm_recent(matches: list[dict], data_dir: str, whois_cfg: dict,
                 time.sleep(rate_delay)
         if keep:
             kept.extend(rows)
-    return kept
+    return kept, entries
 
 
 # --------------------------------------------------------------------------
@@ -563,12 +566,18 @@ def run_tld(tld: str, session: requests.Session, conn: sqlite3.Connection,
         report["records_new"] = new_count
 
         if matches and not args.dry_run:
+            whois_entries: list[dict] = []
             if settings["whois_confirm"]:
-                matches = confirm_recent(matches, settings["worker_data_dir"], settings["whois"],
-                                         settings["whois_max_age_days"], settings["whois_max_lookups"])
+                matches, whois_entries = confirm_recent(
+                    matches, settings["worker_data_dir"], settings["whois"],
+                    settings["whois_max_age_days"], settings["whois_max_lookups"])
             for m in matches:
                 m["first_seen"] = _now()
                 m["source"] = "ct"
+            if whois_entries:
+                # Cache the registration data collected during confirmation so
+                # the web panel/reports do not need a manual WHOIS lookup.
+                sync_client.send_whois_results(host_url, api_key, whois_entries)
             if matches and not sync_client.send_matches(host_url, api_key, matches):
                 report["error"] = "matches send failed (will be lost; no local queue)"
 

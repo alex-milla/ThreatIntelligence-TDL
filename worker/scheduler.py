@@ -171,6 +171,81 @@ def _parse_tld_set(value: str) -> set:
     return {t.strip().lower().lstrip(".") for t in (value or "").split(",") if t.strip()}
 
 
+def whois_lookup_entries(cfg: configparser.ConfigParser, data_dir: str,
+                         domains: list[str]) -> list[dict]:
+    """Look up WHOIS/RDAP for ``domains`` using the ``[whois]`` settings.
+
+    Shared by the on-demand ``whois_lookup`` command and the automatic lookup
+    performed after a download. Returns a list of result dicts (never raises).
+    """
+    timeout, connect_timeout, rdap_only, whois_fallback, rate_delay = 20, 6, False, True, 1.0
+    rdap_overrides: dict = {}
+    whois_overrides: dict = {}
+    disabled_tlds = None
+    if cfg.has_section("whois"):
+        timeout = cfg.getint("whois", "timeout", fallback=20)
+        connect_timeout = cfg.getint("whois", "connect_timeout", fallback=6)
+        rdap_only = cfg.getboolean("whois", "rdap_only", fallback=False)
+        whois_fallback = cfg.getboolean("whois", "whois_fallback", fallback=True)
+        rate_delay = cfg.getfloat("whois", "rate_delay", fallback=1.0)
+        rdap_overrides = _parse_tld_map(cfg.get("whois", "rdap_overrides", fallback=""))
+        whois_overrides = _parse_tld_map(cfg.get("whois", "whois_overrides", fallback=""))
+        if cfg.has_option("whois", "disabled_tlds"):
+            disabled_tlds = _parse_tld_set(cfg.get("whois", "disabled_tlds", fallback=""))
+    entries = []
+    for d in domains:
+        entries.append(whois.lookup_domain(d, data_dir, timeout=timeout,
+                                           rdap_only=rdap_only,
+                                           whois_fallback=whois_fallback,
+                                           connect_timeout=connect_timeout,
+                                           overrides=rdap_overrides,
+                                           whois_overrides=whois_overrides,
+                                           disabled_tlds=disabled_tlds))
+        if rate_delay > 0:
+            time.sleep(rate_delay)
+    return entries
+
+
+def auto_whois_new_matches(cfg: configparser.ConfigParser, host_url: str, api_key: str,
+                           matches: list[dict]) -> int:
+    """Cache WHOIS/RDAP for freshly matched domains right after a download.
+
+    Enabled by default (``[worker] auto_whois``) and capped by
+    ``[worker] auto_whois_max``. Only new (non-historical) matches are considered,
+    so rechecks never trigger it. Best effort: never raises, so a registry
+    problem cannot abort the worker cycle. Returns the number of lookups sent.
+    """
+    if not matches or not cfg.getboolean("worker", "auto_whois", fallback=True):
+        return 0
+    max_lookups = max(0, cfg.getint("worker", "auto_whois_max", fallback=200))
+    if max_lookups == 0:
+        return 0
+
+    domains: list[str] = []
+    seen: set = set()
+    for m in matches:
+        if m.get("is_historical"):
+            continue
+        d = str(m.get("domain", "")).lower().strip()
+        if not d or d in seen:
+            continue
+        seen.add(d)
+        domains.append(d)
+    domains = domains[:max_lookups]
+    if not domains:
+        return 0
+
+    data_dir = cfg.get("worker", "data_dir", fallback="./data")
+    try:
+        entries = whois_lookup_entries(cfg, data_dir, domains)
+        ok = sync_client.send_whois_results(host_url, api_key, entries)
+        log.info("Auto-WHOIS after download: %s domain(s), sent=%s", len(entries), ok)
+        return len(entries)
+    except Exception as e:  # never abort the cycle for an enrichment failure
+        log.warning("Auto-WHOIS failed: %s", e)
+        return 0
+
+
 def _timing_add(timing: dict | None, key: str, seconds: float) -> None:
     if timing is not None:
         timing[key] = timing.get(key, 0.0) + seconds
@@ -705,6 +780,7 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         "tlds_processed": 0,
         "domains_processed": 0,
         "matches_found": 0,
+        "whois_looked_up": 0,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -896,6 +972,11 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         stats["matches_found"] = len(all_matches)
     else:
         print("[*] No new matches to send.")
+
+    # 6b. Automatically cache the WHOIS/RDAP data for the new matches so the web
+    # panel and reports already show creation dates without a manual lookup.
+    if all_matches:
+        stats["whois_looked_up"] = auto_whois_new_matches(cfg, host_url, api_key, all_matches)
 
     stats["domains_processed"] = domains_processed
     set_last_run(db)
@@ -1495,31 +1576,7 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                     domains = []
                 domains = [str(d).lower().strip() for d in domains if d][:200]
                 data_dir = cfg.get("worker", "data_dir", fallback="./data")
-                timeout, connect_timeout, rdap_only, whois_fallback, rate_delay = 20, 6, False, True, 1.0
-                rdap_overrides: dict = {}
-                whois_overrides: dict = {}
-                disabled_tlds = None
-                if cfg.has_section("whois"):
-                    timeout = cfg.getint("whois", "timeout", fallback=20)
-                    connect_timeout = cfg.getint("whois", "connect_timeout", fallback=6)
-                    rdap_only = cfg.getboolean("whois", "rdap_only", fallback=False)
-                    whois_fallback = cfg.getboolean("whois", "whois_fallback", fallback=True)
-                    rate_delay = cfg.getfloat("whois", "rate_delay", fallback=1.0)
-                    rdap_overrides = _parse_tld_map(cfg.get("whois", "rdap_overrides", fallback=""))
-                    whois_overrides = _parse_tld_map(cfg.get("whois", "whois_overrides", fallback=""))
-                    if cfg.has_option("whois", "disabled_tlds"):
-                        disabled_tlds = _parse_tld_set(cfg.get("whois", "disabled_tlds", fallback=""))
-                entries = []
-                for d in domains:
-                    entries.append(whois.lookup_domain(d, data_dir, timeout=timeout,
-                                                       rdap_only=rdap_only,
-                                                       whois_fallback=whois_fallback,
-                                                       connect_timeout=connect_timeout,
-                                                       overrides=rdap_overrides,
-                                                       whois_overrides=whois_overrides,
-                                                       disabled_tlds=disabled_tlds))
-                    if rate_delay > 0:
-                        time.sleep(rate_delay)
+                entries = whois_lookup_entries(cfg, data_dir, domains)
                 ok = sync_client.send_whois_results(host_url, api_key, entries)
                 result = json.dumps({"requested": len(domains), "looked_up": len(entries), "sent": ok})
                 logs.append({"level": "info", "message": f"WHOIS lookup: {len(entries)} domain(s), sent={ok}"})

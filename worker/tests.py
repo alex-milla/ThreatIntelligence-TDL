@@ -548,6 +548,51 @@ def test_whois_cfg_parsing() -> None:
     print("[PASS] test_whois_cfg_parsing")
 
 
+def test_auto_whois_helpers() -> None:
+    cfg = configparser.ConfigParser()
+    cfg["worker"] = {"auto_whois": "false", "auto_whois_max": "200",
+                     "data_dir": tempfile.gettempdir()}
+    matches = [
+        {"domain": "Brand-A.io", "is_historical": 0},
+        {"domain": "brand-a.io", "is_historical": 0},
+        {"domain": "old.io", "is_historical": 1},
+        {"domain": "brand-b.io", "is_historical": 0},
+    ]
+    # Disabled by config: no lookups.
+    assert scheduler.auto_whois_new_matches(cfg, "http://x", "k", matches) == 0
+
+    cfg.set("worker", "auto_whois", "true")
+    captured = {}
+
+    def fake_entries(_cfg, _data_dir, domains):
+        captured["domains"] = list(domains)
+        return [{"domain": d, "status": "ok"} for d in domains]
+
+    orig_entries = scheduler.whois_lookup_entries
+    orig_send = scheduler.sync_client.send_whois_results
+    try:
+        scheduler.whois_lookup_entries = fake_entries
+        scheduler.sync_client.send_whois_results = lambda *a, **k: True
+
+        # Deduplicated, historical skipped.
+        cfg.set("worker", "auto_whois_max", "10")
+        assert scheduler.auto_whois_new_matches(cfg, "http://x", "k", matches) == 2
+        assert captured["domains"] == ["brand-a.io", "brand-b.io"], captured
+
+        # Capped.
+        cfg.set("worker", "auto_whois_max", "1")
+        assert scheduler.auto_whois_new_matches(cfg, "http://x", "k", matches) == 1
+        assert captured["domains"] == ["brand-a.io"], captured
+
+        # Cap 0 disables it.
+        cfg.set("worker", "auto_whois_max", "0")
+        assert scheduler.auto_whois_new_matches(cfg, "http://x", "k", matches) == 0
+    finally:
+        scheduler.whois_lookup_entries = orig_entries
+        scheduler.sync_client.send_whois_results = orig_send
+    print("[PASS] test_auto_whois_helpers")
+
+
 def test_openintel_parquet_read() -> None:
     try:
         import pyarrow as pa
@@ -592,5 +637,6 @@ if __name__ == "__main__":
     test_whois_restricted_tld()
     test_whois_parse_text()
     test_whois_cfg_parsing()
+    test_auto_whois_helpers()
     test_openintel_parquet_read()
     print("\nAll tests passed.")

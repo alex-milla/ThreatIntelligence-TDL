@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.6.13] - 2026-09-22
+
+### Added - Automatic WHOIS after each download
+
+- **Worker**: after a download cycle the worker now caches the WHOIS/RDAP registration data of the **newly matched** domains, so the panel, the per-keyword match list and the reports already show creation dates without a manual `Fetch WHOIS`. It is on by default (`[worker] auto_whois = true`) and capped by `auto_whois_max` (default 200); it reuses the `[whois]` settings (`rate_delay`, `disabled_tlds`, overrides) and is best-effort (a registry failure never aborts the cycle). **Rechecks never trigger it.**
+- The OpenINTEL importer now caches the WHOIS data it already collects during candidate confirmation (`whois_confirm`), which was previously used only to filter.
+- Shared `scheduler.whois_lookup_entries()` helper (also used by the on-demand `whois_lookup` command).
+
+### Added - Exclude domains from the report (per-keyword match list)
+
+- New **Excluded** classification (`domain_tags.tag = 'excluded'`). Excluded domains are hidden from Notifications, the Dashboard and the Reports by default, and are skipped by the bulk WHOIS/VirusTotal actions (client- and server-side).
+- `keyword_matches.php`: new **Exclude / Unexclude** button per row and bulk **Exclude selected / Unexclude selected** actions, plus an **Excluded** state filter and a visible badge. Excluded rows are still listed so they can be restored.
+
+### Changed - Same-tab navigation and report default period
+
+- The **Matches** count on Keywords/Reports now opens the per-keyword list in the **same tab** (was `target="_blank"`). External links (VirusTotal, OpenINTEL) keep the new tab.
+- The report **Period** now defaults to **Last 24h**, so a report reflects the latest (nightly) sync by default.
+
 ## [v1.6.12] - 2026-09-20
 
 ### Fixed - ccTLD counts blanked on "unchanged" runs

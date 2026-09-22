@@ -10,17 +10,39 @@
         return m ? m.content : '';
     }
 
-    function selectedDomains() {
+    // Domains to act on: the checked rows if any, otherwise every visible row.
+    // Excluded rows (data-excluded="1") are skipped for WHOIS/VT unless
+    // includeExcluded is true (needed by the bulk unexclude action).
+    function collectDomains(includeExcluded) {
         var all = [];
         var checked = [];
         document.querySelectorAll('tr[data-domain]').forEach(function (tr) {
             var domain = tr.getAttribute('data-domain');
             if (!domain) return;
+            if (!includeExcluded && tr.getAttribute('data-excluded') === '1') return;
             all.push(domain);
             var cb = tr.querySelector('.row-check');
             if (cb && cb.checked) checked.push(domain);
         });
         return checked.length ? checked : all;
+    }
+
+    function selectedDomains() {
+        return collectDomains(false);
+    }
+
+    // Only the explicitly checked rows (used by the bulk tag action so it can
+    // never mass-edit every visible domain by accident).
+    function checkedDomains(includeExcluded) {
+        var checked = [];
+        document.querySelectorAll('tr[data-domain] .row-check:checked').forEach(function (cb) {
+            var tr = cb.closest ? cb.closest('tr[data-domain]') : null;
+            if (!tr) return;
+            if (!includeExcluded && tr.getAttribute('data-excluded') === '1') return;
+            var domain = tr.getAttribute('data-domain');
+            if (domain) checked.push(domain);
+        });
+        return checked;
     }
 
     window.fetchVisibleWhois = function () {
@@ -59,6 +81,28 @@
                 }
             })
             .catch(function () { alert('Failed to queue VirusTotal lookup'); });
+    };
+
+    // Bulk exclude / unexclude for the per-keyword match list. An empty tag
+    // clears the classification (restore). Excluded rows are included so they
+    // can be restored.
+    window.tagSelectedDomains = function (tag) {
+        var domains = checkedDomains(true);
+        if (!domains.length) { alert('Select one or more domains first.'); return; }
+        var verb = tag === '' ? 'Restore' : 'Exclude';
+        if (!confirm(verb + ' ' + domains.length + ' domain(s)?')) return;
+        Promise.all(domains.map(function (d) {
+            return fetch('/ajax_tag_domain.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domain: d, tag: tag })
+            }).then(function (r) { return r.json(); });
+        })).then(function () {
+            location.reload();
+        }).catch(function () {
+            alert('Some domains could not be updated.');
+            location.reload();
+        });
     };
 
     // "Select all visible" helper shared by the list pages. Delegated so it also

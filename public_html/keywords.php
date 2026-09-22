@@ -122,6 +122,7 @@ $stmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.created_at,
         n.id IS NOT NULL
         AND w.user_id IS NULL
         AND dt.domain IS NULL
+        AND NOT EXISTS (SELECT 1 FROM domain_tags dx WHERE dx.domain = m.domain AND dx.tag = 'excluded')
         AND (
             dob.domain IS NOT NULL
             OR NOT (
@@ -281,7 +282,7 @@ require __DIR__ . '/templates/header.php';
                     <?php endif; ?>
                     <td><strong><?= htmlspecialchars($k['keyword']) ?></strong></td>
                     <td>
-                        <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" target="_blank" rel="noopener" title="Review all matched domains"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" target="_blank" rel="noopener" class="muted" title="Review all matched domains">(<?= (int)$k['match_count'] ?> total)</a><?php endif; ?>
+                        <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" title="Review all matched domains"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" class="muted" title="Review all matched domains">(<?= (int)$k['match_count'] ?> total)</a><?php endif; ?>
                         <a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>" class="muted" title="View notifications for this keyword" aria-label="View notifications for this keyword"><i class="material-icons tiny">notifications</i></a>
                     </td>
                     <td><?= htmlspecialchars(fmt_date($k['created_at'])) ?></td>

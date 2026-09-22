@@ -125,6 +125,7 @@ $kwStmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.group_id, k.cre
         n.id IS NOT NULL
         AND w.user_id IS NULL
         AND dt.domain IS NULL
+        AND NOT EXISTS (SELECT 1 FROM domain_tags dx WHERE dx.domain = m.domain AND dx.tag = 'excluded')
         AND (
             dob.domain IS NOT NULL
             OR NOT (
@@ -213,7 +214,7 @@ require __DIR__ . '/templates/header.php';
                 <label for="report-date">Period</label>
                 <select id="report-date" class="browser-default compact">
                     <option value="all">All time</option>
-                    <option value="24h">Last 24h</option>
+                    <option value="24h" selected>Last 24h</option>
                     <option value="7d">Last 7 days</option>
                     <option value="30d">Last 30 days</option>
                 </select>
@@ -265,7 +266,7 @@ require __DIR__ . '/templates/header.php';
                     <td><label><input type="checkbox" class="row-check kw-check" value="<?= (int)$k['id'] ?>" aria-label="Select <?= htmlspecialchars($k['keyword']) ?>"><span></span></label></td>
                     <td><strong><?= htmlspecialchars($k['keyword']) ?></strong></td>
                     <td>
-                        <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" target="_blank" rel="noopener" title="Review all matched domains"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <span class="muted" title="Total matches including hidden ones">(<?= (int)$k['match_count'] ?> total)</span><?php endif; ?>
+                        <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" title="Review all matched domains"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <span class="muted" title="Total matches including hidden ones">(<?= (int)$k['match_count'] ?> total)</span><?php endif; ?>
                     </td>
                     <td>
                         <form method="POST" style="margin: 0;">

@@ -43,7 +43,7 @@ if (!$keyword) {
 $search = trim($_GET['q'] ?? '');
 
 $state = (string)($_GET['state'] ?? 'all');
-$validStates = ['all', 'good', 'bad', 'observing', 'watchlist', 'historical', 'untagged'];
+$validStates = ['all', 'good', 'bad', 'observing', 'excluded', 'watchlist', 'historical', 'untagged'];
 if (!in_array($state, $validStates, true)) {
     $state = 'all';
 }
@@ -86,7 +86,7 @@ if ($search !== '') {
     $params[] = $like;
 }
 
-if (in_array($state, ['good', 'bad', 'observing'], true)) {
+if (in_array($state, ['good', 'bad', 'observing', 'excluded'], true)) {
     $where .= " AND dt.tag = ?";
     $params[] = $state;
 } elseif ($state === 'untagged') {
@@ -195,6 +195,7 @@ require __DIR__ . '/templates/header.php';
             <option value="good" <?= $state === 'good' ? 'selected' : '' ?>>Good</option>
             <option value="bad" <?= $state === 'bad' ? 'selected' : '' ?>>Bad</option>
             <option value="observing" <?= $state === 'observing' ? 'selected' : '' ?>>Observing</option>
+            <option value="excluded" <?= $state === 'excluded' ? 'selected' : '' ?>>Excluded</option>
             <option value="watchlist" <?= $state === 'watchlist' ? 'selected' : '' ?>>In watchlist</option>
             <option value="historical" <?= $state === 'historical' ? 'selected' : '' ?>>Historical</option>
             <option value="untagged" <?= $state === 'untagged' ? 'selected' : '' ?>>Untagged</option>
@@ -218,6 +219,8 @@ require __DIR__ . '/templates/header.php';
         </label>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
+        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="tagSelectedDomains('excluded')"><i class="material-icons left">block</i>Exclude selected</button>
+        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="tagSelectedDomains('')"><i class="material-icons left">restore</i>Unexclude selected</button>
         <button type="button" class="btn btn-small btn-outline waves-effect" onclick="location.reload()"><i class="material-icons left">refresh</i>Refresh</button>
     </div>
     <?php endif; ?>
@@ -238,16 +241,18 @@ require __DIR__ . '/templates/header.php';
                     <th><?= kwmSortLink('first_seen', 'First Seen', $sort, $dir, $sortDefaults) ?></th>
                     <th>Created</th>
                     <th><?= kwmSortLink('discovered', 'Discovered', $sort, $dir, $sortDefaults) ?></th>
+                    <th>Exclude</th>
                     <th>Historical</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($rows as $r):
-                    $tagLabels = ['good' => 'GOOD', 'bad' => 'BAD', 'observing' => 'OBSERVING'];
+                    $tagLabels = ['good' => 'GOOD', 'bad' => 'BAD', 'observing' => 'OBSERVING', 'excluded' => 'EXCLUDED'];
                     $tagVal = (string)($r['tag'] ?? '');
                     $tagCell = isset($tagLabels[$tagVal])
                         ? '<span class="tag-chip ' . $tagVal . '">' . $tagLabels[$tagVal] . '</span>'
                         : '<span class="muted">&mdash;</span>';
+                    $isExcluded = ($tagVal === 'excluded');
 
                     $whoisRow = $domainWhois[$r['domain']] ?? null;
                     $creationDate = $whoisRow['creation_date'] ?? null;
@@ -268,7 +273,7 @@ require __DIR__ . '/templates/header.php';
                         ? '<span class="vt-badge vt-' . $vtVerdict . '">' . $vtLabels[$vtVerdict] . '</span>'
                         : '<span class="muted">&mdash;</span>';
                 ?>
-                <tr data-domain="<?= htmlspecialchars($r['domain']) ?>">
+                <tr data-domain="<?= htmlspecialchars($r['domain']) ?>"<?= $isExcluded ? ' data-excluded="1"' : '' ?>>
                     <td><label><input type="checkbox" class="row-check"><span></span></label></td>
                     <td><strong><?= htmlspecialchars($r['domain']) ?></strong></td>
                     <td><?= htmlspecialchars($r['tld']) ?></td>
@@ -279,6 +284,13 @@ require __DIR__ . '/templates/header.php';
                     <td><?= htmlspecialchars(fmt_date($r['first_seen'])) ?></td>
                     <td><?= htmlspecialchars($creationDisplay) ?><?php if ($isNew): ?> <span class="badge-new">NEW</span><?php endif; ?></td>
                     <td><?= htmlspecialchars(fmt_date($r['discovered_at'])) ?></td>
+                    <td>
+                        <?php if ($isExcluded): ?>
+                            <button type="button" class="btn btn-small btn-outline waves-effect js-kwm-tag" data-domain="<?= htmlspecialchars($r['domain']) ?>" data-tag=""><i class="material-icons left">restore</i>Unexclude</button>
+                        <?php else: ?>
+                            <button type="button" class="btn btn-small btn-outline waves-effect js-kwm-tag" data-domain="<?= htmlspecialchars($r['domain']) ?>" data-tag="excluded"><i class="material-icons left">block</i>Exclude</button>
+                        <?php endif; ?>
+                    </td>
                     <td><?= !empty($r['is_historical']) ? '<span class="status-badge status-cancelled">Yes</span>' : '<span class="muted">No</span>' ?></td>
                 </tr>
                 <?php endforeach; ?>
@@ -315,5 +327,28 @@ require __DIR__ . '/templates/header.php';
         </div>
     <?php endif; ?>
 </div>
+
+<script>
+// Exclude/unexclude a single domain through the shared tag endpoint. A reload
+// keeps the current state filter and counters consistent.
+document.addEventListener('click', function (e) {
+    var btn = e.target.closest ? e.target.closest('.js-kwm-tag') : null;
+    if (!btn) return;
+    var domain = btn.getAttribute('data-domain');
+    var tag = btn.getAttribute('data-tag') || '';
+    btn.disabled = true;
+    fetch('/ajax_tag_domain.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: domain, tag: tag })
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.success) { location.reload(); }
+            else { btn.disabled = false; alert(data.error || 'Failed to update domain'); }
+        })
+        .catch(function () { btn.disabled = false; alert('Failed to update domain'); });
+});
+</script>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>
