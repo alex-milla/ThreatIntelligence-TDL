@@ -113,8 +113,8 @@
                         <?php foreach ($sec['rows'] as $er): $r = $er['row']; $status = $er['status']; $rep = $er['rep']; ?>
                         <tr>
                             <td><span class="rp-status rp-<?= htmlspecialchars($status) ?>"><?= htmlspecialchars($statusSymbol[$status] ?? '') ?> <?= htmlspecialchars(reportStatusLabel($status)) ?></span></td>
-                            <td class="rp-domain-name"><?= htmlspecialchars((string)($r['domain'] ?? '')) ?><?php if (!empty($r['_is_new'])): ?> <span class="rp-new">NEW</span><?php endif; ?></td>
-                            <td><?= htmlspecialchars(reportAgeLabel($er['age'])) ?></td>
+                            <td class="rp-domain-name"><?= reportHighlightKeyword((string)($r['domain'] ?? ''), (string)$sec['keyword']) ?><?= reportTldBadge((string)($r['domain'] ?? '')) ?><?php if (!empty($r['_is_new'])): ?> <span class="rp-new">NEW</span><?php endif; ?></td>
+                            <td class="<?= htmlspecialchars(reportAgeClass($er['age'])) ?>"><?= htmlspecialchars(reportAgeLabel($er['age'])) ?></td>
                             <td><?= !empty($r['first_seen']) ? htmlspecialchars(fmt_date((string)$r['first_seen'])) : '—' ?></td>
                             <td><?= htmlspecialchars($er['why']) ?></td>
                             <td><span class="rp-rep rp-rep-<?= htmlspecialchars($rep['state']) ?>"><?= htmlspecialchars($repSymbol[$rep['state']] ?? '') ?> <?= htmlspecialchars($rep['label']) ?></span><?php if ($rep['detail'] !== ''): ?> <span class="rp-muted">(<?= htmlspecialchars($rep['detail']) ?>)</span><?php endif; ?></td>
@@ -139,9 +139,9 @@
             $tagVal = (string)($r['tag'] ?? '');
             $rawJson = htmlspecialchars(json_encode($r, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         ?>
-        <div class="rp-domain">
+        <div class="rp-domain <?= htmlspecialchars($er['sev']) ?>">
             <h3>
-                <span class="rp-domain-name"><?= htmlspecialchars((string)($r['domain'] ?? '')) ?></span>
+                <span class="rp-domain-name"><?= reportHighlightKeyword((string)($r['domain'] ?? ''), (string)$sec['keyword']) ?></span><?= reportTldBadge((string)($r['domain'] ?? '')) ?>
                 <span class="rp-status rp-<?= htmlspecialchars($status) ?>"><?= htmlspecialchars($statusSymbol[$status] ?? '') ?> <?= htmlspecialchars(reportStatusLabel($status)) ?></span>
                 <span class="rp-muted">Keyword: <?= htmlspecialchars($sec['keyword']) ?> &middot; Age: <?= htmlspecialchars(reportAgeLabel($er['age'])) ?> &middot; Risk: <?= htmlspecialchars(ucfirst($risk['risk'])) ?> &middot; Confidence: <?= htmlspecialchars(ucfirst($risk['confidence'])) ?></span>
             </h3>
@@ -184,7 +184,7 @@
                         <div><dt>Confidence</dt><dd><?= htmlspecialchars(ucfirst($risk['confidence'])) ?></dd></div>
                     </dl>
                     <ul class="rp-reasons">
-                        <?php foreach ($risk['reasons'] as $reason): ?><li><?= htmlspecialchars($reason) ?></li><?php endforeach; ?>
+                        <?php foreach ($risk['reasons'] as $reason): ?><li class="<?= strpos($reason, 'registration period') !== false ? 'reason-warn' : '' ?>"><?= htmlspecialchars($reason) ?></li><?php endforeach; ?>
                     </ul>
                 </div>
                 <div class="rp-dd-block">
@@ -193,6 +193,7 @@
                         <div><dt>Keyword</dt><dd><?= htmlspecialchars($sec['keyword']) ?></dd></div>
                         <div><dt>Source</dt><dd><?= ((string)($r['source'] ?? '') === 'ct') ? 'OpenINTEL' : 'CZDS' ?></dd></div>
                         <div><dt>Historical</dt><dd><?= !empty($r['is_historical']) ? 'Yes' : 'No' ?></dd></div>
+                        <?php if ($er['ttdH'] !== null): ?><div><dt>Time-to-detect</dt><dd><?= (int)$er['ttdH'] ?> h from registration to first observation</dd></div><?php endif; ?>
                         <?php if (!empty($r['tag_note'])): ?><div><dt>Analyst note</dt><dd><?= htmlspecialchars((string)$r['tag_note']) ?></dd></div><?php endif; ?>
                     </dl>
                     <ul class="rp-reasons">

@@ -1668,7 +1668,8 @@ td select.browser-default,
 .status-benign,
 .rep-clean          { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
 .status-unknown,
-.rep-not_checked    { background: var(--surface-3); color: var(--text-muted); border-color: var(--border-strong); }
+.rep-not_checked,
+.rep-unproven       { background: var(--surface-3); color: var(--text-muted); border-color: var(--border-strong); }
 
 .rep-detail {
     display: block;
@@ -1857,6 +1858,56 @@ td select.browser-default,
     font-size: 0.82rem;
     vertical-align: top;
 }
+
+/* ------------------------------------------------------------
+   Report risk hierarchy (screen)
+   ------------------------------------------------------------ */
+/* Keyword highlighted inside the domain name */
+.kw-hit {
+    background: var(--warning-bg);
+    color: var(--warning);
+    font-weight: 700;
+    border-radius: 2px;
+    padding: 0 3px;
+}
+
+/* Age with a risk scale (null age = neutral) */
+.age-fresh       { color: var(--danger); font-weight: 700; }
+.age-young       { color: var(--warning); font-weight: 600; }
+.age-recent      { color: var(--text); }
+.age-established { color: var(--text-muted); }
+.age-unknown     { color: var(--text-muted); }
+
+/* TLD with a high abuse rate */
+.tld-risk {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: var(--warning);
+    border: 1px solid var(--warning-border);
+    border-radius: 3px;
+    padding: 0 4px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+/* Lateral severity strip (triage without reading a single cell) */
+.triage-row > td:first-child { border-left: 3px solid transparent; }
+.triage-row.sev-critical > td:first-child { border-left-color: var(--danger); }
+.triage-row.sev-high     > td:first-child { border-left-color: var(--warning); }
+.triage-row.sev-elevated > td:first-child { border-left-color: var(--warning); }
+.triage-row.sev-medium   > td:first-child { border-left-color: var(--border-strong); }
+
+/* Delta chips vs previous report */
+.delta-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.delta { font-size: 0.72rem; font-weight: 700; padding: 1px 8px; border-radius: 3px; }
+.delta-up   { color: var(--danger); background: var(--danger-bg); }
+.delta-down { color: var(--success); background: var(--success-bg); }
+
+.reason-warn { color: var(--warning); font-weight: 600; }
+
+/* WHOIS: only "registered" is positive; "available" is neutral */
+.whois-neutral    { color: var(--text-muted); font-weight: 600; }
+.whois-registered { color: var(--success); font-weight: 600; }
 
 /* The print / PDF document (.rp*) styles live in /css/print.css, loaded only by
    templates/print_header.php (which does NOT load Materialize nor this file). */

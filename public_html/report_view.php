@@ -70,7 +70,7 @@ $rules = reportReviewRules($db);
 $printMode = isset($_GET['print']) && $_GET['print'] === '1';
 
 $statusSymbol = ['malicious' => '●', 'suspicious' => '⚠', 'review_required' => '⚠', 'benign' => '✓', 'unknown' => '○'];
-$repSymbol = ['malicious' => '●', 'suspicious' => '⚠', 'dga' => '⚠', 'clean' => '✓', 'not_checked' => '○'];
+$repSymbol = ['malicious' => '●', 'suspicious' => '⚠', 'dga' => '⚠', 'clean' => '✓', 'not_checked' => '○', 'unproven' => '○'];
 
 $tagLabels = ['good' => 'GOOD', 'bad' => 'BAD', 'observing' => 'OBSERVING'];
 
@@ -78,6 +78,7 @@ $tagLabels = ['good' => 'GOOD', 'bad' => 'BAD', 'observing' => 'OBSERVING'];
 $sections = [];
 $firstSeenTs = null;
 $lastSeenTs = null;
+$unprovenVt = 0;
 foreach ($report as $data) {
     $kw = (string)($data['keyword'] ?? '');
     $counts = $data['counts'] ?? [];
@@ -86,7 +87,7 @@ foreach ($report as $data) {
     foreach ($rows as $r) {
         $age = reportDomainAge($r['creation_date'] ?? null, $refUtc);
         $status = reportDomainStatus($r, $rules);
-        $rep = reportReputation($r);
+        $rep = reportReputationContextual(reportReputation($r), $age);
         $avail = reportAvailability($r);
         $enriched[] = [
             'row'      => $r,
@@ -95,9 +96,13 @@ foreach ($report as $data) {
             'rep'      => $rep,
             'why'      => reportWhyFlagged($r),
             'avail'    => $avail,
+            'sev'      => reportRowSeverity($status, $age),
+            'ttdH'     => reportTimeToDetectHours($r),
+            'regSpan'  => reportRegistrationSpanReason($r),
             'risk'     => reportRiskAssessment($r, $status, $avail),
             'timeline' => reportTimeline($r, $refUtc),
         ];
+        if ($rep['state'] === 'unproven') { $unprovenVt++; }
         $fs = $r['first_seen'] ?? ($r['discovered_at'] ?? null);
         if ($fs && ($t = strtotime((string)$fs)) !== false && ($firstSeenTs === null || $t < $firstSeenTs)) {
             $firstSeenTs = $t;
@@ -234,6 +239,13 @@ require __DIR__ . '/templates/header.php';
                 <li><?= htmlspecialchars($note) ?></li>
             <?php endforeach; ?>
         </ul>
+        <?php if ($prevAgg !== null): ?>
+            <div class="delta-chips">
+                <?= reportDeltaChip((int)$prevAgg['new'], (int)$newCount, 'new') ?>
+                <?= reportDeltaChip((int)$prevAgg['status']['malicious'], (int)$statusCounts['malicious'], 'malicious') ?>
+                <?= reportDeltaChip((int)$prevAgg['status']['review_required'], (int)$statusCounts['review_required'], 'to review') ?>
+            </div>
+        <?php endif; ?>
     </section>
 
     <section class="report-kpis">
@@ -242,7 +254,7 @@ require __DIR__ . '/templates/header.php';
         <div class="report-kpi danger"><span class="report-kpi-value"><?= number_format($statusCounts['malicious']) ?></span><span class="report-kpi-label">Confirmed malicious</span></div>
         <div class="report-kpi warning"><span class="report-kpi-value"><?= number_format($statusCounts['suspicious']) ?></span><span class="report-kpi-label">Suspicious</span></div>
         <div class="report-kpi good"><span class="report-kpi-value"><?= number_format($statusCounts['benign']) ?></span><span class="report-kpi-label">Confirmed benign</span></div>
-        <div class="report-kpi"><span class="report-kpi-value"><?= number_format($statusCounts['unknown']) ?></span><span class="report-kpi-label">Unknown / not checked</span></div>
+        <div class="report-kpi"><span class="report-kpi-value"><?= number_format($notCheckedVt + $unprovenVt) ?></span><span class="report-kpi-label">Unknown / not checked</span></div>
     </section>
 
     <div class="report-meta">
@@ -410,14 +422,25 @@ require __DIR__ . '/templates/header.php';
                             : '<span class="muted">&mdash;</span>';
                         $rawJson = htmlspecialchars(json_encode($r, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
                     ?>
-                    <tr class="triage-row">
+                    <tr class="triage-row <?= htmlspecialchars($er['sev']) ?>">
                         <td><span class="status-pill status-<?= htmlspecialchars($status) ?>"><?= htmlspecialchars(reportStatusLabel($status)) ?></span></td>
-                        <td class="domain-cell"><?= htmlspecialchars((string)($r['domain'] ?? '')) ?><?php if (!empty($r['_is_new'])): ?> <span class="badge-new">NEW</span><?php endif; ?></td>
+                        <td class="domain-cell"><?= reportHighlightKeyword((string)($r['domain'] ?? ''), (string)$sec['keyword']) ?><?= reportTldBadge((string)($r['domain'] ?? '')) ?><?php if (!empty($r['_is_new'])): ?> <span class="badge-new">NEW</span><?php endif; ?></td>
                         <td><?= htmlspecialchars($sourceLabel) ?></td>
                         <td><?= htmlspecialchars($firstSeen) ?></td>
-                        <td><?= htmlspecialchars(reportAgeLabel($er['age'])) ?></td>
+                        <td class="cell-age <?= htmlspecialchars(reportAgeClass($er['age'])) ?>"><?= htmlspecialchars(reportAgeLabel($er['age'])) ?></td>
                         <td><?= htmlspecialchars($er['why']) ?></td>
-                        <td><span class="rep-pill rep-<?= htmlspecialchars($rep['state']) ?>"><?= htmlspecialchars($rep['label']) ?></span><?php if ($rep['detail'] !== ''): ?><span class="rep-detail"><?= htmlspecialchars($rep['detail']) ?></span><?php endif; ?></td>
+                        <td>
+                            <?php
+                            $detected = (int)($r['malicious'] ?? 0) + (int)($r['suspicious'] ?? 0);
+                            $vtTotal = $detected + (int)($r['harmless'] ?? 0) + (int)($r['undetected'] ?? 0);
+                            ?>
+                            <?php if ($detected > 0): ?>
+                                <span class="rep-pill rep-malicious"><?= (int)$detected ?><?= $vtTotal > 0 ? '/' . (int)$vtTotal : '' ?> engines</span>
+                            <?php else: ?>
+                                <span class="rep-pill rep-<?= htmlspecialchars($rep['state']) ?>"><?= htmlspecialchars($repSymbol[$rep['state']] ?? '') ?> <?= htmlspecialchars($rep['label']) ?></span>
+                                <?php if ($rep['detail'] !== ''): ?><span class="rep-detail"><?= htmlspecialchars($rep['detail']) ?></span><?php endif; ?>
+                            <?php endif; ?>
+                        </td>
                         <td class="no-print"><button type="button" class="btn btn-small btn-outline waves-effect detail-toggle" onclick="toggleDetail(this)" aria-expanded="false"><i class="material-icons left">expand_more</i>Details</button></td>
                     </tr>
                     <tr class="domain-detail-row" style="display:none;">
@@ -432,7 +455,7 @@ require __DIR__ . '/templates/header.php';
                                         </dl>
                                         <ul class="dd-findings">
                                             <?php foreach ($risk['reasons'] as $reason): ?>
-                                                <li><?= htmlspecialchars($reason) ?></li>
+                                                <li class="<?= strpos($reason, 'registration period') !== false ? 'reason-warn' : '' ?>"><?= htmlspecialchars($reason) ?></li>
                                             <?php endforeach; ?>
                                         </ul>
                                     </div>
@@ -470,6 +493,9 @@ require __DIR__ . '/templates/header.php';
                                             <div><dt>Keyword</dt><dd><?= htmlspecialchars($sec['keyword']) ?></dd></div>
                                             <div><dt>Source</dt><dd><?= htmlspecialchars($sourceLabel) ?></dd></div>
                                             <div><dt>Historical</dt><dd><?= !empty($r['is_historical']) ? 'Yes' : '<span class="muted">No</span>' ?></dd></div>
+                                            <?php if ($er['ttdH'] !== null): ?>
+                                                <div><dt>Time-to-detect</dt><dd><?= (int)$er['ttdH'] ?> h from registration to first observation</dd></div>
+                                            <?php endif; ?>
                                             <?php if (!empty($r['tag_note'])): ?>
                                                 <div><dt>Analyst note</dt><dd><?= htmlspecialchars((string)$r['tag_note']) ?></dd></div>
                                             <?php endif; ?>

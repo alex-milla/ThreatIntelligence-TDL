@@ -76,9 +76,25 @@ body.rp-body {
 .rp-malicious, .rp-rep-malicious { color: #b00020; }
 .rp-suspicious, .rp-rep-suspicious, .rp-rep-dga, .rp-review_required { color: #9a6400; }
 .rp-benign, .rp-rep-clean { color: #2f6b3f; }
-.rp-unknown, .rp-rep-not_checked { color: #666; }
+.rp-unknown, .rp-rep-not_checked, .rp-rep-unproven { color: #666; }
 .rp-new { background: #f2e9e2; color: #7a5c51; border: 1px solid #e0d2c6; border-radius: 3px; font-size: 9px; font-weight: 700; padding: 0 4px; }
 .rp-domain-name { font-weight: 700; word-break: break-all; }
+
+/* Risk hierarchy (survives B/N via weight + symbol) */
+.kw-hit { background: #eee; color: #000; font-weight: 700; border-radius: 2px; padding: 0 2px; }
+.tld-risk { font-size: 8pt; font-weight: 700; color: #9a6400; border: 1px solid #c9a227; border-radius: 3px; padding: 0 3px; margin-left: 4px; vertical-align: middle; }
+.age-fresh       { color: #b00020; font-weight: 700; }
+.age-young       { color: #9a6400; font-weight: 700; }
+.age-recent      { color: #333; }
+.age-established,
+.age-unknown     { color: #666; }
+.rp-domain { border-left: 4px solid transparent; }
+.rp-domain.sev-critical { border-left-color: #b00020; }
+.rp-domain.sev-high     { border-left-color: #e08a00; }
+.rp-domain.sev-elevated { border-left-color: #c9a227; }
+.rp-domain.sev-medium   { border-left-color: #999; }
+.rp-reasons .reason-warn,
+.reason-warn { color: #9a6400; font-weight: 600; }
 
 .rp-kw { break-inside: avoid; }
 .rp-domain { border: .5pt solid #ddd; border-radius: 2mm; padding: 3mm; margin: 0 0 4mm; }

@@ -219,6 +219,18 @@ function reportRiskAssessment(array $row, string $status, array $avail): array {
         $reasons[] = 'No strong signal';
     }
 
+    // A minimum registration period (~1 year) is a disposable-infrastructure
+    // signal: raise the risk one step and state it explicitly.
+    $regSpan = reportRegistrationSpanReason($row);
+    if ($regSpan !== null) {
+        $reasons[] = $regSpan;
+        if ($risk === 'low') {
+            $risk = 'medium';
+        } elseif ($risk === 'medium') {
+            $risk = 'high';
+        }
+    }
+
     $whoisOk = (($avail['whois']['state'] ?? '') === 'ok');
     $vtChecked = (($avail['vt']['state'] ?? '') === 'ok');
     if ($whoisOk && $vtChecked) {
@@ -321,4 +333,182 @@ function reportFormatDate($value): string {
         return $ts > 0 ? date('Y-m-d', $ts) : '—';
     }
     return fmt_date($v);
+}
+
+/* ==========================================================================
+   Visual risk-signal helpers (report hierarchy)
+   ========================================================================== */
+
+/** TLDs statistically over-represented in abuse (editable heuristic). */
+function reportRiskTlds(): array {
+    return [
+        'xyz', 'top', 'icu', 'click', 'link', 'live', 'rest', 'cfd', 'sbs', 'shop',
+        'quest', 'buzz', 'monster', 'lol', 'cam', 'cyou', 'fit', 'autos', 'boats', 'beauty',
+    ];
+}
+
+/** Age tier: the product's #1 signal. Unknown age is neutral, never "fresh". */
+function reportAgeTier(?int $days): string {
+    if ($days === null) {
+        return 'unknown';
+    }
+    if ($days <= 7) {
+        return 'fresh';
+    }
+    if ($days <= 30) {
+        return 'young';
+    }
+    if ($days <= 90) {
+        return 'recent';
+    }
+    return 'established';
+}
+
+/** CSS class for the age tier (e.g. age-fresh). */
+function reportAgeClass(?int $days): string {
+    return 'age-' . reportAgeTier($days);
+}
+
+/** Domain with the matched keyword highlighted (HTML-safe, multibyte-safe). */
+function reportHighlightKeyword(string $domain, string $keyword): string {
+    if ($keyword === '') {
+        return htmlspecialchars($domain);
+    }
+    if (function_exists('mb_stripos')) {
+        $pos = mb_stripos($domain, $keyword, 0, 'UTF-8');
+        if ($pos === false) {
+            return htmlspecialchars($domain);
+        }
+        $len = mb_strlen($keyword, 'UTF-8');
+        return htmlspecialchars(mb_substr($domain, 0, $pos, 'UTF-8'))
+            . '<mark class="kw-hit">' . htmlspecialchars(mb_substr($domain, $pos, $len, 'UTF-8')) . '</mark>'
+            . htmlspecialchars(mb_substr($domain, $pos + $len, null, 'UTF-8'));
+    }
+    // Fallback when mbstring is not available (byte-based; fine for ASCII/IDN-punycode).
+    $pos = stripos($domain, $keyword);
+    if ($pos === false) {
+        return htmlspecialchars($domain);
+    }
+    $len = strlen($keyword);
+    return htmlspecialchars(substr($domain, 0, $pos))
+        . '<mark class="kw-hit">' . htmlspecialchars(substr($domain, $pos, $len)) . '</mark>'
+        . htmlspecialchars(substr($domain, $pos + $len));
+}
+
+/** Risk-TLD badge for a domain ('' when not applicable). */
+function reportTldBadge(string $domain): string {
+    $dot = strrpos($domain, '.');
+    if ($dot === false) {
+        return '';
+    }
+    $tld = strtolower(substr($domain, $dot + 1));
+    if (in_array($tld, reportRiskTlds(), true)) {
+        return '<span class="tld-risk" title="TLD with a high abuse rate">.' . htmlspecialchars($tld) . '</span>';
+    }
+    return '';
+}
+
+/**
+ * Contextual reputation: "0 detections" on a young (or unknown-age) domain is
+ * not proof of benign -> grey "unproven" instead of green "clean".
+ */
+function reportReputationContextual(array $rep, ?int $ageDays): array {
+    if (($rep['state'] ?? '') === 'clean' && ($ageDays === null || $ageDays <= 30)) {
+        $detail = (string)($rep['detail'] ?? '');
+        $extra = 'insufficient history (' . reportAgeLabel($ageDays) . ')';
+        return [
+            'state'  => 'unproven',
+            'label'  => $rep['label'],
+            'detail' => $detail !== '' ? $detail . ' · ' . $extra : $extra,
+        ];
+    }
+    return $rep;
+}
+
+/** Row severity for the lateral triage strip (neutral when age is unknown). */
+function reportRowSeverity(string $status, ?int $ageDays): string {
+    if ($status === 'malicious') {
+        return 'sev-critical';
+    }
+    if ($status === 'suspicious') {
+        return 'sev-high';
+    }
+    if ($ageDays !== null && $ageDays <= 7) {
+        return 'sev-elevated';
+    }
+    if ($status === 'review_required') {
+        return 'sev-medium';
+    }
+    return 'sev-none';
+}
+
+/** WHOIS class: only a registered domain is positive; "available" is neutral. */
+function reportWhoisClass(string $label): string {
+    return in_array(strtolower(trim($label)), ['registered', 'ok'], true) ? 'whois-registered' : 'whois-neutral';
+}
+
+/**
+ * Parse a stored date for DateTimeImmutable. Unix timestamps and naive strings
+ * are treated as UTC so time-to-detect does not shift with the server timezone.
+ */
+function reportParseDateArg($value): string {
+    $v = trim((string)$value);
+    if ($v === '') {
+        return $v;
+    }
+    if (ctype_digit($v)) {
+        return '@' . $v;
+    }
+    if (!preg_match('/(?:Z|[+\-]\d{2}:?\d{2})$/', $v)) {
+        $v .= ' UTC';
+    }
+    return $v;
+}
+
+/** Minimum registration period (~1 year) => disposable-infrastructure signal. */
+function reportRegistrationSpanReason(array $row): ?string {
+    if (empty($row['creation_date']) || empty($row['expiration_date'])) {
+        return null;
+    }
+    try {
+        $c = new DateTimeImmutable(reportParseDateArg($row['creation_date']));
+        $e = new DateTimeImmutable(reportParseDateArg($row['expiration_date']));
+    } catch (Exception $ex) {
+        return null;
+    }
+    $days = (int)round(($e->getTimestamp() - $c->getTimestamp()) / 86400);
+    if ($days > 0 && $days <= 370) {
+        return sprintf('Minimum registration period (%d days): common pattern of disposable infrastructure', $days);
+    }
+    return null;
+}
+
+/** Hours between registration and first observation in the zone. */
+function reportTimeToDetectHours(array $row): ?int {
+    if (empty($row['creation_date']) || empty($row['first_seen'])) {
+        return null;
+    }
+    try {
+        $c = new DateTimeImmutable(reportParseDateArg($row['creation_date']));
+        $s = new DateTimeImmutable(reportParseDateArg($row['first_seen']));
+    } catch (Exception $ex) {
+        return null;
+    }
+    $h = (int)round(($s->getTimestamp() - $c->getTimestamp()) / 3600);
+    return $h >= 0 ? $h : null;
+}
+
+/** Delta chip vs the previous report ('' when unchanged). */
+function reportDeltaChip(int $prev, int $curr, string $label): string {
+    if ($prev === $curr) {
+        return '';
+    }
+    $up = $curr > $prev;
+    return sprintf(
+        '<span class="delta %s">%s%d %s vs. previous report</span>',
+        $up ? 'delta-up' : 'delta-down',
+        $up ? '▲' : '▼',
+        abs($curr - $prev),
+        htmlspecialchars($label)
+    );
 }

@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.11.2] - 2026-09-22
+
+### Added - Visual risk hierarchy in reports
+
+- **Age tiers** with colour scale (`fresh` / `young` / `recent` / `established`), and a **neutral `unknown`** when the registration date is missing (never treated as "fresh").
+- **Keyword highlighted** inside the domain name (`.kw-hit`), and a **high-abuse TLD badge** (`.tld-risk`, editable list).
+- **Lateral severity strip** per triage row (`sev-critical` / `high` / `elevated` / `medium`) so the triage order is readable at a glance.
+- **Contextual reputation**: a `clean` verdict on a young (or unknown-age) domain is shown grey as **`unproven`** ("insufficient history") instead of green — 0 detections is not proof of benign.
+- **Minimum registration period** (~1 year ⇒ disposable infrastructure) and **Time-to-detect** (hours from registration to first observation), and the registration-span signal also **raises the computed risk** one step.
+- **Delta chips** vs the previous report in the Executive Summary; the "Unknown / not checked" KPI now counts `not_checked` + `unproven`.
+- Styling uses the existing light/dark theme variables; the **print document keeps the hierarchy in B/N** (symbol + weight + strip survive without colour). Raw-data retained.
+
+### Fixed / hardened
+- `reportHighlightKeyword()` falls back to byte-based matching when **mbstring** is unavailable.
+- Dates for time-to-detect / registration span are parsed as **UTC** (no server-timezone shift).
+
+### Verification
+- Screen and `?print=1` render with a young `clean` (unproven), a `malicious`, a minimum-registration and a no-WHOIS domain: `unproven`, `age-fresh`, `age-unknown`, `tld-risk`, `sev-*`, `kw-hit`, the min-registration reason and Time-to-detect are all present.
+- `php -l` on all `public_html` files: 0 errors; `node --check assets/bulk.js`: OK; `worker/tests.py`: PASS.
+
 ## [v1.11.1] - 2026-09-22
 
 ### Changed - Print / PDF opens in a popup window
