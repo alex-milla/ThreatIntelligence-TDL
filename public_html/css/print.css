@@ -30,19 +30,19 @@ body.rp-body {
 .rp { color: #1a1a1a; }
 
 .rp h1 { font-size: 20px; margin: 2px 0 6px; }
-.rp h2 { font-size: 13pt; border-bottom: 1.5pt solid #7a5c51; padding-bottom: 1.5mm; margin: 6mm 0 3mm; break-after: avoid; }
+.rp h2 { font-size: 13pt; border-bottom: 1.5pt solid #ea580c; padding-bottom: 1.5mm; margin: 6mm 0 3mm; break-after: avoid; }
 .rp h3 { font-size: 11pt; margin: 4mm 0 2mm; break-after: avoid; }
 .rp h4 { font-size: 8.5pt; text-transform: uppercase; letter-spacing: .05em; color: #555; margin: 3mm 0 1mm; break-after: avoid; }
 
-.rp-brand { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #7a5c51; }
+.rp-brand { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #ea580c; }
 .rp-subtitle { color: #555; margin-bottom: 6px; }
 .rp-tlp {
     display: inline-block;
     margin-left: 8px;
     padding: 0 5px;
-    border: 1px solid #7a5c51;
+    border: 1px solid #ea580c;
     border-radius: 3px;
-    color: #7a5c51;
+    color: #ea580c;
     font-size: 8pt;
     font-weight: 700;
     letter-spacing: .08em;
@@ -50,10 +50,10 @@ body.rp-body {
 }
 .rp-meta { display: flex; flex-wrap: wrap; gap: 4px 18px; color: #333; margin: 6px 0; }
 .rp-meta-secondary { border-top: 1px solid #eee; padding-top: 6px; }
-.rp-cover { border-bottom: 3px solid #7a5c51; padding-bottom: 10px; margin-bottom: 12px; }
+.rp-cover { border-bottom: 3px solid #ea580c; padding-bottom: 10px; margin-bottom: 12px; }
 .rp-cover.rp-break { break-after: page; }
 
-.rp-exec { border: 1px solid #ddd; border-left: 4px solid #7a5c51; border-radius: 4px; background: #faf8f6; padding: 10px 12px; margin: 10px 0; }
+.rp-exec { border: 1px solid #ddd; border-left: 4px solid #ea580c; border-radius: 4px; background: #fff7ed; padding: 10px 12px; margin: 10px 0; }
 .rp-exec h2 { border: 0; margin: 0 0 6px; padding: 0; }
 .rp-notes, .rp-reasons { margin: 4px 0 0 16px; padding: 0; }
 .rp-notes li, .rp-reasons li { margin: 1px 0; }
@@ -77,7 +77,7 @@ body.rp-body {
 .rp-suspicious, .rp-rep-suspicious, .rp-rep-dga, .rp-review_required { color: #9a6400; }
 .rp-benign, .rp-rep-clean { color: #2f6b3f; }
 .rp-unknown, .rp-rep-not_checked, .rp-rep-unproven { color: #666; }
-.rp-new { background: #f2e9e2; color: #7a5c51; border: 1px solid #e0d2c6; border-radius: 3px; font-size: 9px; font-weight: 700; padding: 0 4px; }
+.rp-new { background: #ffedd5; color: #ea580c; border: 1px solid #fed7aa; border-radius: 3px; font-size: 9px; font-weight: 700; padding: 0 4px; }
 .rp-domain-name { font-weight: 700; word-break: break-all; }
 
 /* Risk hierarchy (survives B/N via weight + symbol) */

@@ -22,6 +22,8 @@
         </div>
         </div>
     </footer>
+    </div><!-- .app-body -->
+</div><!-- .app-shell -->
 
     <script src="/js/materialize.min.js?v=<?= urlencode($assetVersion) ?>"></script>
     <script src="/assets/whois.js?v=<?= urlencode($assetVersion) ?>"></script>

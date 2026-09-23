@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.12.0] - 2026-09-23
+
+### Changed - New orange design system + left sidebar layout
+
+- **New visual identity (FinSec-style):** the warm brown "Soft Corporate" palette is replaced by a **single orange accent** (`#ea580c`/`#f97316`) over neutral **gray/slate** surfaces, with Tailwind-standard semantic colours (red / amber / green / blue). Light and dark themes are both retuned; the print/PDF report accent is aligned too.
+- **Layout migrated to a fixed left sidebar** (`w-256px`) plus a top header, replacing the old top navbar. The sidebar groups navigation into **Monitoring** (Dashboard, Keywords, Notifications, Watchlist), **Intelligence** (Informes) and **Administration** (TLDs, Admin Panel, admins only); the header holds the page title, theme toggle and the user menu with a role chip.
+- Below 992 px the sidebar collapses and the existing Materialize drawer (hamburger) is used, now with the same grouped navigation.
+- **Primary buttons are now solid orange** (white text) and danger buttons solid red; cards are border-only (`rounded-xl`, no shadow) with a hover lift on clickable cards. Inputs use the orange focus ring.
+- Smooth 200 ms global theme transition, enabled only after first paint (no flash).
+- No PHP data, routes, APIs or report logic changed; only presentation (`css/app.css`, `css/print.css`, `js/app.js`, `templates/header.php`, `templates/footer.php`).
+
 ## [v1.11.6] - 2026-09-22
 
 ### Added - VirusTotal link in the report detail

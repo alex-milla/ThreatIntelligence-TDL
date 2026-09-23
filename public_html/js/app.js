@@ -236,3 +236,9 @@ var App = {
 document.addEventListener('DOMContentLoaded', function () {
     App.init();
 });
+
+// Enable the global theme transition only after the first paint, so the
+// initial render never animates but light/dark switches fade smoothly.
+window.addEventListener('load', function () {
+    document.documentElement.classList.add('transition-theme');
+});
