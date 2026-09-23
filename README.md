@@ -221,6 +221,15 @@ Additionally, after each download the worker automatically caches the WHOIS/RDAP
 - Lookups are spaced by `[whois] rate_delay` (config) to be gentle with registries.
 - Command latency depends on `[worker] poll_interval` (default 20 s).
 
+## Reputation lookups (VirusTotal + AlienVault OTX)
+
+The domain detail (Watchlist, Notifications, Dashboard lookup and the reports) shows two reputation sources, both cached and refreshed **on demand** through the worker command queue:
+
+- **VirusTotal** (`vt_lookup`): per-domain verdict from the VirusTotal API v3 (`[virustotal] api_key`, `rate_delay_seconds`, `daily_limit`, `cache_days`). Buttons: **Check VirusTotal (worker)** / **Open in VirusTotal**.
+- **AlienVault OTX** (`otx_lookup`): per-domain verdict derived from the **number of OTX "pulses"** (community threat reports) that reference the domain; OTX-whitelisted domains are treated as clean. Configure `[alienvault] api_key`, `rate_delay_seconds`, `daily_limit`, `cache_days` and the `suspicious_pulses` / `malicious_pulses` thresholds. Buttons: **Check AlienVault OTX** / **Open in AlienVault OTX**.
+
+Results are cached in `domain_vt` and `domain_otx` respectively, so repeat views are instant. A missing API key makes the command fail with a clear message (the rest of the worker is unaffected).
+
 ## OpenINTEL ccTLD import (optional, weekly)
 
 CZDS only covers gTLDs. For **country-code TLDs** (`.io`, `.es`, `.fr`, ...) the worker can additionally import the **weekly apex-domain lists** published by [OpenINTEL](https://www.openintel.nl/data/domain-lists/cctld-names/), extracted from Certificate Transparency logs.

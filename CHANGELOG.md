@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.15.0] - 2026-09-23
+
+### Added - AlienVault OTX as a second reputation source
+
+- **AlienVault OTX (LevelBlue) alongside VirusTotal.** The domain detail (Watchlist, Notifications, Dashboard lookup and the reports) now shows an **AlienVault OTX** line derived from the community **pulses** (threat reports) that reference the domain, with **Check AlienVault OTX** / **Open in AlienVault OTX** actions.
+- **Worker**: new `worker/alienvault.py` (`otx_lookup` command) queries the OTX DirectConnect API (`/indicators/domain/{domain}/general`, one request per domain), aggregates the pulse count, references, adversary and malware families, and classifies a verdict: OTX-whitelisted or 0 pulses → clean, `>= suspicious_pulses` (default 1) → suspicious, `>= malicious_pulses` (default 3) → malicious. Daily limit and rate delay via a new `otx_usage` table. Results are posted to `api/v1/otx_results.php`.
+- **Config**: new `[alienvault]` section (`api_key`, `rate_delay_seconds`, `daily_limit`, `cache_days`, `timeout`, `suspicious_pulses`, `malicious_pulses`). A missing key fails the command gracefully, like VirusTotal.
+- **Web**: cached in `domain_otx`; new endpoints `ajax_otx_request.php` (queue) and `ajax_otx_cache.php` (read); batch button **Check AlienVault OTX** and an OTX badge next to VT in the lists; OTX is snapshotted into new reports (screen + print) and can raise the domain's Assessment/risk when malicious/suspicious.
+- No changes to the existing VirusTotal flow or schema; old saved reports show OTX as "Not checked".
+
 ## [v1.14.4] - 2026-09-23
 
 ### Changed - Unified rich domain detail + minimalist buttons + report groups

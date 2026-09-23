@@ -275,6 +275,20 @@ if (!empty($notifications)) {
     }
 }
 
+// Load cached AlienVault OTX verdicts for the visible rows
+$domainOtx = [];
+if (!empty($notifications)) {
+    $domainsOnPage = array_column($notifications, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domainsOnPage), '?'));
+    $otxStmt = $db->prepare("SELECT domain, verdict, pulse_count, references_count, whitelisted,
+            adversary, malware_families, tags, last_analysis_date, checked_at
+        FROM domain_otx WHERE domain IN ($placeholders)");
+    $otxStmt->execute($domainsOnPage);
+    foreach ($otxStmt->fetchAll() as $o) {
+        $domainOtx[$o['domain']] = $o;
+    }
+}
+
 // Report-queue status for the visible rows.
 $domainQueue = [];
 if (!empty($notifications)) {
@@ -410,6 +424,7 @@ require __DIR__ . '/templates/header.php';
                 <button type="submit" class="btn btn-small btn-danger waves-effect" onclick="return confirm('Delete selected notifications?')"><i class="material-icons left">delete</i>Delete Selected</button>
                 <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
                 <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
+                <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleOtx()"><i class="material-icons left">travel_explore</i>Check AlienVault OTX</button>
                 <button type="button" class="btn btn-small waves-effect" onclick="sendSelectedToReport()"><i class="material-icons left">playlist_add</i>Send to report</button>
                 <button type="button" class="btn btn-small btn-outline waves-effect" onclick="removeSelectedFromReport()"><i class="material-icons left">playlist_remove</i>Remove from report</button>
                 <button type="button" class="btn btn-small btn-outline waves-effect" onclick="location.reload()" title="Reload this list with the current filters"><i class="material-icons left">refresh</i>Refresh</button>
@@ -467,6 +482,13 @@ require __DIR__ . '/templates/header.php';
                     $vtCell = isset($vtLabels[$vtVerdict])
                         ? '<span class="vt-badge vt-' . $vtVerdict . '">' . $vtLabels[$vtVerdict] . '</span>'
                         : '<span class="muted">&mdash;</span>';
+                    $otxRow = $domainOtx[$n['domain']] ?? null;
+                    $otxVerdict = $otxRow ? (string)$otxRow['verdict'] : '';
+                    $otxPulses = $otxRow ? (int)$otxRow['pulse_count'] : 0;
+                    $otxLabels = ['malicious' => 'MALICIOUS', 'suspicious' => 'SUSPICIOUS', 'clean' => 'NO PULSES'];
+                    $otxCell = isset($otxLabels[$otxVerdict])
+                        ? '<span class="vt-badge vt-' . $otxVerdict . '" title="AlienVault OTX: ' . $otxPulses . ' pulse(s)">OTX ' . $otxLabels[$otxVerdict] . '</span>'
+                        : '<span class="muted">&mdash;</span>';
                     $qRow = $domainQueue[$n['domain']] ?? null;
                     $queueBadge = ($qRow !== null && $qRow['reported_at'] === null)
                         ? ' <span class="tag-chip report" title="Queued for the next report">QUEUED</span>'
@@ -497,6 +519,15 @@ require __DIR__ . '/templates/header.php';
                         'reputation'         => $vtRow['reputation'] ?? null,
                         'last_analysis_date' => $vtRow['last_analysis_date'] ?? null,
                         'vt_checked_at'      => $vtRow['checked_at'] ?? null,
+                        'otx_verdict'        => $otxRow['verdict'] ?? null,
+                        'otx_pulse_count'    => $otxRow['pulse_count'] ?? null,
+                        'otx_references_count' => $otxRow['references_count'] ?? null,
+                        'otx_whitelisted'    => $otxRow['whitelisted'] ?? null,
+                        'otx_adversary'       => $otxRow['adversary'] ?? null,
+                        'otx_malware_families' => $otxRow['malware_families'] ?? null,
+                        'otx_tags'           => $otxRow['tags'] ?? null,
+                        'otx_last_analysis_date' => $otxRow['last_analysis_date'] ?? null,
+                        'otx_checked_at'     => $otxRow['checked_at'] ?? null,
                         '_ns'                => $ns,
                         '_is_new'            => $isNew,
                     ];
@@ -506,7 +537,7 @@ require __DIR__ . '/templates/header.php';
                     <td><label><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form"><span></span></label></td>
                     <td><?= $n['is_read'] ? '<span class="status-badge status-cancelled">Read</span>' : '<span class="status-badge status-pending">Unread</span>' ?></td>
                     <td><a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><?= htmlspecialchars($n['domain']) ?></a><?= $tagBadge ?><?= $queueBadge ?></td>
-                    <td><?= $vtCell ?></td>
+                    <td><?= $vtCell ?> <?= $otxCell ?></td>
                     <td><?= htmlspecialchars($n['tld']) ?></td>
                     <td><?= htmlspecialchars($n['keyword']) ?></td>
                     <td><?= htmlspecialchars(fmt_date($n['first_seen'])) ?></td>

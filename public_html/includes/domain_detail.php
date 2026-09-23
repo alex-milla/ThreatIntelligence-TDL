@@ -38,6 +38,12 @@ function domainDetailPresent(PDO $db, int $userId, string $domain): ?array {
     $vStmt->execute([$domain]);
     $vtRow = $vStmt->fetch() ?: null;
 
+    $oStmt = $db->prepare("SELECT domain, verdict, pulse_count, references_count, whitelisted,
+            adversary, malware_families, tags, last_analysis_date, checked_at
+        FROM domain_otx WHERE domain = ? LIMIT 1");
+    $oStmt->execute([$domain]);
+    $otxRow = $oStmt->fetch() ?: null;
+
     $tStmt = $db->prepare("SELECT tag, note FROM domain_tags WHERE domain = ? LIMIT 1");
     $tStmt->execute([$domain]);
     $tagRow = $tStmt->fetch() ?: null;
@@ -98,6 +104,15 @@ function domainDetailPresent(PDO $db, int $userId, string $domain): ?array {
         'reputation'         => $vtRow['reputation'] ?? null,
         'last_analysis_date' => $vtRow['last_analysis_date'] ?? null,
         'vt_checked_at'      => $vtRow['checked_at'] ?? null,
+        'otx_verdict'        => $otxRow['verdict'] ?? null,
+        'otx_pulse_count'    => $otxRow['pulse_count'] ?? null,
+        'otx_references_count' => $otxRow['references_count'] ?? null,
+        'otx_whitelisted'    => $otxRow['whitelisted'] ?? null,
+        'otx_adversary'       => $otxRow['adversary'] ?? null,
+        'otx_malware_families' => $otxRow['malware_families'] ?? null,
+        'otx_tags'           => $otxRow['tags'] ?? null,
+        'otx_last_analysis_date' => $otxRow['last_analysis_date'] ?? null,
+        'otx_checked_at'     => $otxRow['checked_at'] ?? null,
         '_ns'                => $ns,
         '_is_new'            => $isNew,
     ];
@@ -123,6 +138,7 @@ function renderDomainDetail(array $present, array $keywords, array $rules): stri
     $age = reportDomainAge($present['creation_date'] ?? null, gmdate('Y-m-d H:i:s'));
     $status = reportDomainStatus($present, $rules);
     $rep = reportReputationContextual(reportReputation($present), $age);
+    $otxRep = reportOtx($present);
     $avail = reportAvailability($present);
     $whoisInfo = $avail['whois'];
     $risk = reportRiskAssessment($present, $status, $avail);
@@ -176,6 +192,7 @@ function renderDomainDetail(array $present, array $keywords, array $rules): stri
             <h4>Reputation</h4>
             <dl class="dd-list">
                 <div><dt>VirusTotal</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($rep['state']) ?>"><?= htmlspecialchars($repSymbol[$rep['state']] ?? '') ?> <?= htmlspecialchars($rep['label']) ?></span><?php if ($rep['detail'] !== ''): ?> <span class="muted"><?= htmlspecialchars($rep['detail']) ?></span><?php endif; ?></dd></div>
+                <div><dt>AlienVault OTX</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($otxRep['state']) ?>"><?= htmlspecialchars($repSymbol[$otxRep['state']] ?? '') ?> <?= htmlspecialchars($otxRep['label']) ?></span><?php if ($otxRep['detail'] !== ''): ?> <span class="muted"><?= htmlspecialchars($otxRep['detail']) ?></span><?php endif; ?></dd></div>
                 <div><dt>Last analysis</dt><dd><?= htmlspecialchars(reportFormatDate($present['last_analysis_date'] ?? null)) ?></dd></div>
                 <div><dt>Checked</dt><dd><?= !empty($present['vt_checked_at']) ? htmlspecialchars(fmt_date((string)$present['vt_checked_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
                 <div><dt>Tag</dt><dd><?= $tagCell ?></dd></div>
@@ -210,7 +227,9 @@ function renderDomainDetail(array $present, array $keywords, array $rules): stri
         <button type="button" class="btn btn-small btn-outline waves-effect" onclick="ddWatchlist('<?= $domainArg ?>')"><i class="material-icons left">star</i><?= !empty($present['in_watchlist']) ? 'Remove from Watchlist' : 'Add to Watchlist' ?></button>
         <button type="button" class="btn btn-small waves-effect" onclick="ddFetchWhois('<?= $domainArg ?>')"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
         <button type="button" class="btn btn-small waves-effect" onclick="ddCheckVt('<?= $domainArg ?>')"><i class="material-icons left">verified_user</i>Check VirusTotal</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="ddCheckOtx('<?= $domainArg ?>')"><i class="material-icons left">travel_explore</i>Check AlienVault OTX</button>
         <a class="btn btn-small btn-info waves-effect" href="https://www.virustotal.com/gui/domain/<?= rawurlencode($domain) ?>" target="_blank" rel="noopener"><i class="material-icons left">shield</i>Open in VirusTotal</a>
+        <a class="btn btn-small btn-info waves-effect" href="https://otx.alienvault.com/indicator/domain/<?= rawurlencode($domain) ?>" target="_blank" rel="noopener"><i class="material-icons left">travel_explore</i>Open in AlienVault OTX</a>
     </div>
     <details class="dd-raw">
         <summary>Raw data</summary>

@@ -31,6 +31,7 @@ import parser
 import matcher
 import sync_client
 import virustotal
+import alienvault
 import whois
 
 log = logging.getLogger("tdl_worker")
@@ -112,6 +113,11 @@ def init_local_db(db_path: str, cache_mb: int = 2048) -> sqlite3.Connection:
         );
 
         CREATE TABLE IF NOT EXISTS vt_usage (
+            day TEXT PRIMARY KEY,
+            count INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS otx_usage (
             day TEXT PRIMARY KEY,
             count INTEGER DEFAULT 0
         );
@@ -1638,6 +1644,69 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                         })
                         logs.append({"level": "info", "message":
                                      f"VirusTotal lookup: {len(entries)} domain(s), sent={ok}"
+                                     + (" [quota reached]" if quota_hit else "")})
+                        if not ok:
+                            status = "failed"
+
+            elif command == "otx_lookup":
+                opts = {}
+                if payload:
+                    try:
+                        opts = json.loads(payload) if isinstance(payload, str) else {}
+                    except (ValueError, TypeError):
+                        opts = {}
+                domains = opts.get("domains")
+                if not isinstance(domains, list):
+                    domains = []
+                domains = [str(d).lower().strip() for d in domains if d][:200]
+
+                if cfg.has_section("alienvault"):
+                    otx_key = cfg.get("alienvault", "api_key", fallback="").strip()
+                    otx_rate = cfg.getfloat("alienvault", "rate_delay_seconds", fallback=1.0)
+                    otx_daily = cfg.getint("alienvault", "daily_limit", fallback=10000)
+                    otx_timeout = cfg.getint("alienvault", "timeout", fallback=20)
+                    otx_susp = cfg.getint("alienvault", "suspicious_pulses", fallback=1)
+                    otx_mal = cfg.getint("alienvault", "malicious_pulses", fallback=3)
+                else:
+                    otx_key, otx_rate, otx_daily, otx_timeout, otx_susp, otx_mal = "", 1.0, 10000, 20, 1, 3
+
+                if not otx_key or otx_key.upper().startswith("TU_"):
+                    result = "AlienVault OTX API key not configured ([alienvault] api_key)."
+                    status = "failed"
+                    logs.append({"level": "error", "message": result})
+                else:
+                    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                    row = db.execute("SELECT count FROM otx_usage WHERE day = ?", (today,)).fetchone()
+                    used = int(row[0]) if row else 0
+                    remaining = max(0, otx_daily - used)
+                    if remaining <= 0:
+                        result = f"AlienVault OTX daily limit reached ({otx_daily}). Try again tomorrow."
+                        status = "failed"
+                        logs.append({"level": "warning", "message": result})
+                    else:
+                        batch = domains[:remaining]
+                        entries = []
+                        quota_hit = False
+                        for d in batch:
+                            try:
+                                entries.append(alienvault.lookup_domain(
+                                    d, otx_key, timeout=otx_timeout,
+                                    suspicious_pulses=otx_susp, malicious_pulses=otx_mal))
+                            except alienvault.QuotaError:
+                                quota_hit = True
+                                break
+                            if otx_rate > 0:
+                                time.sleep(otx_rate)
+                        db.execute("INSERT OR REPLACE INTO otx_usage (day, count) VALUES (?, ?)",
+                                   (today, used + len(entries)))
+                        db.commit()
+                        ok = sync_client.send_otx_results(host_url, api_key, entries)
+                        result = json.dumps({
+                            "requested": len(domains), "looked_up": len(entries), "sent": ok,
+                            "quota_hit": quota_hit, "remaining_today": max(0, otx_daily - (used + len(entries))),
+                        })
+                        logs.append({"level": "info", "message":
+                                     f"AlienVault OTX lookup: {len(entries)} domain(s), sent={ok}"
                                      + (" [quota reached]" if quota_hit else "")})
                         if not ok:
                             status = "failed"

@@ -176,6 +176,21 @@ class Database {
             checked_at TEXT DEFAULT CURRENT_TIMESTAMP
         )");
 
+        // AlienVault OTX domain reputation (community pulses). Verdict derived
+        // from the pulse count; OTX-whitelisted domains are stored as clean.
+        $db->exec("CREATE TABLE IF NOT EXISTS domain_otx (
+            domain TEXT PRIMARY KEY,
+            verdict TEXT,
+            pulse_count INTEGER DEFAULT 0,
+            references_count INTEGER DEFAULT 0,
+            whitelisted INTEGER DEFAULT 0,
+            adversary TEXT,
+            malware_families TEXT,
+            tags TEXT,
+            last_analysis_date TEXT,
+            checked_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )");
+
         $db->exec("CREATE TABLE IF NOT EXISTS watchlist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,

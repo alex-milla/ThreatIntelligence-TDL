@@ -98,6 +98,23 @@ daily_limit = 500
 cache_days = 7
 timeout = 20
 
+[alienvault]
+; AlienVault OTX (LevelBlue Open Threat Exchange) DirectConnect API key
+; (https://otx.alienvault.com/api). The lookup uses the domain "general" section
+; (one request per domain) and derives a verdict from the number of OTX "pulses"
+; (threat reports) that reference the domain; OTX-whitelisted domains are clean.
+api_key = TU_API_KEY_ALIENVAULT
+; Seconds between lookups.
+rate_delay_seconds = 1.0
+; Hard cap of lookups per calendar day (UTC).
+daily_limit = 10000
+; Skip domains already checked within this many days (unless force is requested).
+cache_days = 7
+timeout = 20
+; Pulse thresholds: 1..suspicious-1 -> suspicious; >= malicious -> malicious.
+suspicious_pulses = 1
+malicious_pulses = 3
+
 [openintel]
 ; Weekly ccTLD apex-domain lists from OpenINTEL (see README).
 ; Data license: CC BY-NC-SA 4.0 (non-commercial, attribution required).

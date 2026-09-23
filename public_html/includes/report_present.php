@@ -51,11 +51,19 @@ function reportAgeLabel(?int $days): string {
 function reportDomainStatus(array $row, array $rules): string {
     $verdict = (string)($row['verdict'] ?? '');
     $tag = (string)($row['tag'] ?? '');
+    $otxVerdict = (string)($row['otx_verdict'] ?? '');
+    $otxWhitelisted = !empty($row['otx_whitelisted']);
 
     if ($tag === 'bad' || $verdict === 'malicious') {
         return 'malicious';
     }
+    if ($otxVerdict === 'malicious' && !$otxWhitelisted) {
+        return 'malicious';
+    }
     if ($verdict === 'suspicious' || $verdict === 'dga') {
+        return 'suspicious';
+    }
+    if ($otxVerdict === 'suspicious' && !$otxWhitelisted) {
         return 'suspicious';
     }
     if ($tag === 'good') {
@@ -122,6 +130,12 @@ function reportFindings(array $row, string $keyword, ?int $ageDays): array {
     if (!empty($row['in_watchlist'])) {
         $out[] = ['type' => 'watchlist', 'label' => 'In watchlist', 'value' => '', 'severity' => 'info'];
     }
+    $otxRep = reportOtx($row);
+    if (in_array($otxRep['state'], ['malicious', 'suspicious'], true)) {
+        $out[] = ['type' => 'otx', 'label' => 'AlienVault OTX',
+                  'value' => $otxRep['label'] . ($otxRep['detail'] !== '' ? ' (' . $otxRep['detail'] . ')' : ''),
+                  'severity' => 'warning'];
+    }
     return $out;
 }
 
@@ -141,13 +155,53 @@ function reportReputation(array $row): array {
     }
     $labels = ['malicious' => 'Malicious', 'suspicious' => 'Suspicious', 'dga' => 'DGA'];
     return [
-        'state' => $verdict,
-        'label' => $labels[$verdict] ?? ucfirst($verdict),
+        'state'  => $verdict,
+        'label'  => $labels[$verdict] ?? ucfirst($verdict),
         'detail' => $total > 0 ? ($hits . ' of ' . $total . ' engines') : '',
     ];
 }
 
-/** Data availability per source (only WHOIS + VirusTotal exist right now). */
+/**
+ * AlienVault OTX reputation from the cached pulse data.
+ *
+ * OTX is not a scanner: the signal is the number of OTX "pulses" (community
+ * threat reports) referencing the domain. OTX-whitelisted domains are clean.
+ */
+function reportOtx(array $row): array {
+    if (($row['otx_verdict'] ?? null) === null) {
+        return ['state' => 'not_checked', 'label' => 'Not checked', 'detail' => '', 'pulse_count' => 0];
+    }
+    $verdict = (string)$row['otx_verdict'];
+    $pulses = (int)($row['otx_pulse_count'] ?? 0);
+    $whitelisted = !empty($row['otx_whitelisted']);
+
+    $bits = [];
+    if ($pulses > 0) {
+        $bits[] = $pulses . ' pulse' . ($pulses === 1 ? '' : 's');
+    }
+    $adv = trim((string)($row['otx_adversary'] ?? ''));
+    $fam = trim((string)($row['otx_malware_families'] ?? ''));
+    if ($adv !== '') {
+        $bits[] = $adv;
+    }
+    if ($fam !== '') {
+        $bits[] = $fam;
+    }
+    $detail = implode(' · ', $bits);
+
+    if ($whitelisted) {
+        return ['state' => 'clean', 'label' => 'OTX-whitelisted', 'detail' => $detail, 'pulse_count' => $pulses];
+    }
+    $labels = ['malicious' => 'Malicious', 'suspicious' => 'Suspicious', 'clean' => 'No pulses'];
+    return [
+        'state'       => ($verdict === 'clean') ? 'clean' : $verdict,
+        'label'       => $labels[$verdict] ?? ucfirst($verdict),
+        'detail'      => $detail,
+        'pulse_count' => $pulses,
+    ];
+}
+
+/** Data availability per source (WHOIS + VirusTotal + AlienVault OTX). */
 function reportAvailability(array $row): array {
     $ws = (string)($row['whois_status'] ?? '');
     if ($ws === '') {
@@ -162,7 +216,10 @@ function reportAvailability(array $row): array {
     $vt = ($row['verdict'] ?? null) === null
         ? ['state' => 'not_checked', 'label' => 'Not checked']
         : ['state' => 'ok', 'label' => 'Checked'];
-    return ['whois' => $whois, 'vt' => $vt];
+    $otx = ($row['otx_verdict'] ?? null) === null
+        ? ['state' => 'not_checked', 'label' => 'Not checked']
+        : ['state' => 'ok', 'label' => 'Checked'];
+    return ['whois' => $whois, 'vt' => $vt, 'otx' => $otx];
 }
 
 /**
@@ -231,11 +288,25 @@ function reportRiskAssessment(array $row, string $status, array $avail): array {
         }
     }
 
+    // AlienVault OTX: community threat pulses referencing the domain.
+    $otxRep = reportOtx($row);
+    if (in_array($otxRep['state'], ['malicious', 'suspicious'], true)) {
+        $reasons[] = 'AlienVault OTX: ' . ($otxRep['detail'] !== '' ? $otxRep['detail'] : $otxRep['label']);
+        if ($risk === 'low') {
+            $risk = 'medium';
+        } elseif ($risk === 'medium') {
+            $risk = 'high';
+        }
+    }
+
     $whoisOk = (($avail['whois']['state'] ?? '') === 'ok');
     $vtChecked = (($avail['vt']['state'] ?? '') === 'ok');
-    if ($whoisOk && $vtChecked) {
+    $otxChecked = (($avail['otx']['state'] ?? '') === 'ok');
+    if ($whoisOk && $vtChecked && $otxChecked) {
         $confidence = 'high';
-    } elseif ($whoisOk || $vtChecked) {
+    } elseif ($whoisOk && $vtChecked) {
+        $confidence = 'high';
+    } elseif ($whoisOk || $vtChecked || $otxChecked) {
         $confidence = 'medium';
     } else {
         $confidence = 'low';
@@ -245,6 +316,9 @@ function reportRiskAssessment(array $row, string $status, array $avail): array {
     }
     if (!$vtChecked) {
         $reasons[] = 'Reputation not checked';
+    }
+    if (!$otxChecked) {
+        $reasons[] = 'AlienVault OTX not checked';
     }
     return ['risk' => $risk, 'confidence' => $confidence, 'reasons' => $reasons];
 }
@@ -300,7 +374,7 @@ function reportSharedInfrastructure(array $sections): array {
  */
 function reportAggregateReport(array $report, array $rules, string $refUtc): array {
     $agg = [
-        'domains' => 0, 'new' => 0, 'watchlist' => 0, 'not_checked_vt' => 0,
+        'domains' => 0, 'new' => 0, 'watchlist' => 0, 'not_checked_vt' => 0, 'not_checked_otx' => 0,
         'status' => ['malicious' => 0, 'suspicious' => 0, 'benign' => 0, 'review_required' => 0, 'unknown' => 0],
     ];
     foreach ($report as $data) {
@@ -308,10 +382,12 @@ function reportAggregateReport(array $report, array $rules, string $refUtc): arr
         foreach ($rows as $r) {
             $status = reportDomainStatus($r, $rules);
             $rep = reportReputation($r);
+            $otxRep = reportOtx($r);
             $agg['domains']++;
             if (!empty($r['_is_new'])) { $agg['new']++; }
             if (!empty($r['in_watchlist'])) { $agg['watchlist']++; }
             if ($rep['state'] === 'not_checked') { $agg['not_checked_vt']++; }
+            if ($otxRep['state'] === 'not_checked') { $agg['not_checked_otx']++; }
             $agg['status'][$status]++;
         }
     }

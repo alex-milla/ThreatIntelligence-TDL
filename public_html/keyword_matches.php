@@ -180,6 +180,20 @@ if (!empty($rows)) {
     }
 }
 
+// Cached AlienVault OTX data for the visible rows (OTX badge + detail panel).
+$domainOtx = [];
+if (!empty($rows)) {
+    $domains = array_column($rows, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domains), '?'));
+    $otxStmt = $db->prepare("SELECT domain, verdict, pulse_count, references_count, whitelisted,
+            adversary, malware_families, tags, last_analysis_date, checked_at
+        FROM domain_otx WHERE domain IN ($placeholders)");
+    $otxStmt->execute($domains);
+    foreach ($otxStmt->fetchAll() as $o) {
+        $domainOtx[$o['domain']] = $o;
+    }
+}
+
 // Report-queue status for the visible rows (Report column + detail panel).
 $domainQueue = [];
 if (!empty($rows)) {
@@ -268,6 +282,7 @@ require __DIR__ . '/templates/header.php';
         </label>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleOtx()"><i class="material-icons left">travel_explore</i>Check AlienVault OTX</button>
         <label class="check-inline" title="Group the selected domains will be sent to">
             <span class="muted">Group:</span>
             <select id="report-group" class="browser-default compact">
@@ -333,6 +348,13 @@ require __DIR__ . '/templates/header.php';
                     $vtCell = isset($vtLabels[$vtVerdict])
                         ? '<span class="vt-badge vt-' . $vtVerdict . '">' . $vtLabels[$vtVerdict] . '</span>'
                         : '<span class="muted">&mdash;</span>';
+                    $otxRow = $domainOtx[$r['domain']] ?? null;
+                    $otxVerdict = $otxRow ? (string)$otxRow['verdict'] : '';
+                    $otxPulses = $otxRow ? (int)$otxRow['pulse_count'] : 0;
+                    $otxLabels = ['malicious' => 'MALICIOUS', 'suspicious' => 'SUSPICIOUS', 'clean' => 'NO PULSES'];
+                    $otxCell = isset($otxLabels[$otxVerdict])
+                        ? '<span class="vt-badge vt-' . $otxVerdict . '" title="AlienVault OTX: ' . $otxPulses . ' pulse(s)">OTX ' . $otxLabels[$otxVerdict] . '</span>'
+                        : '<span class="muted">&mdash;</span>';
 
                     $queueRow = $domainQueue[$r['domain']] ?? null;
                     $isQueued = $queueRow !== null && $queueRow['reported_at'] === null;
@@ -368,6 +390,15 @@ require __DIR__ . '/templates/header.php';
                         'reputation'         => $vtRow['reputation'] ?? null,
                         'last_analysis_date' => $vtRow['last_analysis_date'] ?? null,
                         'vt_checked_at'      => $vtRow['checked_at'] ?? null,
+                        'otx_verdict'        => $otxRow['verdict'] ?? null,
+                        'otx_pulse_count'    => $otxRow['pulse_count'] ?? null,
+                        'otx_references_count' => $otxRow['references_count'] ?? null,
+                        'otx_whitelisted'    => $otxRow['whitelisted'] ?? null,
+                        'otx_adversary'       => $otxRow['adversary'] ?? null,
+                        'otx_malware_families' => $otxRow['malware_families'] ?? null,
+                        'otx_tags'           => $otxRow['tags'] ?? null,
+                        'otx_last_analysis_date' => $otxRow['last_analysis_date'] ?? null,
+                        'otx_checked_at'     => $otxRow['checked_at'] ?? null,
                         '_ns'                => $ns,
                         '_is_new'            => $isNew,
                     ];
@@ -387,7 +418,7 @@ require __DIR__ . '/templates/header.php';
                         <a href="javascript:void(0)" class="domain-link" onclick="toggleKwDetail(this)" aria-expanded="false"><?= reportHighlightKeyword((string)$r['domain'], (string)$keyword['keyword']) ?></a><?= reportTldBadge((string)$r['domain']) ?><?php if ($isNew): ?> <span class="badge-new">NEW</span><?php endif; ?>
                     </td>
                     <td><?= htmlspecialchars($r['tld']) ?></td>
-                    <td><?= $vtCell ?></td>
+                    <td><?= $vtCell ?> <?= $otxCell ?></td>
                     <td><?= $tagCell ?></td>
                     <td><?= $reportCell ?></td>
                     <td><?= !empty($r['in_watchlist']) ? '<i class="material-icons tiny" title="In watchlist">star</i>' : '<span class="muted">&mdash;</span>' ?></td>

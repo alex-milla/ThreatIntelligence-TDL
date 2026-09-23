@@ -132,6 +132,20 @@ if (!empty($items)) {
     }
 }
 
+// Cached AlienVault OTX data for the visible rows (detail block).
+$domainOtx = [];
+if (!empty($items)) {
+    $domains = array_column($items, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domains), '?'));
+    $otxStmt = $db->prepare("SELECT domain, verdict, pulse_count, references_count, whitelisted,
+            adversary, malware_families, tags, last_analysis_date, checked_at
+        FROM domain_otx WHERE domain IN ($placeholders)");
+    $otxStmt->execute($domains);
+    foreach ($otxStmt->fetchAll() as $o) {
+        $domainOtx[$o['domain']] = $o;
+    }
+}
+
 // Load domain tags
 $domainTags = [];
 if (!empty($items)) {
@@ -242,6 +256,7 @@ require __DIR__ . '/templates/header.php';
                 <?php foreach ($items as $item):
                     $whoisRow = $domainWhois[$item['domain']] ?? null;
                     $vtRow = $domainVt[$item['domain']] ?? null;
+                    $otxRow = $domainOtx[$item['domain']] ?? null;
                     $dtag = $domainTags[$item['domain']] ?? null;
                     $match = $domainMatches[$item['domain']] ?? null;
 
@@ -292,6 +307,15 @@ require __DIR__ . '/templates/header.php';
                         'reputation'         => $vtRow['reputation'] ?? null,
                         'last_analysis_date' => $vtRow['last_analysis_date'] ?? null,
                         'vt_checked_at'      => $vtRow['checked_at'] ?? null,
+                        'otx_verdict'        => $otxRow['verdict'] ?? null,
+                        'otx_pulse_count'    => $otxRow['pulse_count'] ?? null,
+                        'otx_references_count' => $otxRow['references_count'] ?? null,
+                        'otx_whitelisted'    => $otxRow['whitelisted'] ?? null,
+                        'otx_adversary'       => $otxRow['adversary'] ?? null,
+                        'otx_malware_families' => $otxRow['malware_families'] ?? null,
+                        'otx_tags'           => $otxRow['tags'] ?? null,
+                        'otx_last_analysis_date' => $otxRow['last_analysis_date'] ?? null,
+                        'otx_checked_at'     => $otxRow['checked_at'] ?? null,
                         '_ns'                => $ns,
                         '_is_new'            => $isNew,
                     ];
