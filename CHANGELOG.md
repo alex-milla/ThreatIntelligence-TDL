@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.14.2] - 2026-09-23
+
+### Changed - Watchlist uses the shared inline domain detail; menu order
+
+- **Watchlist** no longer opens the old modal. Clicking a domain now expands the same **inline detail row** used across the app (Notifications / Dashboard): WHOIS registry data (Fetch / Refresh), classification (Good / Bad / Insufficient info / Clear), Watchlist membership (Remove from Watchlist) and VirusTotal (Check + Open). All previous options are kept; notes, group selector and row actions are unchanged.
+- The now-unused `.custom-modal` styles were removed from `app.css`. `assets/whois.js` / `assets/vt.js` are reused as-is.
+- **Sidebar / mobile menu order**: **Notifications** now comes before **Keywords** (`Dashboard · TLDs · Notifications · Keywords · Watchlist · Informes · Admin Panel`).
+
 ## [v1.14.1] - 2026-09-23
 
 ### Changed - Warmer light background and neutral-gray dark theme

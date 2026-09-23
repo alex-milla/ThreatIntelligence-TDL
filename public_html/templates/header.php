@@ -84,11 +84,11 @@ if (!in_array($tldSource, ['czds', 'openintel'], true)) {
             </div>
             <?php endif; ?>
 
-            <a href="/keywords.php" class="sidebar-link<?= $isKeywords ? ' active' : '' ?>">
-                <i class="material-icons">search</i>Keywords
-            </a>
             <a href="/notifications.php" class="sidebar-link<?= $isNotifications ? ' active' : '' ?>">
                 <i class="material-icons">notifications</i>Notifications
+            </a>
+            <a href="/keywords.php" class="sidebar-link<?= $isKeywords ? ' active' : '' ?>">
+                <i class="material-icons">search</i>Keywords
             </a>
             <a href="/watchlist.php" class="sidebar-link<?= $isWatchlist ? ' active' : '' ?>">
                 <i class="material-icons">visibility</i>Watchlist
@@ -167,8 +167,8 @@ if (!in_array($tldSource, ['czds', 'openintel'], true)) {
                 </ul>
             </li>
             <?php endif; ?>
-            <li><a href="/keywords.php" class="<?= $isKeywords ? 'active' : '' ?>"><i class="material-icons">search</i>Keywords</a></li>
             <li><a href="/notifications.php" class="<?= $isNotifications ? 'active' : '' ?>"><i class="material-icons">notifications</i>Notifications</a></li>
+            <li><a href="/keywords.php" class="<?= $isKeywords ? 'active' : '' ?>"><i class="material-icons">search</i>Keywords</a></li>
             <li><a href="/watchlist.php" class="<?= $isWatchlist ? 'active' : '' ?>"><i class="material-icons">visibility</i>Watchlist</a></li>
             <li><a href="/reports.php" class="<?= $isReports ? 'active' : '' ?>"><i class="material-icons">assessment</i>Informes</a></li>
             <?php if ($isAdmin): ?>

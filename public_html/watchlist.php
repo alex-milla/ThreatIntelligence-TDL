@@ -206,9 +206,9 @@ require __DIR__ . '/templates/header.php';
                         $tagBadge = ' <span class="tag-chip ' . $cls . '">' . ($tagLabels[$tagVal] ?? strtoupper($tagVal)) . '</span>';
                     }
                 ?>
-                <tr>
+                <tr data-domain="<?= htmlspecialchars($item['domain']) ?>">
                     <td>
-                        <a href="javascript:void(0)" class="domain-link" onclick="openDomainModal('<?= htmlspecialchars(addslashes($item['domain'])) ?>')"><?= htmlspecialchars($item['domain']) ?></a><?= $tagBadge ?>
+                        <a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($item['domain'])) ?>')"><?= htmlspecialchars($item['domain']) ?></a><?= $tagBadge ?>
                     </td>
                     <td><?= htmlspecialchars($creationDisplay) ?></td>
                     <td>
@@ -279,94 +279,98 @@ require __DIR__ . '/templates/header.php';
     <?php endif; ?>
 </div>
 
-<!-- Domain detail modal -->
-<div id="domain-modal" class="custom-modal" role="dialog" aria-modal="true" aria-labelledby="modal-domain-title">
-    <div class="custom-modal-box">
-        <div class="dpanel">
-            <div class="dpanel-header">
-                <h3 id="modal-domain-title"></h3>
-                <button type="button" class="dpanel-close" aria-label="Close dialog" onclick="document.getElementById('domain-modal').style.display='none'"><i class="material-icons">close</i></button>
-            </div>
-            <div class="dpanel-section" id="modal-whois-box">
-                <div class="dpanel-section-label">WHOIS Registry Data</div>
-                <button type="button" id="modal-whois-btn" class="btn btn-small waves-effect" style="width:100%; margin-bottom:8px;" onclick="fetchWhois()">Fetch WHOIS (worker)</button>
-                <div id="modal-whois-loading" class="muted" style="display:none; padding:4px 0;">Consultando whois...</div>
-                <div id="modal-whois-content" style="display:none;">
-                    <div class="dpanel-whois-grid">
-                        <div>Creation Date</div><div id="modal-creation"></div>
-                        <div>Expiration Date</div><div id="modal-expiration"></div>
-                        <div>Registrar</div><div id="modal-registrar"></div>
-                        <div>Name Servers</div><div id="modal-ns"></div>
-                    </div>
-                </div>
-                <div id="modal-whois-error" class="text-danger" style="display:none; padding:4px 0;"></div>
-            </div>
-            <div class="dpanel-section" id="modal-tag-box" style="display:none;">
-                <div class="dpanel-section-label">Domain classification</div>
-                <div id="modal-tag-current" class="status-value" style="margin-bottom:8px;">Loading...</div>
-                <div class="dpanel-btn-row">
-                    <button type="button" class="btn btn-small btn-outline good waves-effect" onclick="tagDomain(_modalDomain, 'good')">Mark Good</button>
-                    <button type="button" class="btn btn-small btn-outline bad waves-effect" onclick="tagDomain(_modalDomain, 'bad')">Mark Bad</button>
-                    <button type="button" class="btn btn-small btn-outline warning waves-effect" onclick="tagDomain(_modalDomain, 'observing')"><i class="material-icons left">help_outline</i>Insufficient info</button>
-                    <button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain(_modalDomain, '')">Remove</button>
-                </div>
-            </div>
-            <div class="dpanel-section" id="modal-watchlist-box" style="display:none;">
-                <div class="dpanel-section-label">Watchlist</div>
-                <div id="modal-watchlist-current" class="status-value" style="margin-bottom:8px;">Loading...</div>
-                <div class="dpanel-btn-row">
-                    <button type="button" id="modal-watchlist-btn" class="btn btn-small waves-effect" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button>
-                </div>
-            </div>
-            <div class="dpanel-section" id="modal-vt-box">
-                <div class="dpanel-section-label">VirusTotal</div>
-                <div class="status-value" id="modal-vt-verdict">Not checked</div>
-                <div class="dpanel-btn-row"><button type="button" class="btn btn-small waves-effect" onclick="checkVt()">Check VirusTotal</button></div>
-                <div id="modal-vt-error" class="text-danger" style="display:none; padding:4px 0;"></div>
-            </div>
-            <div class="dpanel-footer">
-                <a id="modal-vt" href="#" target="_blank" class="btn btn-outline info waves-effect"><i class="material-icons left">shield</i>Open in VirusTotal</a>
-            </div>
-        </div>
-    </div>
-</div>
-
 <script>
 let _modalDomain = '';
-function openDomainModal(domain) {
+function buildPanelHtml(domain) {
+    return '<div class="dpanel">'
+        + '<div class="dpanel-header">'
+        +   '<h3 id="modal-domain-title"></h3>'
+        +   '<button type="button" class="dpanel-close" aria-label="Close panel" onclick="closeDomainDetail()"><i class="material-icons">close</i></button>'
+        + '</div>'
+        + '<div class="dpanel-section">'
+        +   '<div class="dpanel-section-label">WHOIS Registry Data</div>'
+        +   '<button type="button" id="modal-whois-btn" class="btn btn-small waves-effect" style="width:100%; margin-bottom:8px;" onclick="fetchWhois()">Fetch WHOIS via worker</button>'
+        +   '<div id="modal-whois-loading" class="muted" style="display:none; padding:4px 0;">Consultando WHOIS...</div>'
+        +   '<div id="modal-whois-content" style="display:none;">'
+        +     '<div class="dpanel-whois-grid">'
+        +       '<div>Creation Date</div><div id="modal-creation"></div>'
+        +       '<div>Expiration Date</div><div id="modal-expiration"></div>'
+        +       '<div>Registrar</div><div id="modal-registrar"></div>'
+        +       '<div>Name Servers</div><div id="modal-ns"></div>'
+        +       '<div>First Seen (zone)</div><div id="modal-first-seen"></div>'
+        +     '</div>'
+        +   '</div>'
+        +   '<div id="modal-whois-status" class="muted" style="display:none; padding:4px 0;"></div>'
+        +   '<div id="modal-whois-error" class="text-danger" style="display:none; padding:4px 0;"></div>'
+        + '</div>'
+        + '<div class="dpanel-section" id="modal-tag-box">'
+        +   '<div class="dpanel-section-label">Classification</div>'
+        +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-tag-current">Loading...</span></div>'
+        +   '<div class="dpanel-btn-row">'
+        +     '<button type="button" class="btn btn-small btn-outline good waves-effect" onclick="tagDomain(_modalDomain, \'good\')">Mark Good</button>'
+        +     '<button type="button" class="btn btn-small btn-outline bad waves-effect" onclick="tagDomain(_modalDomain, \'bad\')">Mark Bad</button>'
+        +     '<button type="button" class="btn btn-small btn-outline warning waves-effect" onclick="tagDomain(_modalDomain, \'observing\')"><i class="material-icons left">help_outline</i>Insufficient info</button>'
+        +     '<button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain(_modalDomain, \'\')">Clear</button>'
+        +   '</div>'
+        + '</div>'
+        + '<div class="dpanel-section" id="modal-watchlist-box">'
+        +   '<div class="dpanel-section-label">Watchlist</div>'
+        +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-watchlist-current">Loading...</span></div>'
+        +   '<div class="dpanel-btn-row"><button type="button" id="modal-watchlist-btn" class="btn btn-small waves-effect" onclick="toggleWatchlist(_modalDomain)">Remove from Watchlist</button></div>'
+        + '</div>'
+        + '<div class="dpanel-section" id="modal-vt-box">'
+        +   '<div class="dpanel-section-label">VirusTotal</div>'
+        +   '<div class="status-value" id="modal-vt-verdict">Not checked</div>'
+        +   '<div class="dpanel-btn-row"><button type="button" class="btn btn-small waves-effect" onclick="checkVt()">Check VirusTotal</button></div>'
+        +   '<div id="modal-vt-error" class="text-danger" style="display:none; padding:4px 0;"></div>'
+        + '</div>'
+        + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn btn-outline info waves-effect"><i class="material-icons left">shield</i>Open in VirusTotal</a></div>'
+        + '</div>';
+}
+function toggleDomainDetail(linkEl, domain) {
+    var row = linkEl.closest('tr');
+    var existing = row.nextElementSibling;
+    if (existing && existing.classList.contains('dpanel-row') && existing.dataset.domain === domain) {
+        existing.remove();
+        return;
+    }
+    document.querySelectorAll('.dpanel-row').forEach(function(r) { r.remove(); });
     _modalDomain = domain;
+    var detailRow = document.createElement('tr');
+    detailRow.className = 'dpanel-row';
+    detailRow.dataset.domain = domain;
+    detailRow.innerHTML = '<td colspan="6">' + buildPanelHtml(domain) + '</td>';
+    row.parentNode.insertBefore(detailRow, row.nextSibling);
     document.getElementById('modal-domain-title').textContent = domain;
     document.getElementById('modal-vt').href = 'https://www.virustotal.com/gui/domain/' + encodeURIComponent(domain);
-    document.getElementById('modal-whois-loading').style.display = 'none';
-    document.getElementById('modal-whois-content').style.display = 'none';
-    document.getElementById('modal-whois-error').style.display = 'none';
     loadCachedWhois();
-    document.getElementById('modal-tag-box').style.display = 'block';
-    document.getElementById('modal-tag-current').textContent = 'Loading...';
-    document.getElementById('modal-watchlist-box').style.display = 'block';
-    document.getElementById('modal-watchlist-current').textContent = 'Loading...';
-    document.getElementById('domain-modal').style.display = 'flex';
     loadDomainTag(domain);
     loadWatchlistStatus(domain);
     loadVtStatus();
+    detailRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function closeDomainDetail() {
+    document.querySelectorAll('.dpanel-row').forEach(function(r) { r.remove(); });
 }
 function loadDomainTag(domain) {
     fetch('/ajax_tag_domain.php?domain=' + encodeURIComponent(domain))
         .then(r => r.json())
         .then(data => {
             const box = document.getElementById('modal-tag-current');
+            if (!box) return;
             if (data.success && data.tag) {
                 const tag = data.tag.tag;
                 const cls = tag === 'good' ? 'tag-good-text' : (tag === 'observing' ? 'tag-observing-text' : 'tag-bad-text');
                 const label = tag === 'observing' ? 'OBSERVING (insufficient info)' : tag.toUpperCase();
                 box.innerHTML = '<span class="' + cls + '">' + label + '</span>';
-                if (data.tag.note) box.innerHTML += ' — ' + htmlspecialchars(data.tag.note);
+                if (data.tag.note) box.innerHTML += ' &mdash; ' + htmlspecialchars(data.tag.note);
             } else {
                 box.textContent = 'Not classified';
             }
         })
         .catch(() => {
-            document.getElementById('modal-tag-current').textContent = 'Unable to load tag';
+            const box = document.getElementById('modal-tag-current');
+            if (box) box.textContent = 'Unable to load tag';
         });
 }
 function loadWatchlistStatus(domain) {
@@ -375,8 +379,12 @@ function loadWatchlistStatus(domain) {
         .then(data => {
             const box = document.getElementById('modal-watchlist-current');
             const btn = document.getElementById('modal-watchlist-btn');
+            if (!box) return;
             if (data.in_watchlist) {
-                box.innerHTML = '<span class="text-in-watchlist">In watchlist</span>' + (data.note ? ' — ' + htmlspecialchars(data.note) : '');
+                let html = '<span class="text-in-watchlist">In watchlist</span>';
+                if (data.group_name) html += ' <span class="text-soft">(' + htmlspecialchars(data.group_name) + ')</span>';
+                if (data.note) html += ' &mdash; ' + htmlspecialchars(data.note);
+                box.innerHTML = html;
                 btn.textContent = 'Remove from Watchlist';
                 btn.classList.add('btn-danger');
             } else {
@@ -386,7 +394,8 @@ function loadWatchlistStatus(domain) {
             }
         })
         .catch(() => {
-            document.getElementById('modal-watchlist-current').textContent = 'Unable to load watchlist status';
+            const box = document.getElementById('modal-watchlist-current');
+            if (box) box.textContent = 'Unable to load watchlist status';
         });
 }
 function toggleWatchlist(domain) {
@@ -398,10 +407,8 @@ function toggleWatchlist(domain) {
     .then(r => r.json())
     .then(data => {
         if (data.success) {
-            loadWatchlistStatus(domain);
-            if (window.location.pathname === '/watchlist.php') {
-                window.location.reload();
-            }
+            // The domain's watchlist membership changed, so refresh the list.
+            window.location.reload();
         } else {
             alert(data.error || 'Failed to update watchlist');
         }
@@ -430,9 +437,6 @@ function htmlspecialchars(str) {
     div.textContent = str;
     return div.innerHTML;
 }
-document.getElementById('domain-modal').addEventListener('click', function(e) {
-    if (e.target === this) this.style.display = 'none';
-});
 </script>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>
