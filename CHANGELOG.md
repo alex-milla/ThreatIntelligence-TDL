@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.15.3] - 2026-09-23
+
+### Added - Defanged IOC support in the Dashboard domain lookup
+
+- The Dashboard **Domain lookup** now accepts **defanged IOCs** and converts them to the plain domain before searching: `my-passkeys[.]com` → `my-passkeys.com`, plus `(.)`, `{.}`, `<.>`, `[dot]`/`(dot)`/`{dot}` and `" dot "`. Full URLs are reduced to the hostname (`hxxps://evil[.]com/x?y=1` → `evil.com`, dropping the scheme, `user@`, `:port` and path/query).
+- New `normalizeDomainSearch()` helper in `includes/auth.php`; `ajax_domain_search.php` applies it server-side (before validation) and `index.php` mirrors it in JS (so the input is cleaned and reflected in the field). The lookup help text mentions the supported forms.
+- Inputs without defanging (e.g. `example.com`, `dot.com`) are unchanged. Only the Dashboard search is affected.
+
 ## [v1.15.2] - 2026-09-23
 
 ### Changed - Clarify the two independent group lists

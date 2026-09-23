@@ -317,3 +317,36 @@ function checkApiRateLimit(PDO $db, string $ip, string $apiKey = '', string $end
 
     return false;
 }
+
+/**
+ * Normalise a defanged domain / URL to a plain hostname for lookups.
+ *
+ * Handles common IOC defanging: my-passkeys[.]com, evil(.)com, "evil dot com",
+ * and full URLs (hxxps://evil[.]com/path?x=1) by extracting the hostname.
+ * Inputs without any defanging are returned unchanged.
+ */
+function normalizeDomainSearch(string $q): string {
+    $q = strtolower(trim($q));
+    if ($q === '') {
+        return '';
+    }
+    // Defanged dots -> "." ([.], (.), {.}, <.>, with optional inner spaces;
+    // [dot], (dot), {dot}, and " dot " between spaces).
+    $q = preg_replace('/\[\s*\.\s*\]/', '.', $q);
+    $q = preg_replace('/\(\s*\.\s*\)/', '.', $q);
+    $q = preg_replace('/\{\s*\.\s*\}/', '.', $q);
+    $q = preg_replace('/<\s*\.\s*>/', '.', $q);
+    $q = preg_replace('/\[\s*dot\s*\]/i', '.', $q);
+    $q = preg_replace('/\(\s*dot\s*\)/i', '.', $q);
+    $q = preg_replace('/\{\s*dot\s*\}/i', '.', $q);
+    $q = preg_replace('/\s+dot\s+/i', '.', $q);
+    // URL-ish input: hxxp(s) -> http(s), then keep only the hostname.
+    $q = preg_replace('/^hxxp/i', 'http', $q);
+    $q = preg_replace('#^[a-z0-9+.\-]+://#', '', $q);
+    $q = preg_replace('~[/?#].*$~', '', $q);
+    $q = preg_replace('/^[^@]*@/', '', $q);
+    $q = preg_replace('/:\d+$/', '', $q);
+    // Domains have no whitespace.
+    $q = preg_replace('/\s+/', '', $q);
+    return (string)$q;
+}

@@ -167,13 +167,15 @@ $sparkNonZero = count(array_filter($sparkDays));
         <div class="input-field">
             <i class="material-icons prefix">search</i>
             <input id="lookup-q" type="text" placeholder=" " autocomplete="off" spellcheck="false" autocapitalize="off">
-            <label for="lookup-q">Exact domain (e.g. example.com)</label>
+            <label for="lookup-q">Exact domain (e.g. example.com or my-domain[.]com)</label>
         </div>
         <button type="submit" class="btn waves-effect"><i class="material-icons left">travel_explore</i>Search</button>
     </form>
     <p class="muted" style="font-size:.82rem; margin-top:-4px;">
         Enter the full domain, e.g. <code>example.com</code>. This is an <strong>exact domain</strong> lookup,
-        not a keyword search. Exact search covers every cached domain (including hash-cached TLDs like .com).
+        not a keyword search. Defanged forms like <code>my-domain[.]com</code> (and URLs such as
+        <code>hxxps://evil[.]com/x</code>) are converted to the plain domain automatically.
+        Exact search covers every cached domain (including hash-cached TLDs like .com).
     </p>
     <div id="lookup-status" class="muted" style="display:none; padding:6px 0;"></div>
     <div id="lookup-results"></div>
@@ -210,9 +212,28 @@ function lookupCsrf() {
     var m = document.querySelector('meta[name="csrf-token"]');
     return m ? m.content : '';
 }
+function normalizeDomainSearch(s) {
+    s = (s || '').trim().toLowerCase();
+    s = s.replace(/\[\s*\.\s*\]/g, '.')
+         .replace(/\(\s*\.\s*\)/g, '.')
+         .replace(/\{\s*\.\s*\}/g, '.')
+         .replace(/<\s*\.\s*>/g, '.')
+         .replace(/\[\s*dot\s*\]/gi, '.')
+         .replace(/\(\s*dot\s*\)/gi, '.')
+         .replace(/\{\s*dot\s*\}/gi, '.')
+         .replace(/\s+dot\s+/gi, '.')
+         .replace(/^hxxp/i, 'http')
+         .replace(/^[a-z0-9+.\-]+:\/\//, '')
+         .replace(/[/?#].*$/, '')
+         .replace(/^[^@]*@/, '')
+         .replace(/:\d+$/, '')
+         .replace(/\s+/g, '');
+    return s;
+}
 function runDomainLookup() {
     var qEl = document.getElementById('lookup-q');
-    var q = qEl ? qEl.value.trim().toLowerCase() : '';
+    var q = normalizeDomainSearch(qEl ? qEl.value : '');
+    if (qEl && q) { qEl.value = q; }
     var status = document.getElementById('lookup-status');
     var results = document.getElementById('lookup-results');
     if (!q) return;

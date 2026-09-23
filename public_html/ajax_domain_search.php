@@ -20,7 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
 
     $input = json_decode(file_get_contents('php://input'), true) ?: [];
-    $q = strtolower(trim((string)($input['q'] ?? '')));
+    // Accept defanged IOCs (my-passkeys[.]com) and URLs; keep only the hostname.
+    $q = normalizeDomainSearch((string)($input['q'] ?? ''));
     $mode = (string)($input['mode'] ?? '');
 
     if ($q === '' || strlen($q) > 253 || !preg_match('/^[a-z0-9\p{L}\-\.]+$/u', $q)) {
