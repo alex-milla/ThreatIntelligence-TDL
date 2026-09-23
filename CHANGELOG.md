@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.15.2] - 2026-09-23
+
+### Changed - Clarify the two independent group lists
+
+- Watchlist and Reports/keywords keep **separate** group lists (by design), but the UI now labels them to avoid confusion:
+  - **Watchlist**: the create form is **"New Watchlist group"** and the row selector is titled **"Watchlist group"**.
+  - **Reports / keyword match list**: the create form is **"New report group"**, the *Send to report* selector reads **"Report group:"** and the table column headers read **"Report group"**.
+- No behaviour, data-model or API changes.
+
 ## [v1.15.1] - 2026-09-23
 
 ### Changed - Dedicated OTX column in the match/notification lists

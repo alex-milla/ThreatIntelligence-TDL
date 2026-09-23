@@ -283,8 +283,8 @@ require __DIR__ . '/templates/header.php';
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleOtx()"><i class="material-icons left">travel_explore</i>Check AlienVault OTX</button>
-        <label class="check-inline" title="Group the selected domains will be sent to">
-            <span class="muted">Group:</span>
+        <label class="check-inline" title="Report group the selected domains will be sent to">
+            <span class="muted">Report group:</span>
             <select id="report-group" class="browser-default compact">
                 <option value="" <?= $keyword['group_id'] === null ? 'selected' : '' ?>>Ungrouped</option>
                 <?php foreach ($keywordGroups as $g): ?>

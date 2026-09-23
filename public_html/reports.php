@@ -441,7 +441,7 @@ require __DIR__ . '/templates/header.php';
             <div class="input-field">
                 <i class="material-icons prefix">create_new_folder</i>
                 <input id="group_name" type="text" name="group_name" placeholder=" " maxlength="60" required>
-                <label for="group_name">New group name</label>
+                <label for="group_name">New report group</label>
             </div>
             <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">add</i>Add Group</button>
         </form>
@@ -483,7 +483,7 @@ require __DIR__ . '/templates/header.php';
                 <thead>
                     <tr>
                         <th>Domain</th>
-                        <th>Group</th>
+                        <th>Report group</th>
                         <th>Keyword(s)</th>
                         <th>Added</th>
                         <th>Remove</th>
@@ -541,7 +541,7 @@ require __DIR__ . '/templates/header.php';
                         <tr>
                             <th>Keyword</th>
                             <th>Matches (24h)</th>
-                            <th>Group</th>
+                            <th>Report group</th>
                             <th>Added</th>
                         </tr>
                     </thead>

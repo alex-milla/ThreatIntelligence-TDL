@@ -233,7 +233,7 @@ require __DIR__ . '/templates/header.php';
             <div class="input-field">
                 <i class="material-icons prefix">create_new_folder</i>
                 <input id="group_name" type="text" name="group_name" placeholder=" " required>
-                <label for="group_name">New group name</label>
+                <label for="group_name">New Watchlist group</label>
             </div>
             <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">add</i>Add Group</button>
         </form>
@@ -331,7 +331,7 @@ require __DIR__ . '/templates/header.php';
                             <?php csrfField(); ?>
                             <input type="hidden" name="action" value="set_group">
                             <input type="hidden" name="watch_id" value="<?= (int)$item['id'] ?>">
-                            <select name="group_id" class="browser-default compact" onchange="this.form.submit()">
+                            <select name="group_id" class="browser-default compact" title="Watchlist group" onchange="this.form.submit()">
                                 <option value="" <?= $item['group_id'] === null ? 'selected' : '' ?>>— Ungrouped</option>
                                 <?php foreach ($groups as $g): ?>
                                 <option value="<?= (int)$g['id'] ?>" <?= $item['group_id'] == $g['id'] ? 'selected' : '' ?>><?= htmlspecialchars($g['name']) ?></option>
