@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.13.0] - 2026-09-23
+
+### Added - Manual report queue ("daily report")
+
+- **Send domains to the report after validating them.** In a keyword's match list (and in Notifications) the existing row checkboxes now feed a new **"Send to report"** / **"Remove from report"** action, and each list shows a **QUEUED** badge for domains waiting in the queue. Multi-selection ("Select all visible") works as before.
+- **Report queue replaces the classic Builder.** The `reports.php` **Queue** tab lists every pending domain (with its keyword(s) and date added), lets you remove single items or empty the queue, and generates the report with **"Generate report from queue"**. The **History** tab and the printable report are unchanged.
+- **The queue accumulates across days**: generating a report consumes everything pending since the previous generation (the report includes exactly what you selected, benign or not), then stamps each domain with `reported_at` + `report_id` so the next report starts clean.
+- New per-user table `report_queue` (`UNIQUE(user_id, domain)`), helpers in `includes/report_queue.php`, endpoint `ajax_report_queue.php`, and `buildReportFromQueue()` producing the same snapshot format as before.
+- Keyword/group management stays available under **Queue → Keywords & groups** (groups still filter saved reports).
+
 ## [v1.12.0] - 2026-09-23
 
 ### Changed - New orange design system + left sidebar layout

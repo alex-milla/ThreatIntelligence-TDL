@@ -14,6 +14,52 @@
  */
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/report_queue.php';
+
+/**
+ * Decorate report rows and compute their counters. Shared by the classic
+ * buildReportData() and the manual report queue builder.
+ *
+ * @return array{0:array<string,int>,1:array} [counts, decorated rows]
+ */
+function reportDecorateRows(array $rows, int $newDomainDays): array {
+    $counts = ['domains' => count($rows), 'new' => 0, 'good' => 0, 'bad' => 0, 'observing' => 0, 'untagged' => 0,
+               'malicious' => 0, 'suspicious' => 0, 'dga' => 0, 'clean' => 0, 'watchlist' => 0];
+
+    foreach ($rows as &$r) {
+        $tag = (string)($r['tag'] ?? '');
+        if (isset($counts[$tag])) {
+            $counts[$tag]++;
+        } else {
+            $counts['untagged']++;
+        }
+
+        $verdict = (string)($r['verdict'] ?? '');
+        if (isset($counts[$verdict])) {
+            $counts[$verdict]++;
+        }
+
+        if (!empty($r['in_watchlist'])) {
+            $counts['watchlist']++;
+        }
+
+        $isNew = false;
+        if (!empty($r['creation_date'])) {
+            $ts = strtotime((string)$r['creation_date']);
+            if ($ts && $ts > strtotime("-{$newDomainDays} days")) {
+                $isNew = true;
+                $counts['new']++;
+            }
+        }
+        $r['_is_new'] = $isNew;
+
+        $ns = json_decode((string)($r['name_servers'] ?? '[]'), true);
+        $r['_ns'] = is_array($ns) ? $ns : [];
+    }
+    unset($r);
+
+    return [$counts, $rows];
+}
 
 /**
  * Build the report data for a set of keywords.
@@ -147,40 +193,7 @@ function buildReportData(PDO $db, int $userId, array $keywordIds, array $filters
             continue;
         }
 
-        $counts = ['domains' => count($rows), 'new' => 0, 'good' => 0, 'bad' => 0, 'observing' => 0, 'untagged' => 0,
-                   'malicious' => 0, 'suspicious' => 0, 'dga' => 0, 'clean' => 0, 'watchlist' => 0];
-
-        foreach ($rows as &$r) {
-            $tag = (string)($r['tag'] ?? '');
-            if (isset($counts[$tag])) {
-                $counts[$tag]++;
-            } else {
-                $counts['untagged']++;
-            }
-
-            $verdict = (string)($r['verdict'] ?? '');
-            if (isset($counts[$verdict])) {
-                $counts[$verdict]++;
-            }
-
-            if (!empty($r['in_watchlist'])) {
-                $counts['watchlist']++;
-            }
-
-            $isNew = false;
-            if (!empty($r['creation_date'])) {
-                $ts = strtotime((string)$r['creation_date']);
-                if ($ts && $ts > strtotime("-{$newDomainDays} days")) {
-                    $isNew = true;
-                    $counts['new']++;
-                }
-            }
-            $r['_is_new'] = $isNew;
-
-            $ns = json_decode((string)($r['name_servers'] ?? '[]'), true);
-            $r['_ns'] = is_array($ns) ? $ns : [];
-        }
-        unset($r);
+        [$counts, $rows] = reportDecorateRows($rows, $newDomainDays);
 
         $report[$kwId] = ['keyword' => $kw['keyword'], 'counts' => $counts, 'rows' => $rows];
 
@@ -208,5 +221,95 @@ function buildReportData(PDO $db, int $userId, array $keywordIds, array $filters
         'report'         => $report,
         'domains'        => $totalDomains,
         'truncated'      => $truncated,
+    ];
+}
+
+/**
+ * Build a report from the manual report queue (or an explicit domain list).
+ *
+ * Domain-driven: the analyst decides which domains go to the report, regardless
+ * of date/state/source filters. The returned snapshot has exactly the same shape
+ * as buildReportData(), so the report view and the print/PDF document render it
+ * unchanged.
+ *
+ * @param array|null $domains Explicit domains; null = every pending queued domain.
+ * @return array|null Null when there is nothing to report.
+ */
+function buildReportFromQueue(PDO $db, int $userId, ?array $domains = null): ?array {
+    if ($domains === null) {
+        $domains = reportQueuePendingDomains($db, $userId);
+    } else {
+        $clean = [];
+        foreach ($domains as $d) {
+            $d = reportQueueNormalizeDomain((string)$d);
+            if ($d !== '') {
+                $clean[$d] = true;
+            }
+        }
+        $domains = array_keys($clean);
+    }
+    $domains = array_slice(array_values(array_unique($domains)), 0, 5000);
+    if (empty($domains)) {
+        return null;
+    }
+
+    $newDomainDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
+    $placeholders = implode(',', array_fill(0, count($domains), '?'));
+
+    // Every match of the user's keywords for the queued domains. A domain that
+    // matched several keywords appears under each of them.
+    $sql = "SELECT k.id AS keyword_id, k.keyword,
+            m.domain, m.tld, m.discovered_at, m.first_seen, m.is_historical, m.source,
+            dt.tag AS tag, dt.note AS tag_note,
+            CASE WHEN w.id IS NULL THEN 0 ELSE 1 END AS in_watchlist,
+            dw.creation_date, dw.expiration_date, dw.registrar, dw.name_servers, dw.status AS whois_status,
+            dw.source AS whois_source, dw.updated_at AS whois_updated_at,
+            dv.verdict, dv.malicious, dv.suspicious, dv.harmless, dv.undetected, dv.reputation,
+            dv.last_analysis_date, dv.checked_at AS vt_checked_at
+        FROM matches m
+        JOIN keywords k ON k.id = m.keyword_id
+        LEFT JOIN domain_tags dt ON dt.domain = m.domain
+        LEFT JOIN watchlist w ON w.user_id = ? AND w.domain = m.domain
+        LEFT JOIN domain_whois dw ON dw.domain = m.domain
+        LEFT JOIN domain_vt dv ON dv.domain = m.domain
+        WHERE k.user_id = ? AND m.domain IN ($placeholders)
+        ORDER BY k.keyword ASC, m.discovered_at DESC, m.domain ASC";
+    $stmt = $db->prepare($sql);
+    $stmt->execute(array_merge([$userId, $userId], $domains));
+    $all = $stmt->fetchAll();
+
+    if (empty($all)) {
+        return null;
+    }
+
+    // Group the joined rows by keyword, preserving query order.
+    $byKeyword = [];
+    foreach ($all as $row) {
+        $kwId = (int)$row['keyword_id'];
+        if (!isset($byKeyword[$kwId])) {
+            $byKeyword[$kwId] = ['keyword' => $row['keyword'], 'rows' => []];
+        }
+        unset($row['keyword_id'], $row['keyword']);
+        $byKeyword[$kwId]['rows'][] = $row;
+    }
+
+    $report = [];
+    $totalDomains = 0;
+    foreach ($byKeyword as $kwId => $data) {
+        [$counts, $rows] = reportDecorateRows($data['rows'], $newDomainDays);
+        $report[$kwId] = ['keyword' => $data['keyword'], 'counts' => $counts, 'rows' => $rows];
+        $totalDomains += $counts['domains'];
+    }
+
+    return [
+        'generated_at'   => gmdate('Y-m-d H:i:s'),
+        'group_id'       => null,
+        'group_name'     => '',
+        'filters'        => ['mode' => 'queue', 'date' => 'all', 'state' => 'all', 'source' => 'all', 'archived' => true],
+        'filter_summary' => 'Manual report queue · ' . $totalDomains . ' domain(s)',
+        'keywords'       => array_values(array_map(fn($d) => $d['keyword'], $report)),
+        'report'         => $report,
+        'domains'        => $totalDomains,
+        'truncated'      => false,
     ];
 }

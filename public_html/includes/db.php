@@ -235,6 +235,21 @@ class Database {
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )");
 
+        // Manual report queue: per-user domains the analyst has validated and
+        // wants in the next report. `reported_at`/`report_id` are stamped when a
+        // report is generated, so pending items accumulate across days and a
+        // later report picks up everything since the last generation.
+        $db->exec("CREATE TABLE IF NOT EXISTS report_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            domain TEXT NOT NULL,
+            added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            reported_at TEXT,
+            report_id INTEGER,
+            UNIQUE(user_id, domain)
+        )");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_report_queue_user ON report_queue(user_id, reported_at)");
+
         // Safe migration: add max_keywords if it doesn't exist yet
         try {
             $db->exec("ALTER TABLE users ADD COLUMN max_keywords INTEGER DEFAULT 20");

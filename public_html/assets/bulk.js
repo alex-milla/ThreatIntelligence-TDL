@@ -105,6 +105,37 @@
         });
     };
 
+    // Add / remove the checked domains from the manual report queue.
+    function postReportQueue(domains, queued) {
+        return fetch('/ajax_report_queue.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+            body: JSON.stringify({ domains: domains, queued: queued })
+        }).then(function (r) { return r.json(); });
+    }
+
+    window.sendSelectedToReport = function () {
+        var domains = checkedDomains(false);
+        if (!domains.length) { alert('Select one or more domains first.'); return; }
+        postReportQueue(domains, true)
+            .then(function (data) {
+                if (data.success) { location.reload(); }
+                else { alert(data.error || 'Failed to queue domains'); }
+            })
+            .catch(function () { alert('Failed to queue domains'); });
+    };
+
+    window.removeSelectedFromReport = function () {
+        var domains = checkedDomains(true);
+        if (!domains.length) { alert('Select one or more domains first.'); return; }
+        postReportQueue(domains, false)
+            .then(function (data) {
+                if (data.success) { location.reload(); }
+                else { alert(data.error || 'Failed to update the report queue'); }
+            })
+            .catch(function () { alert('Failed to update the report queue'); });
+    };
+
     // "Select all visible" helper shared by the list pages. Delegated so it also
     // works if the table is replaced by a live refresh.
     document.addEventListener('change', function (e) {

@@ -46,39 +46,56 @@ function buildReportTitle(array $data): string {
 
 /* ============================ POST actions ============================ */
 
-// Generate + save a report snapshot.
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'generate_report') {
-    $idsRaw = (string)($_POST['keywords'] ?? '');
-    $ids = array_filter(array_map('intval', explode(',', $idsRaw)), fn($v) => $v > 0);
-    $filters = [
-        'date'     => (string)($_POST['date'] ?? '24h'),
-        'state'    => (string)($_POST['state'] ?? 'all'),
-        'source'   => (string)($_POST['source'] ?? 'all'),
-        'archived' => ($_POST['archived'] ?? '') === '1',
-        'group'    => (string)($_POST['group'] ?? 'all'),
-    ];
-    $data = buildReportData($db, $userId, $ids, $filters);
+// Generate + save a report from the manual queue (everything pending).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'generate_queue_report') {
+    $data = buildReportFromQueue($db, $userId);
     if (!$data || empty($data['report'])) {
-        $_SESSION['flash_error'] = 'No domains to report for the selected keywords and period.';
-        header('Location: ' . reportsUrl('builder', $filters['group']));
+        $_SESSION['flash_error'] = 'The report queue is empty or its domains no longer match your keywords.';
+        header('Location: /reports.php');
         exit;
     }
     $blob = gzcompress(json_encode($data, JSON_UNESCAPED_UNICODE));
+    $title = 'Report queue — ' . fmt_date((string)$data['generated_at']);
     $db->prepare("INSERT INTO report_history
             (user_id, title, group_id, group_name, filters, keywords, data, domains, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
        ->execute([
             $userId,
-            buildReportTitle($data),
-            $data['group_id'],
-            $data['group_name'],
+            $title,
+            null,
+            null,
             json_encode($data['filters']),
             json_encode($data['keywords']),
             $blob,
             (int)$data['domains'],
             gmdate('c'),
        ]);
-    header('Location: /report_view.php?id=' . (int)$db->lastInsertId());
+    $reportId = (int)$db->lastInsertId();
+    // Consume the queue: every pending domain is now attached to this report.
+    reportQueueMarkReported($db, $userId, $reportId);
+    header('Location: /report_view.php?id=' . $reportId);
+    exit;
+}
+
+// Remove a single domain from the report queue.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'remove_queue_domain') {
+    $domain = strtolower(trim((string)($_POST['domain'] ?? '')));
+    if ($domain !== '') {
+        reportQueueRemove($db, $userId, [$domain]);
+        $_SESSION['flash_message'] = 'Domain removed from the report queue.';
+    }
+    header('Location: /reports.php');
+    exit;
+}
+
+// Empty the whole pending queue.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'clear_queue') {
+    $pending = reportQueuePendingDomains($db, $userId);
+    if ($pending) {
+        reportQueueRemove($db, $userId, $pending);
+    }
+    $_SESSION['flash_message'] = count($pending) . ' domain(s) removed from the report queue.';
+    header('Location: /reports.php');
     exit;
 }
 
@@ -288,6 +305,17 @@ if ($tab === 'history') {
     $history = $hStmt->fetchAll();
 }
 
+/* ============================ Report queue ============================ */
+
+$queueRows = [];
+$queueCount = 0;
+$queueOldest = null;
+if ($tab === 'builder') {
+    $queueRows = reportQueuePending($db, $userId);
+    $queueCount = count($queueRows);
+    $queueOldest = $queueRows[0]['added_at'] ?? null;
+}
+
 // Counts shown on the group tabs depend on the active tab.
 $tabCounts = $tab === 'history' ? $histGroupCounts : $groupCounts;
 $tabUngrouped = $tab === 'history' ? $histUngrouped : $ungroupedCount;
@@ -303,7 +331,7 @@ require __DIR__ . '/templates/header.php';
         <h2><i class="material-icons left">assessment</i>Reports</h2>
         <span class="muted">
             <?php if ($tab === 'builder'): ?>
-                <?= $totalKeywords ?> keyword(s)<?= $onlyRecent ? ' with matches in the last 24h' : '' ?> in <?= count($groups) ?> group(s)
+                <?= $queueCount ?> domain(s) pending in the report queue
             <?php else: ?>
                 <?= $histTotal ?> saved report(s)
             <?php endif; ?>
@@ -319,7 +347,7 @@ require __DIR__ . '/templates/header.php';
 
     <!-- Sub-tabs: Builder / History -->
     <div class="report-tabs">
-        <a href="/reports.php?tab=builder" class="report-tab <?= $tab === 'builder' ? 'active' : '' ?>"><i class="material-icons tiny left">edit_note</i>Builder</a>
+        <a href="/reports.php?tab=builder" class="report-tab <?= $tab === 'builder' ? 'active' : '' ?>"><i class="material-icons tiny left">playlist_add_check</i>Queue</a>
         <a href="/reports.php?tab=history" class="report-tab <?= $tab === 'history' ? 'active' : '' ?>"><i class="material-icons tiny left">history</i>History (<?= $histTotal ?>)</a>
     </div>
 
@@ -347,136 +375,136 @@ require __DIR__ . '/templates/header.php';
 
     <?php if ($tab === 'builder'): ?>
 
-        <p class="muted">Select one or more keywords (or a whole group) and generate a printable report. Generating stores it in <strong>History</strong> so you can review it later. By default only the keywords that had matches in the last sync (last 24h) are listed.</p>
+        <p class="muted">Review domains in a keyword's <strong>match list</strong> (or in Notifications), validate WHOIS / VirusTotal and use <strong>Send to report</strong> to mark the ones to include. Generating consumes the queue: everything pending since the previous report is included, even if several days have passed.</p>
 
-        <!-- Scope: last sync vs every keyword -->
-        <form method="GET" class="report-scope-form">
-            <input type="hidden" name="tab" value="builder">
-            <input type="hidden" name="group" value="<?= htmlspecialchars($groupFilter) ?>">
-            <label class="check-inline" title="List every keyword, including those without recent matches">
-                <input type="checkbox" name="scope" value="all" <?= $onlyRecent ? '' : 'checked' ?> onchange="this.form.submit()">
-                <span>Show all keywords (not only the last sync)</span>
-            </label>
-        </form>
-
-        <!-- Create group form -->
-        <form method="POST" class="group-create-form">
-            <?php csrfField(); ?>
-            <input type="hidden" name="action" value="create_group">
-            <div class="input-field">
-                <i class="material-icons prefix">create_new_folder</i>
-                <input id="group_name" type="text" name="group_name" placeholder=" " maxlength="60" required>
-                <label for="group_name">New group name</label>
+        <?php if ($queueCount === 0): ?>
+            <div class="notice notice-info"><i class="material-icons">inbox</i>
+                <div>No domains in the report queue yet. Open a <a href="/keywords.php"><strong>keyword match list</strong></a>, select domains and click <strong>Send to report</strong>.</div>
             </div>
-            <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">add</i>Add Group</button>
-        </form>
-
-        <?php if (empty($keywords)): ?>
-            <p class="muted">
-                No keywords in this view<?= $onlyRecent ? ' with matches in the last 24h' : '' ?>.
-                <a href="/keywords.php">Add keywords</a>, switch to another group, or tick
-                <strong>Show all keywords</strong> to see every keyword.
-            </p>
         <?php else: ?>
-            <?php if ($groupFallback): ?>
-                <div class="alert alert-info"><i class="material-icons left">info</i>No keywords from the last sync in this group; showing <strong>all</strong> of its keywords so you can still generate the report.</div>
-            <?php endif; ?>
-            <div class="report-options">
-                <div class="report-filter">
-                    <label for="report-date">Period</label>
-                    <select id="report-date" class="browser-default compact">
-                        <option value="all">All time</option>
-                        <option value="24h" selected>Last 24h</option>
-                        <option value="7d">Last 7 days</option>
-                        <option value="30d">Last 30 days</option>
-                    </select>
-                </div>
-                <div class="report-filter">
-                    <label for="report-state">State</label>
-                    <select id="report-state" class="browser-default compact">
-                        <option value="all">All states</option>
-                        <option value="good">Good</option>
-                        <option value="bad">Bad</option>
-                        <option value="observing">Observing</option>
-                        <option value="untagged">Untagged</option>
-                        <option value="watchlist">In watchlist</option>
-                        <option value="historical">Historical</option>
-                    </select>
-                </div>
-                <div class="report-filter">
-                    <label for="report-source">Source</label>
-                    <select id="report-source" class="browser-default compact">
-                        <option value="all">All sources</option>
-                        <option value="czds">CZDS (zone files)</option>
-                        <option value="ct">OpenINTEL (CT)</option>
-                    </select>
-                </div>
-                <label class="check-inline" title="Include historical (recheck) domains">
-                    <input type="checkbox" id="report-archived">
-                    <span>Include historical (recheck)</span>
-                </label>
-            </div>
-
             <div class="section-actions">
-                <form method="POST" id="report-generate-form" style="margin: 0;">
+                <form method="POST" style="margin: 0;">
                     <?php csrfField(); ?>
-                    <input type="hidden" name="action" value="generate_report">
-                    <input type="hidden" name="keywords" id="report-keywords" value="">
-                    <input type="hidden" name="date" id="report-date-hidden" value="24h">
-                    <input type="hidden" name="state" id="report-state-hidden" value="all">
-                    <input type="hidden" name="source" id="report-source-hidden" value="all">
-                    <input type="hidden" name="archived" id="report-archived-hidden" value="">
-                    <input type="hidden" name="group" value="<?= htmlspecialchars($groupFilter) ?>">
-                    <button type="submit" class="btn waves-effect" onclick="return prepareGenerate()"><i class="material-icons left">print</i>Generate Report</button>
+                    <input type="hidden" name="action" value="generate_queue_report">
+                    <button type="submit" class="btn waves-effect" onclick="return confirm('Generate a report with the <?= $queueCount ?> queued domain(s)? The queue will be marked as reported.')"><i class="material-icons left">print</i>Generate report from queue (<?= $queueCount ?>)</button>
                 </form>
-                <span class="muted">Report for the selected keywords (all visible keywords if none is checked).</span>
+                <form method="POST" style="margin: 0;" onsubmit="return confirm('Empty the report queue? This removes all pending domains.')">
+                    <?php csrfField(); ?>
+                    <input type="hidden" name="action" value="clear_queue">
+                    <button type="submit" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">clear_all</i>Clear queue</button>
+                </form>
+                <span class="muted"><?= $queueCount ?> domain(s) pending<?= $queueOldest ? ' since ' . htmlspecialchars(fmt_date((string)$queueOldest)) : '' ?>.</span>
             </div>
 
             <table class="striped highlight responsive-table">
                 <thead>
                     <tr>
-                        <th style="width: 30px;"><label><input type="checkbox" id="select-all" aria-label="Select all keywords"><span></span></label></th>
-                        <th>Keyword</th>
-                        <th>Matches (24h)</th>
-                        <th>Group</th>
+                        <th>Domain</th>
+                        <th>Keyword(s)</th>
                         <th>Added</th>
+                        <th>Remove</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($keywords as $k): ?>
+                    <?php foreach ($queueRows as $q): ?>
                     <tr>
-                        <td><label><input type="checkbox" class="row-check kw-check" value="<?= (int)$k['id'] ?>" aria-label="Select <?= htmlspecialchars($k['keyword']) ?>"><span></span></label></td>
-                        <td><strong><?= htmlspecialchars($k['keyword']) ?></strong></td>
-                        <td>
-                            <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" title="Domains discovered in the last sync (24h)"><?= (int)$k['recent_count'] ?></a><?php if ((int)$k['recent_count'] !== (int)$k['match_count']): ?> <span class="muted" title="Total matches ever">(<?= (int)$k['match_count'] ?> total)</span><?php endif; ?>
-                        </td>
+                        <td><strong><?= htmlspecialchars($q['domain']) ?></strong></td>
+                        <td><?= htmlspecialchars((string)($q['keywords'] ?? '')) ?></td>
+                        <td><?= htmlspecialchars(fmt_date((string)$q['added_at'])) ?></td>
                         <td>
                             <form method="POST" style="margin: 0;">
                                 <?php csrfField(); ?>
-                                <input type="hidden" name="action" value="set_group">
-                                <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
-                                <input type="hidden" name="return_group" value="<?= htmlspecialchars($groupFilter) ?>">
-                                <select name="group_id" class="browser-default compact" onchange="this.form.submit()">
-                                    <option value="" <?= $k['group_id'] === null ? 'selected' : '' ?>>— Ungrouped</option>
-                                    <?php foreach ($groups as $g): ?>
-                                    <option value="<?= (int)$g['id'] ?>" <?= (string)$k['group_id'] === (string)$g['id'] ? 'selected' : '' ?>><?= htmlspecialchars($g['name']) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
+                                <input type="hidden" name="action" value="remove_queue_domain">
+                                <input type="hidden" name="domain" value="<?= htmlspecialchars($q['domain']) ?>">
+                                <button type="submit" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">close</i>Remove</button>
                             </form>
                         </td>
-                        <td><?= htmlspecialchars(fmt_date($k['created_at'])) ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
         <?php endif; ?>
 
+        <details class="report-groups" style="margin-top: 20px;">
+            <summary style="cursor: pointer; font-weight: 600; padding: 6px 0;"><i class="material-icons tiny" style="vertical-align: middle;">folder</i> Keywords &amp; groups</summary>
+            <p class="muted" style="margin-top: 8px;">Group keywords to filter your saved reports. Reports are generated from the queue above.</p>
+
+            <!-- Scope: last sync vs every keyword -->
+            <form method="GET" class="report-scope-form">
+                <input type="hidden" name="tab" value="builder">
+                <input type="hidden" name="group" value="<?= htmlspecialchars($groupFilter) ?>">
+                <label class="check-inline" title="List every keyword, including those without recent matches">
+                    <input type="checkbox" name="scope" value="all" <?= $onlyRecent ? '' : 'checked' ?> onchange="this.form.submit()">
+                    <span>Show all keywords (not only the last sync)</span>
+                </label>
+            </form>
+
+            <!-- Create group form -->
+            <form method="POST" class="group-create-form">
+                <?php csrfField(); ?>
+                <input type="hidden" name="action" value="create_group">
+                <div class="input-field">
+                    <i class="material-icons prefix">create_new_folder</i>
+                    <input id="group_name" type="text" name="group_name" placeholder=" " maxlength="60" required>
+                    <label for="group_name">New group name</label>
+                </div>
+                <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">add</i>Add Group</button>
+            </form>
+
+            <?php if (empty($keywords)): ?>
+                <p class="muted">
+                    No keywords in this view<?= $onlyRecent ? ' with matches in the last 24h' : '' ?>.
+                    <a href="/keywords.php">Add keywords</a>, switch to another group, or tick
+                    <strong>Show all keywords</strong> to see every keyword.
+                </p>
+            <?php else: ?>
+                <?php if ($groupFallback): ?>
+                    <div class="alert alert-info"><i class="material-icons left">info</i>No keywords from the last sync in this group; showing <strong>all</strong> of its keywords.</div>
+                <?php endif; ?>
+                <table class="striped highlight responsive-table">
+                    <thead>
+                        <tr>
+                            <th>Keyword</th>
+                            <th>Matches (24h)</th>
+                            <th>Group</th>
+                            <th>Added</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($keywords as $k): ?>
+                        <tr>
+                            <td><strong><?= htmlspecialchars($k['keyword']) ?></strong></td>
+                            <td>
+                                <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" title="Domains discovered in the last sync (24h)"><?= (int)$k['recent_count'] ?></a><?php if ((int)$k['recent_count'] !== (int)$k['match_count']): ?> <span class="muted" title="Total matches ever">(<?= (int)$k['match_count'] ?> total)</span><?php endif; ?>
+                            </td>
+                            <td>
+                                <form method="POST" style="margin: 0;">
+                                    <?php csrfField(); ?>
+                                    <input type="hidden" name="action" value="set_group">
+                                    <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
+                                    <input type="hidden" name="return_group" value="<?= htmlspecialchars($groupFilter) ?>">
+                                    <select name="group_id" class="browser-default compact" onchange="this.form.submit()">
+                                        <option value="" <?= $k['group_id'] === null ? 'selected' : '' ?>>— Ungrouped</option>
+                                        <?php foreach ($groups as $g): ?>
+                                        <option value="<?= (int)$g['id'] ?>" <?= (string)$k['group_id'] === (string)$g['id'] ? 'selected' : '' ?>><?= htmlspecialchars($g['name']) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </form>
+                            </td>
+                            <td><?= htmlspecialchars(fmt_date($k['created_at'])) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </details>
+
     <?php else: ?>
 
         <p class="muted">Saved reports (immutable snapshots). Open one to review or print it, or delete the ones you no longer need. Filter by keyword group above.</p>
 
         <?php if (empty($history)): ?>
-            <p class="muted">No saved reports in this view. Generate one from the <a href="/reports.php?tab=builder<?= $groupFilter !== 'all' ? '&group=' . urlencode($groupFilter) : '' ?>">Builder</a>.</p>
+            <p class="muted">No saved reports in this view. Mark domains in a <a href="/keywords.php">keyword match list</a> and generate one from the <a href="/reports.php?tab=builder<?= $groupFilter !== 'all' ? '&group=' . urlencode($groupFilter) : '' ?>">queue</a>.</p>
         <?php else: ?>
             <form method="POST" id="history-bulk-form" style="margin: 0;">
                 <?php csrfField(); ?>
@@ -530,21 +558,8 @@ require __DIR__ . '/templates/header.php';
 </div>
 
 <script>
-// Fill the hidden fields of the generate form from the visible controls.
-function prepareGenerate() {
-    var ids = Array.prototype.map.call(document.querySelectorAll('.kw-check:checked'), function (cb) { return cb.value; });
-    if (!ids.length) {
-        var all = document.querySelectorAll('.kw-check');
-        if (!all.length) { alert('No keywords to report.'); return false; }
-        ids = Array.prototype.map.call(all, function (cb) { return cb.value; });
-    }
-    document.getElementById('report-keywords').value = ids.join(',');
-    document.getElementById('report-date-hidden').value = document.getElementById('report-date').value;
-    document.getElementById('report-state-hidden').value = document.getElementById('report-state').value;
-    document.getElementById('report-source-hidden').value = document.getElementById('report-source').value;
-    document.getElementById('report-archived-hidden').value = document.getElementById('report-archived').checked ? '1' : '';
-    return true;
-}
+// (Report generation now runs from the queue; the old keyword selection script
+// was removed with the classic Builder.)
 </script>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>

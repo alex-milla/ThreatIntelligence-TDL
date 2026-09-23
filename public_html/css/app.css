@@ -961,6 +961,7 @@ tr.unread {
 .tag-chip.bad  { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
 .tag-chip.observing { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
 .tag-chip.excluded { background: var(--surface-3); color: var(--text-muted); border-color: var(--border-strong); }
+.tag-chip.report { background: var(--info-bg); color: var(--info); border-color: var(--info-border); }
 
 /* VirusTotal verdict badges */
 .vt-badge {

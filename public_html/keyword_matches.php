@@ -11,6 +11,7 @@
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/report_present.php';
+require_once __DIR__ . '/includes/report_queue.php';
 requireAuth();
 
 $db = Database::get();
@@ -60,6 +61,9 @@ if (!in_array($source, $validSources, true)) {
 // Excluded domains are hidden from the main "All states" view; "Include
 // excluded" (and the dedicated Excluded filter) brings them back.
 $includeExcluded = isset($_GET['incl']) && $_GET['incl'] === '1';
+
+// Show only domains currently queued for the next report.
+$queuedOnly = isset($_GET['queued']) && $_GET['queued'] === '1';
 
 // ---------- Column sorting (never interpolate user input into SQL) ----------
 $sortCols = [
@@ -117,6 +121,11 @@ if ($source !== 'all') {
     $params[] = $source;
 }
 
+if ($queuedOnly) {
+    $where .= " AND EXISTS (SELECT 1 FROM report_queue rq WHERE rq.user_id = ? AND rq.domain = m.domain AND rq.reported_at IS NULL)";
+    $params[] = $userId;
+}
+
 // The FROM clause contributes the user id for the watchlist join (first param).
 $queryParams = array_merge([$userId], $params);
 
@@ -164,6 +173,12 @@ if (!empty($rows)) {
     foreach ($vtStmt->fetchAll() as $v) {
         $domainVt[$v['domain']] = $v;
     }
+}
+
+// Report-queue status for the visible rows (Report column + detail panel).
+$domainQueue = [];
+if (!empty($rows)) {
+    $domainQueue = reportQueueStatus($db, $userId, array_column($rows, 'domain'));
 }
 
 // ---------- URL helpers (preserve id + filters) ----------
@@ -230,8 +245,12 @@ require __DIR__ . '/templates/header.php';
             <input type="checkbox" name="incl" value="1" <?= $includeExcluded ? 'checked' : '' ?>>
             <span>Include excluded</span>
         </label>
+        <label class="check-inline" title="Show only domains queued for the next report">
+            <input type="checkbox" name="queued" value="1" <?= $queuedOnly ? 'checked' : '' ?>>
+            <span>Only queued for report</span>
+        </label>
         <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">search</i>Search</button>
-        <?php if ($search !== '' || $state !== 'all' || $source !== 'all' || $includeExcluded): ?>
+        <?php if ($search !== '' || $state !== 'all' || $source !== 'all' || $includeExcluded || $queuedOnly): ?>
         <a href="/keyword_matches.php?id=<?= $keywordId ?>" class="btn btn-small btn-danger waves-effect"><i class="material-icons left">clear</i>Clear</a>
         <?php endif; ?>
     </form>
@@ -244,6 +263,8 @@ require __DIR__ . '/templates/header.php';
         </label>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="sendSelectedToReport()"><i class="material-icons left">playlist_add</i>Send to report</button>
+        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="removeSelectedFromReport()"><i class="material-icons left">playlist_remove</i>Remove from report</button>
         <button type="button" class="btn btn-small btn-outline waves-effect" onclick="tagSelectedDomains('excluded')"><i class="material-icons left">block</i>Exclude selected</button>
         <button type="button" class="btn btn-small btn-outline waves-effect" onclick="tagSelectedDomains('')"><i class="material-icons left">restore</i>Unexclude selected</button>
         <button type="button" class="btn btn-small btn-outline waves-effect" onclick="location.reload()"><i class="material-icons left">refresh</i>Refresh</button>
@@ -261,6 +282,7 @@ require __DIR__ . '/templates/header.php';
                     <th><?= kwmSortLink('tld', 'TLD', $sort, $dir, $sortDefaults) ?></th>
                     <th>VT</th>
                     <th>Tag</th>
+                    <th>Report</th>
                     <th>Watchlist</th>
                     <th>Source</th>
                     <th><?= kwmSortLink('first_seen', 'First Seen', $sort, $dir, $sortDefaults) ?></th>
@@ -296,6 +318,12 @@ require __DIR__ . '/templates/header.php';
                     $vtLabels = ['malicious' => 'MALICIOUS', 'dga' => 'DGA', 'suspicious' => 'SUSPICIOUS', 'clean' => 'CLEAN'];
                     $vtCell = isset($vtLabels[$vtVerdict])
                         ? '<span class="vt-badge vt-' . $vtVerdict . '">' . $vtLabels[$vtVerdict] . '</span>'
+                        : '<span class="muted">&mdash;</span>';
+
+                    $queueRow = $domainQueue[$r['domain']] ?? null;
+                    $isQueued = $queueRow !== null && $queueRow['reported_at'] === null;
+                    $reportCell = $isQueued
+                        ? '<span class="tag-chip report" title="Queued for the next report">QUEUED</span>'
                         : '<span class="muted">&mdash;</span>';
 
                     // Build a snapshot-like row so the report presentation helpers
@@ -347,6 +375,7 @@ require __DIR__ . '/templates/header.php';
                     <td><?= htmlspecialchars($r['tld']) ?></td>
                     <td><?= $vtCell ?></td>
                     <td><?= $tagCell ?></td>
+                    <td><?= $reportCell ?></td>
                     <td><?= !empty($r['in_watchlist']) ? '<i class="material-icons tiny" title="In watchlist">star</i>' : '<span class="muted">&mdash;</span>' ?></td>
                     <td><?= $sourceLabel ?></td>
                     <td><?= htmlspecialchars(fmt_date($r['first_seen'])) ?></td>
@@ -362,7 +391,7 @@ require __DIR__ . '/templates/header.php';
                     <td><?= !empty($r['is_historical']) ? '<span class="status-badge status-cancelled">Yes</span>' : '<span class="muted">No</span>' ?></td>
                 </tr>
                 <tr class="domain-detail-row" style="display:none;">
-                    <td colspan="12">
+                    <td colspan="13">
                         <div class="domain-detail">
                             <div class="dd-grid">
                                 <div class="dd-block">
