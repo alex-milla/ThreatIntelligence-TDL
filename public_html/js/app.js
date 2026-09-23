@@ -9,6 +9,7 @@ var App = {
     init: function () {
         this.initTheme();
         this.initSidenav();
+        this.initAdminSubmenu();
         this.initDropdowns();
         this.initTooltips();
         this.initModals();
@@ -171,6 +172,30 @@ var App = {
         if (elems.length && window.M) {
             M.Sidenav.init(elems, { edge: 'left', draggable: true });
         }
+    },
+
+    // Collapsible submenus in the sidebar / mobile drawer (TLDs, Admin Panel).
+    // The wrapper (.sidebar-subgroup / .sidenav-subgroup) carries the is-open
+    // class; the server pre-opens the group of the current area.
+    initAdminSubmenu: function () {
+        document.querySelectorAll('[data-submenu-toggle]').forEach(function (btn) {
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                var id = btn.getAttribute('data-submenu-toggle');
+                var menu = id ? document.getElementById(id) : null;
+                if (!menu || !menu.parentElement) return;
+                var wrap = menu.parentElement;
+                var open = wrap.classList.toggle('is-open');
+                btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            });
+            // The drawer toggles are role="button" divs; support the keyboard.
+            btn.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    btn.click();
+                }
+            });
+        });
     },
 
     // Navbar / account / admin dropdowns

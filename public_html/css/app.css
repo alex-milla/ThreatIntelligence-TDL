@@ -388,6 +388,60 @@ main > .container {
     color: var(--primary);
 }
 
+/* Collapsible submenus (TLDs, Admin Panel) */
+.sidebar-parent {
+    width: 100%;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+}
+
+.sidebar-parent .sidebar-caret {
+    margin-left: auto;
+    font-size: 18px;
+    transition: transform 0.2s;
+}
+
+.sidebar-subgroup.is-open > .sidebar-parent .sidebar-caret {
+    transform: rotate(180deg);
+}
+
+.sidebar-submenu {
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    margin: 2px 0 4px 22px;
+    padding-left: 12px;
+    border-left: 1px solid var(--border);
+}
+
+.sidebar-subgroup.is-open > .sidebar-submenu {
+    display: flex;
+}
+
+.sidebar-sublink {
+    display: block;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.sidebar-sublink:hover {
+    background-color: var(--surface-2);
+    color: var(--text);
+}
+
+.sidebar-sublink.active {
+    background-color: var(--primary-soft);
+    color: var(--primary);
+    font-weight: 600;
+}
+
 /* ---------- Header ---------- */
 .app-header {
     height: 64px;
@@ -572,6 +626,59 @@ main > .container {
     letter-spacing: 0.08em;
     color: var(--text-muted);
     padding: 14px 32px 4px;
+}
+
+/* Collapsible submenus inside the drawer */
+.sidenav .sidenav-parent {
+    display: flex;
+    align-items: center;
+    height: 48px;
+    padding: 0 32px;
+    color: var(--text);
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.sidenav .sidenav-parent > .material-icons:first-child {
+    margin-right: 14px;
+}
+
+.sidenav .sidenav-parent .sidenav-caret {
+    margin-left: auto;
+    transition: transform 0.2s;
+}
+
+.sidenav-subgroup.is-open > .sidenav-parent .sidenav-caret {
+    transform: rotate(180deg);
+}
+
+.sidenav-submenu {
+    display: none;
+}
+
+.sidenav-subgroup.is-open > .sidenav-submenu {
+    display: block;
+}
+
+.sidenav-submenu li > a {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    line-height: 40px;
+    padding: 0 32px 0 58px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+
+.sidenav-submenu li > a:hover {
+    background-color: var(--surface-2);
+    color: var(--text);
+}
+
+.sidenav-submenu li > a.active {
+    background: none;
+    color: var(--primary);
+    font-weight: 600;
 }
 
 /* ------------------------------------------------------------

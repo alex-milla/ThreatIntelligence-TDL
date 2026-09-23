@@ -26,6 +26,11 @@ $isNotifications = ($current === 'notifications.php');
 $isWatchlist     = ($current === 'watchlist.php');
 $isReports       = in_array($current, ['reports.php', 'report_view.php'], true);
 $isTlds          = ($current === 'tlds.php');
+$isAdminPanel    = ($isAdminArea && !$isTlds);
+$tldSource       = (string)($_GET['source'] ?? 'czds');
+if (!in_array($tldSource, ['czds', 'openintel'], true)) {
+    $tldSource = 'czds';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
@@ -65,6 +70,20 @@ $isTlds          = ($current === 'tlds.php');
             <a href="/" class="sidebar-link<?= $isDashboard ? ' active' : '' ?>">
                 <i class="material-icons">dashboard</i>Dashboard
             </a>
+
+            <?php if ($isAdmin): ?>
+            <div class="sidebar-subgroup<?= $isTlds ? ' is-open' : '' ?>">
+                <button type="button" class="sidebar-link sidebar-parent<?= $isTlds ? ' active' : '' ?>" data-submenu-toggle="sidebar-tlds" aria-expanded="<?= $isTlds ? 'true' : 'false' ?>">
+                    <i class="material-icons">public</i>TLDs
+                    <i class="material-icons sidebar-caret">expand_more</i>
+                </button>
+                <div class="sidebar-submenu" id="sidebar-tlds">
+                    <a href="/admin/tlds.php?source=czds" class="sidebar-sublink<?= ($isTlds && $tldSource === 'czds') ? ' active' : '' ?>">ICANN (CZDS)</a>
+                    <a href="/admin/tlds.php?source=openintel" class="sidebar-sublink<?= ($isTlds && $tldSource === 'openintel') ? ' active' : '' ?>">ccTLD (OpenINTEL)</a>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <a href="/keywords.php" class="sidebar-link<?= $isKeywords ? ' active' : '' ?>">
                 <i class="material-icons">search</i>Keywords
             </a>
@@ -82,12 +101,21 @@ $isTlds          = ($current === 'tlds.php');
 
             <?php if ($isAdmin): ?>
             <div class="sidebar-group-label">Administration</div>
-            <a href="/admin/tlds.php" class="sidebar-link<?= $isTlds ? ' active' : '' ?>">
-                <i class="material-icons">public</i>TLDs
-            </a>
-            <a href="/admin/" class="sidebar-link<?= $isAdminArea ? ' active' : '' ?>">
-                <i class="material-icons">admin_panel_settings</i>Admin Panel
-            </a>
+            <div class="sidebar-subgroup<?= $isAdminPanel ? ' is-open' : '' ?>">
+                <button type="button" class="sidebar-link sidebar-parent<?= $isAdminPanel ? ' active' : '' ?>" data-submenu-toggle="sidebar-admin" aria-expanded="<?= $isAdminPanel ? 'true' : 'false' ?>">
+                    <i class="material-icons">admin_panel_settings</i>Admin Panel
+                    <i class="material-icons sidebar-caret">expand_more</i>
+                </button>
+                <div class="sidebar-submenu" id="sidebar-admin">
+                    <a href="/admin/#overview" class="sidebar-sublink" data-admin-tab="overview">Overview</a>
+                    <a href="/admin/#worker" class="sidebar-sublink" data-admin-tab="worker">Worker</a>
+                    <a href="/admin/#commands" class="sidebar-sublink" data-admin-tab="commands">Commands</a>
+                    <a href="/admin/#recheck" class="sidebar-sublink" data-admin-tab="recheck">Recheck</a>
+                    <a href="/admin/#users" class="sidebar-sublink" data-admin-tab="users">Users</a>
+                    <a href="/admin/#sync" class="sidebar-sublink" data-admin-tab="sync">Sync</a>
+                    <a href="/admin/#system" class="sidebar-sublink" data-admin-tab="system">System</a>
+                </div>
+            </div>
             <?php endif; ?>
         </nav>
     </aside>
@@ -127,14 +155,39 @@ $isTlds          = ($current === 'tlds.php');
         <ul class="sidenav" id="mobile-nav">
             <li><div class="user-view"><span class="name"><?= htmlspecialchars($username) ?></span><?php if ($isAdmin): ?> <span class="role-chip">Admin</span><?php endif; ?></div></li>
             <li><a href="/" class="<?= $isDashboard ? 'active' : '' ?>"><i class="material-icons">dashboard</i>Dashboard</a></li>
+            <?php if ($isAdmin): ?>
+            <li class="sidenav-subgroup<?= $isTlds ? ' is-open' : '' ?>">
+                <div class="sidenav-parent<?= $isTlds ? ' active' : '' ?>" data-submenu-toggle="m-tlds" role="button" tabindex="0" aria-expanded="<?= $isTlds ? 'true' : 'false' ?>" aria-controls="m-tlds">
+                    <i class="material-icons">public</i>TLDs
+                    <i class="material-icons sidenav-caret">expand_more</i>
+                </div>
+                <ul class="sidenav-submenu" id="m-tlds">
+                    <li><a href="/admin/tlds.php?source=czds" class="<?= ($isTlds && $tldSource === 'czds') ? 'active' : '' ?>">ICANN (CZDS)</a></li>
+                    <li><a href="/admin/tlds.php?source=openintel" class="<?= ($isTlds && $tldSource === 'openintel') ? 'active' : '' ?>">ccTLD (OpenINTEL)</a></li>
+                </ul>
+            </li>
+            <?php endif; ?>
             <li><a href="/keywords.php" class="<?= $isKeywords ? 'active' : '' ?>"><i class="material-icons">search</i>Keywords</a></li>
             <li><a href="/notifications.php" class="<?= $isNotifications ? 'active' : '' ?>"><i class="material-icons">notifications</i>Notifications</a></li>
             <li><a href="/watchlist.php" class="<?= $isWatchlist ? 'active' : '' ?>"><i class="material-icons">visibility</i>Watchlist</a></li>
             <li><a href="/reports.php" class="<?= $isReports ? 'active' : '' ?>"><i class="material-icons">assessment</i>Informes</a></li>
             <?php if ($isAdmin): ?>
                 <li><div class="sidenav-group-label">Administration</div></li>
-                <li><a href="/admin/tlds.php" class="<?= $isTlds ? 'active' : '' ?>"><i class="material-icons">public</i>TLDs</a></li>
-                <li><a href="/admin/" class="<?= $isAdminArea ? 'active' : '' ?>"><i class="material-icons">admin_panel_settings</i>Admin Panel</a></li>
+                <li class="sidenav-subgroup<?= $isAdminPanel ? ' is-open' : '' ?>">
+                    <div class="sidenav-parent<?= $isAdminPanel ? ' active' : '' ?>" data-submenu-toggle="m-admin" role="button" tabindex="0" aria-expanded="<?= $isAdminPanel ? 'true' : 'false' ?>" aria-controls="m-admin">
+                        <i class="material-icons">admin_panel_settings</i>Admin Panel
+                        <i class="material-icons sidenav-caret">expand_more</i>
+                    </div>
+                    <ul class="sidenav-submenu" id="m-admin">
+                        <li><a href="/admin/#overview" data-admin-tab="overview">Overview</a></li>
+                        <li><a href="/admin/#worker" data-admin-tab="worker">Worker</a></li>
+                        <li><a href="/admin/#commands" data-admin-tab="commands">Commands</a></li>
+                        <li><a href="/admin/#recheck" data-admin-tab="recheck">Recheck</a></li>
+                        <li><a href="/admin/#users" data-admin-tab="users">Users</a></li>
+                        <li><a href="/admin/#sync" data-admin-tab="sync">Sync</a></li>
+                        <li><a href="/admin/#system" data-admin-tab="system">System</a></li>
+                    </ul>
+                </li>
             <?php endif; ?>
             <li><div class="divider"></div></li>
             <li><a href="/account.php" class="<?= $current === 'account.php' ? 'active' : '' ?>"><i class="material-icons">mail</i>Account</a></li>

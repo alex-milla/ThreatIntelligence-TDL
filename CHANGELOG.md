@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.14.0] - 2026-09-23
+
+### Added - Collapsible submenus in the sidebar (TLDs and Admin Panel)
+
+- **TLDs moved under Dashboard** and is now a collapsible menu whose options are its two sources: **ICANN (CZDS)** and **ccTLD (OpenINTEL)** (`/admin/tlds.php?source=...`), with the active source highlighted.
+- **Admin Panel is now collapsible** and lists the admin tabs from `admin/index.php` (**Overview, Worker, Commands, Recheck, Users, Sync, System**) as direct links (`/admin/#tab`). The active tab stays in sync with the in-page horizontal tabs, and following a sidebar link while already on `/admin/` switches the pane without reloading (new `hashchange` handling).
+- Both submenus are available in the **mobile drawer** as well; they open automatically for the section you are in and can be toggled with a caret (the drawer toggles are not anchors, so Materialize does not close the panel).
+- New styles in `app.css` (`.sidebar-parent`/`.sidebar-submenu`/`.sidebar-sublink` and the drawer equivalents) and `initAdminSubmenu()` in `app.js`.
+
+### Notes
+- The horizontal `.admin-tabs` on the admin pages are unchanged; this only adds the vertical navigation. Auth and admin logic are untouched.
+
 ## [v1.13.2] - 2026-09-23
 
 ### Fixed - Report queue keeps each domain in its keyword group

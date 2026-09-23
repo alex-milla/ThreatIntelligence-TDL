@@ -675,9 +675,14 @@ if (!empty($workerStatus['last_heartbeat'])) {
 (function() {
     const tabs = document.querySelectorAll('#admin-tabs a[data-tab]');
     const panes = document.querySelectorAll('.admin-pane[data-tab]');
+    const valid = ['overview','worker','commands','recheck','users','sync','system'];
     function activate(tab) {
         tabs.forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
         panes.forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
+        // Keep the vertical sidebar / mobile drawer in sync.
+        document.querySelectorAll('[data-admin-tab]').forEach(function (a) {
+            a.classList.toggle('active', a.getAttribute('data-admin-tab') === tab);
+        });
     }
     tabs.forEach(a => {
         a.addEventListener('click', function(e) {
@@ -689,8 +694,12 @@ if (!empty($workerStatus['last_heartbeat'])) {
             activate(t);
         });
     });
+    // A sidebar link to /admin/#tab only changes the hash when already here.
+    window.addEventListener('hashchange', function () {
+        const h = (location.hash || '').replace('#','');
+        if (valid.includes(h)) activate(h);
+    });
     const hash = (location.hash || '').replace('#','');
-    const valid = ['overview','worker','commands','recheck','users','sync','system'];
     if (hash && valid.includes(hash)) activate(hash);
 })();
 
