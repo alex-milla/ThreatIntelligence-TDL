@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.14.1] - 2026-09-23
+
+### Changed - Warmer light background and neutral-gray dark theme
+
+- **Light theme**: the page background is now a warm pastel cream (`#fdf9ec`) instead of the cool near-white; text, muted text, borders, inputs, table stripes and the neutral chips are retuned to warm tones so everything is cohesive with the orange brand. Cards stay white so they still float above the page.
+- **Dark theme**: the cool slate ramp (`#111827`/`#0f172a`) is replaced by a **neutral gray** palette with **cards/chrome slightly lighter than the page** (`--bg: #141414`, `--surface: #1e1e1e`, `#2a2a2a`, `#363636`), which reads softer and matches the accent better.
+- The Materialize MD3 tokens are mirrored so inputs, switches, tabs, pagination, tooltips, etc. follow the same palette. Brand orange and semantic colours (red/amber/green/blue) are unchanged.
+- Only `css/app.css` (plus version/changelog): no PHP, HTML or data changes; the print/PDF stylesheet is untouched.
+
 ## [v1.14.0] - 2026-09-23
 
 ### Added - Collapsible submenus in the sidebar (TLDs and Admin Panel)
