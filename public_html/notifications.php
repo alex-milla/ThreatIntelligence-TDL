@@ -448,6 +448,7 @@ require __DIR__ . '/templates/header.php';
                     <th><?= notifSortLink('status', 'Status', $sort, $dir, $notifSortDefaults) ?></th>
                     <th><?= notifSortLink('domain', 'Domain', $sort, $dir, $notifSortDefaults) ?></th>
                     <th>VT</th>
+                    <th>OTX</th>
                     <th><?= notifSortLink('tld', 'TLD', $sort, $dir, $notifSortDefaults) ?></th>
                     <th><?= notifSortLink('keyword', 'Keyword', $sort, $dir, $notifSortDefaults) ?></th>
                     <th><?= notifSortLink('first_seen', 'First Seen', $sort, $dir, $notifSortDefaults) ?></th>
@@ -537,7 +538,8 @@ require __DIR__ . '/templates/header.php';
                     <td><label><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form"><span></span></label></td>
                     <td><?= $n['is_read'] ? '<span class="status-badge status-cancelled">Read</span>' : '<span class="status-badge status-pending">Unread</span>' ?></td>
                     <td><a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><?= htmlspecialchars($n['domain']) ?></a><?= $tagBadge ?><?= $queueBadge ?></td>
-                    <td><?= $vtCell ?> <?= $otxCell ?></td>
+                    <td><?= $vtCell ?></td>
+                    <td><?= $otxCell ?></td>
                     <td><?= htmlspecialchars($n['tld']) ?></td>
                     <td><?= htmlspecialchars($n['keyword']) ?></td>
                     <td><?= htmlspecialchars(fmt_date($n['first_seen'])) ?></td>
@@ -571,7 +573,7 @@ require __DIR__ . '/templates/header.php';
                     </td>
                 </tr>
                 <tr class="domain-detail-row" data-domain="<?= htmlspecialchars($n['domain']) ?>" style="display:none;">
-                    <td colspan="10"><?= renderDomainDetail($present, [$n['keyword']], $rules) ?></td>
+                    <td colspan="11"><?= renderDomainDetail($present, [$n['keyword']], $rules) ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>

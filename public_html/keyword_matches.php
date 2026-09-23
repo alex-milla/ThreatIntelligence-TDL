@@ -310,6 +310,7 @@ require __DIR__ . '/templates/header.php';
                     <th><?= kwmSortLink('domain', 'Domain', $sort, $dir, $sortDefaults) ?></th>
                     <th><?= kwmSortLink('tld', 'TLD', $sort, $dir, $sortDefaults) ?></th>
                     <th>VT</th>
+                    <th>OTX</th>
                     <th>Tag</th>
                     <th>Report</th>
                     <th>Watchlist</th>
@@ -418,7 +419,8 @@ require __DIR__ . '/templates/header.php';
                         <a href="javascript:void(0)" class="domain-link" onclick="toggleKwDetail(this)" aria-expanded="false"><?= reportHighlightKeyword((string)$r['domain'], (string)$keyword['keyword']) ?></a><?= reportTldBadge((string)$r['domain']) ?><?php if ($isNew): ?> <span class="badge-new">NEW</span><?php endif; ?>
                     </td>
                     <td><?= htmlspecialchars($r['tld']) ?></td>
-                    <td><?= $vtCell ?> <?= $otxCell ?></td>
+                    <td><?= $vtCell ?></td>
+                    <td><?= $otxCell ?></td>
                     <td><?= $tagCell ?></td>
                     <td><?= $reportCell ?></td>
                     <td><?= !empty($r['in_watchlist']) ? '<i class="material-icons tiny" title="In watchlist">star</i>' : '<span class="muted">&mdash;</span>' ?></td>
@@ -436,7 +438,7 @@ require __DIR__ . '/templates/header.php';
                     <td><?= !empty($r['is_historical']) ? '<span class="status-badge status-cancelled">Yes</span>' : '<span class="muted">No</span>' ?></td>
                 </tr>
                 <tr class="domain-detail-row" style="display:none;">
-                    <td colspan="13">
+                    <td colspan="14">
                         <div class="domain-detail">
                             <div class="dd-grid">
                                 <div class="dd-block">

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.15.1] - 2026-09-23
+
+### Changed - Dedicated OTX column in the match/notification lists
+
+- The **AlienVault OTX** badge no longer shares the VirusTotal cell: **Notifications** and the per-keyword **match list** now have a dedicated **OTX** column (header) next to **VT**, with the same "OTX …" badge. The inline detail row `colspan` was updated accordingly (Notifications → 11, keyword matches → 14).
+- The rich detail block already showed the "AlienVault OTX" line; the report triage table keeps VT + OTX combined under *Reputation* (unchanged).
+
 ## [v1.15.0] - 2026-09-23
 
 ### Added - AlienVault OTX as a second reputation source
