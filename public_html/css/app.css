@@ -2190,6 +2190,13 @@ td select.browser-default,
     margin-top: 10px;
 }
 
+.dd-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
 .dd-raw pre {
     white-space: pre-wrap;
     word-break: break-word;

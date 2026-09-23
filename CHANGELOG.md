@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.14.3] - 2026-09-23
+
+### Changed - Watchlist detail uses the rich report block
+
+- Clicking a domain in **Watchlist** now expands the same rich detail block used by the per-keyword match list: **Assessment** (risk/confidence + reasons), **Timeline**, **Registration**, **Reputation** and **Detection** (all matching keywords, source, historical, time-to-detect, analyst note) plus the collapsible **Raw data**. It is the same `.domain-detail` layout and `includes/report_present.php` presentation layer.
+- A footer of actions is kept inside the block: **Mark Good / Bad / Insufficient info / Clear**, **Fetch WHOIS (worker)** and **Check VirusTotal** (queue on the worker and reload with fresh data), **Open in VirusTotal** and **Remove from Watchlist**.
+- The row keeps its editable **Group** and **Note** columns and the Remove button; the detail block is server-rendered (no more modal/AJAX panel in Watchlist).
+- New `.dd-actions` style in `app.css`. Notifications and Dashboard are unchanged.
+
 ## [v1.14.2] - 2026-09-23
 
 ### Changed - Watchlist uses the shared inline domain detail; menu order
