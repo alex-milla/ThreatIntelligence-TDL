@@ -52,9 +52,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    // Optional explicit group (from the "send to report" selector). When absent,
+    // the queue assigns each domain to every group of its matched keywords.
+    $groupKey = array_key_exists('group_key', $input) ? (string)$input['group_key'] : null;
+
     $count = $queued
-        ? reportQueueAdd($db, $userId, $domains)
-        : reportQueueRemove($db, $userId, $domains);
+        ? reportQueueAdd($db, $userId, $domains, $groupKey)
+        : reportQueueRemove($db, $userId, $domains, $groupKey);
 
     // Return the resulting status for every requested domain.
     $status = reportQueueStatus($db, $userId, $domains);

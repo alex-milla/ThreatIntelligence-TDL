@@ -21,11 +21,16 @@ $repSymbol = ['malicious' => '●', 'suspicious' => '⚠', 'dga' => '⚠', 'clea
 
 $keywordId = (int)($_GET['id'] ?? 0);
 
-$stmt = $db->prepare("SELECT id, keyword, match_count, created_at FROM keywords WHERE id = ? AND user_id = ? LIMIT 1");
+$stmt = $db->prepare("SELECT id, keyword, match_count, group_id, created_at FROM keywords WHERE id = ? AND user_id = ? LIMIT 1");
 $stmt->execute([$keywordId, $userId]);
 $keyword = $stmt->fetch();
 
 $defaultNewDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
+
+// Groups for the "send to report" selector (default = the keyword's group).
+$groupsStmt = $db->prepare("SELECT id, name FROM keyword_groups WHERE user_id = ? ORDER BY name ASC");
+$groupsStmt->execute([$userId]);
+$keywordGroups = $groupsStmt->fetchAll();
 
 // Unknown or foreign keyword: do not reveal anything about it.
 if (!$keyword) {
@@ -251,7 +256,7 @@ require __DIR__ . '/templates/header.php';
         </label>
         <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">search</i>Search</button>
         <?php if ($search !== '' || $state !== 'all' || $source !== 'all' || $includeExcluded || $queuedOnly): ?>
-        <a href="/keyword_matches.php?id=<?= $keywordId ?>" class="btn btn-small btn-danger waves-effect"><i class="material-icons left">clear</i>Clear</a>
+        <a href="/keyword_matches.php?id=<?= $keywordId ?>" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">clear</i>Clear</a>
         <?php endif; ?>
     </form>
 
@@ -263,6 +268,15 @@ require __DIR__ . '/templates/header.php';
         </label>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
+        <label class="check-inline" title="Group the selected domains will be sent to">
+            <span class="muted">Group:</span>
+            <select id="report-group" class="browser-default compact">
+                <option value="" <?= $keyword['group_id'] === null ? 'selected' : '' ?>>Ungrouped</option>
+                <?php foreach ($keywordGroups as $g): ?>
+                <option value="<?= (int)$g['id'] ?>" <?= (string)$keyword['group_id'] === (string)$g['id'] ? 'selected' : '' ?>><?= htmlspecialchars($g['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
         <button type="button" class="btn btn-small waves-effect" onclick="sendSelectedToReport()"><i class="material-icons left">playlist_add</i>Send to report</button>
         <button type="button" class="btn btn-small btn-outline waves-effect" onclick="removeSelectedFromReport()"><i class="material-icons left">playlist_remove</i>Remove from report</button>
         <button type="button" class="btn btn-small btn-outline waves-effect" onclick="tagSelectedDomains('excluded')"><i class="material-icons left">block</i>Exclude selected</button>
@@ -456,7 +470,7 @@ require __DIR__ . '/templates/header.php';
                             </div>
                             <?php if (($present['verdict'] ?? null) !== null): ?>
                             <div class="dd-vt">
-                                <a class="btn btn-small btn-outline info waves-effect" href="https://www.virustotal.com/gui/domain/<?= rawurlencode((string)$r['domain']) ?>" target="_blank" rel="noopener"><i class="material-icons left">shield</i>Open in VirusTotal</a>
+                                <a class="btn btn-small btn-info waves-effect" href="https://www.virustotal.com/gui/domain/<?= rawurlencode((string)$r['domain']) ?>" target="_blank" rel="noopener"><i class="material-icons left">shield</i>Open in VirusTotal</a>
                             </div>
                             <?php endif; ?>
                             <details class="dd-raw">

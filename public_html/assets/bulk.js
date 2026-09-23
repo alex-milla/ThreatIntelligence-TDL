@@ -117,7 +117,17 @@
     window.sendSelectedToReport = function () {
         var domains = checkedDomains(false);
         if (!domains.length) { alert('Select one or more domains first.'); return; }
-        postReportQueue(domains, true)
+        var payload = { domains: domains, queued: true };
+        // keyword_matches offers a group selector; elsewhere the group is derived
+        // from the keyword(s) that matched each domain.
+        var sel = document.getElementById('report-group');
+        if (sel) { payload.group_key = sel.value; }
+        fetch('/ajax_report_queue.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+            body: JSON.stringify(payload)
+        })
+            .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (data.success) { location.reload(); }
                 else { alert(data.error || 'Failed to queue domains'); }

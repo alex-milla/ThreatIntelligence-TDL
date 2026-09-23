@@ -952,6 +952,28 @@ h5 { font-size: 1.15rem; font-weight: 500; }
 .btn-outline.warning { color: var(--warning); border-color: var(--warning-border); }
 .btn-outline.info { color: var(--info);    border-color: var(--info-border); }
 
+/* Semantic tinted buttons (pastel fill + coloured text, visible in both themes) */
+.btn-good,
+.btn-bad,
+.btn-warning,
+.btn-info {
+    border: 1px solid transparent;
+}
+
+.btn-good    { background-color: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+.btn-bad     { background-color: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
+.btn-warning { background-color: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
+.btn-info    { background-color: var(--info-bg);    color: var(--info);    border-color: var(--info-border); }
+
+.btn-good:hover,
+.btn-good:focus    { background-color: var(--success-bg); color: var(--success); border-color: var(--success); }
+.btn-bad:hover,
+.btn-bad:focus     { background-color: var(--danger-bg);  color: var(--danger);  border-color: var(--danger); }
+.btn-warning:hover,
+.btn-warning:focus { background-color: var(--warning-bg); color: var(--warning); border-color: var(--warning); }
+.btn-info:hover,
+.btn-info:focus    { background-color: var(--info-bg);    color: var(--info);    border-color: var(--info); }
+
 .btn-tiny {
     padding: 3px 8px;
     font-size: 0.75rem;

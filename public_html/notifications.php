@@ -3,6 +3,7 @@ require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/report.php';
 require_once __DIR__ . '/includes/report_queue.php';
+require_once __DIR__ . '/includes/domain_detail.php';
 requireAuth();
 
 $db = Database::get();
@@ -219,7 +220,7 @@ $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
 // Fetch page. The domain_whois join lets "Created" be sorted server-side.
-$sql = "SELECT n.id, n.is_read, n.created_at, m.domain, m.tld, m.discovered_at, m.first_seen, k.keyword 
+$sql = "SELECT n.id, n.is_read, n.created_at, m.domain, m.tld, m.discovered_at, m.first_seen, m.is_historical, m.source, k.keyword 
     FROM notifications n 
     JOIN matches m ON n.match_id = m.id 
     JOIN keywords k ON m.keyword_id = k.id 
@@ -249,7 +250,9 @@ $domainWhois = [];
 if (!empty($notifications)) {
     $domainsOnPage = array_column($notifications, 'domain');
     $placeholders = implode(',', array_fill(0, count($domainsOnPage), '?'));
-    $whoisStmt = $db->prepare("SELECT domain, creation_date FROM domain_whois WHERE domain IN ($placeholders)");
+    $whoisStmt = $db->prepare("SELECT domain, creation_date, creation_ts, expiration_date, registrar,
+            name_servers, status, source, updated_at
+        FROM domain_whois WHERE domain IN ($placeholders)");
     $whoisStmt->execute($domainsOnPage);
     foreach ($whoisStmt->fetchAll() as $w) {
         $domainWhois[$w['domain']] = $w;
@@ -263,7 +266,9 @@ $domainVt = [];
 if (!empty($notifications)) {
     $domainsOnPage = array_column($notifications, 'domain');
     $placeholders = implode(',', array_fill(0, count($domainsOnPage), '?'));
-    $vtStmt = $db->prepare("SELECT domain, verdict, malicious, suspicious FROM domain_vt WHERE domain IN ($placeholders)");
+    $vtStmt = $db->prepare("SELECT domain, verdict, malicious, suspicious, harmless, undetected,
+            reputation, last_analysis_date, checked_at
+        FROM domain_vt WHERE domain IN ($placeholders)");
     $vtStmt->execute($domainsOnPage);
     foreach ($vtStmt->fetchAll() as $v) {
         $domainVt[$v['domain']] = $v;
@@ -275,6 +280,9 @@ $domainQueue = [];
 if (!empty($notifications)) {
     $domainQueue = reportQueueStatus($db, $userId, array_column($notifications, 'domain'));
 }
+
+// Report review rules (used by the rich domain detail block).
+$rules = reportReviewRules($db);
 
 // Helper to build pagination URLs preserving filters
 function notifUrl(int $p, string $search, string $date, bool $unread, ?int $newDays, bool $archived = false, bool $observing = false, string $sort = '', string $dir = ''): string {
@@ -353,7 +361,7 @@ require __DIR__ . '/templates/header.php';
         </label>
         <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">search</i>Search</button>
         <?php if ($search !== '' || $unreadOnly || $newDays !== null || $dateFilter !== 'all' || $includeArchived || $observingOnly): ?>
-        <a href="/notifications.php" class="btn btn-small btn-danger waves-effect"><i class="material-icons left">clear</i>Clear</a>
+        <a href="/notifications.php" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">clear</i>Clear</a>
         <?php endif; ?>
     </form>
 
@@ -463,6 +471,36 @@ require __DIR__ . '/templates/header.php';
                     $queueBadge = ($qRow !== null && $qRow['reported_at'] === null)
                         ? ' <span class="tag-chip report" title="Queued for the next report">QUEUED</span>'
                         : '';
+                    $ns = (!empty($whoisRow['name_servers'])) ? (json_decode((string)$whoisRow['name_servers'], true) ?: []) : [];
+                    $present = [
+                        'domain'             => $n['domain'],
+                        'tld'                => $n['tld'],
+                        'discovered_at'      => $n['discovered_at'],
+                        'first_seen'         => $n['first_seen'],
+                        'is_historical'      => $n['is_historical'] ?? 0,
+                        'source'             => $n['source'] ?? null,
+                        'tag'                => (string)($dtag['tag'] ?? ''),
+                        'tag_note'           => $dtag['note'] ?? null,
+                        'in_watchlist'       => 0,
+                        'creation_date'      => $creationDate,
+                        'expiration_date'    => $whoisRow['expiration_date'] ?? null,
+                        'registrar'          => $whoisRow['registrar'] ?? null,
+                        'name_servers'       => $whoisRow['name_servers'] ?? null,
+                        'whois_status'       => $whoisRow['status'] ?? null,
+                        'whois_source'       => $whoisRow['source'] ?? null,
+                        'whois_updated_at'   => $whoisRow['updated_at'] ?? null,
+                        'verdict'            => $vtRow['verdict'] ?? null,
+                        'malicious'          => $vtRow['malicious'] ?? null,
+                        'suspicious'         => $vtRow['suspicious'] ?? null,
+                        'harmless'           => $vtRow['harmless'] ?? null,
+                        'undetected'         => $vtRow['undetected'] ?? null,
+                        'reputation'         => $vtRow['reputation'] ?? null,
+                        'last_analysis_date' => $vtRow['last_analysis_date'] ?? null,
+                        'vt_checked_at'      => $vtRow['checked_at'] ?? null,
+                        '_ns'                => $ns,
+                        '_is_new'            => $isNew,
+                    ];
+                    $detailDomainArg = htmlspecialchars(addslashes($n['domain']));
                 ?>
                 <tr class="<?= $n['is_read'] ? '' : 'unread' ?>" data-domain="<?= htmlspecialchars($n['domain']) ?>">
                     <td><label><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form"><span></span></label></td>
@@ -486,10 +524,10 @@ require __DIR__ . '/templates/header.php';
                                     <button type="submit"><i class="material-icons">mark_email_read</i>Mark as read</button>
                                 </form>
                                 <?php endif; ?>
-                                <button type="button" class="menu-good" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','good')"><i class="material-icons">thumb_up</i>Mark Good</button>
-                                <button type="button" class="menu-bad" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','bad')"><i class="material-icons">thumb_down</i>Mark Bad</button>
-                                <button type="button" class="menu-observing" onclick="tagDomain('<?= htmlspecialchars(addslashes($n['domain'])) ?>','observing')"><i class="material-icons">help_outline</i>Insufficient info</button>
-                                <button type="button" onclick="toggleWatchlist('<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><i class="material-icons">star</i>Add to Watchlist</button>
+                                <button type="button" class="menu-good" onclick="ddTag('<?= $detailDomainArg ?>','good')"><i class="material-icons">thumb_up</i>Mark Good</button>
+                                <button type="button" class="menu-bad" onclick="ddTag('<?= $detailDomainArg ?>','bad')"><i class="material-icons">thumb_down</i>Mark Bad</button>
+                                <button type="button" class="menu-observing" onclick="ddTag('<?= $detailDomainArg ?>','observing')"><i class="material-icons">help_outline</i>Insufficient info</button>
+                                <button type="button" onclick="ddWatchlist('<?= $detailDomainArg ?>')"><i class="material-icons">star</i>Add to Watchlist</button>
                                 <hr>
                                 <form method="POST" style="margin: 0;" onsubmit="return confirm('Delete this notification?')">
                                     <?php csrfField(); ?>
@@ -500,6 +538,9 @@ require __DIR__ . '/templates/header.php';
                             </div>
                         </div>
                     </td>
+                </tr>
+                <tr class="domain-detail-row" data-domain="<?= htmlspecialchars($n['domain']) ?>" style="display:none;">
+                    <td colspan="10"><?= renderDomainDetail($present, [$n['keyword']], $rules) ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -577,164 +618,5 @@ require __DIR__ . '/templates/header.php';
         </script>
     <?php endif; ?>
 </div>
-
-<script>
-let _modalDomain = '';
-function buildPanelHtml(domain) {
-    return '<div class="dpanel">'
-        + '<div class="dpanel-header">'
-        +   '<h3 id="modal-domain-title"></h3>'
-        +   '<button type="button" class="dpanel-close" aria-label="Close panel" onclick="closeDomainDetail()"><i class="material-icons">close</i></button>'
-        + '</div>'
-        + '<div class="dpanel-section">'
-        +   '<div class="dpanel-section-label">WHOIS Registry Data</div>'
-        +   '<button type="button" id="modal-whois-btn" class="btn btn-small waves-effect" style="width:100%; margin-bottom:8px;" onclick="fetchWhois()">Fetch WHOIS via worker</button>'
-        +   '<div id="modal-whois-loading" class="muted" style="display:none; padding:4px 0;">Consultando WHOIS...</div>'
-        +   '<div id="modal-whois-content" style="display:none;">'
-        +     '<div class="dpanel-whois-grid">'
-        +       '<div>Creation Date</div><div id="modal-creation"></div>'
-        +       '<div>Expiration Date</div><div id="modal-expiration"></div>'
-        +       '<div>Registrar</div><div id="modal-registrar"></div>'
-        +       '<div>Name Servers</div><div id="modal-ns"></div>'
-        +       '<div>First Seen (zone)</div><div id="modal-first-seen"></div>'
-        +     '</div>'
-        +   '</div>'
-        +   '<div id="modal-whois-status" class="muted" style="display:none; padding:4px 0;"></div>'
-        +   '<div id="modal-whois-error" class="text-danger" style="display:none; padding:4px 0;"></div>'
-        + '</div>'
-        + '<div class="dpanel-section" id="modal-tag-box">'
-        +   '<div class="dpanel-section-label">Classification</div>'
-        +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-tag-current">Loading...</span></div>'
-        +   '<div class="dpanel-btn-row">'
-        +     '<button type="button" class="btn btn-small btn-outline good waves-effect" onclick="tagDomain(_modalDomain, \'good\')">Mark Good</button>'
-        +     '<button type="button" class="btn btn-small btn-outline bad waves-effect" onclick="tagDomain(_modalDomain, \'bad\')">Mark Bad</button>'
-        +     '<button type="button" class="btn btn-small btn-outline warning waves-effect" onclick="tagDomain(_modalDomain, \'observing\')"><i class="material-icons left">help_outline</i>Insufficient info</button>'
-        +     '<button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain(_modalDomain, \'\')">Clear</button>'
-        +   '</div>'
-        + '</div>'
-        + '<div class="dpanel-section" id="modal-watchlist-box">'
-        +   '<div class="dpanel-section-label">Watchlist</div>'
-        +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-watchlist-current">Loading...</span></div>'
-        +   '<div class="dpanel-btn-row"><button type="button" id="modal-watchlist-btn" class="btn btn-small waves-effect" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button></div>'
-        + '</div>'
-        + '<div class="dpanel-section" id="modal-vt-box">'
-        +   '<div class="dpanel-section-label">VirusTotal</div>'
-        +   '<div class="status-value" id="modal-vt-verdict">Not checked</div>'
-        +   '<div class="dpanel-btn-row"><button type="button" class="btn btn-small waves-effect" onclick="checkVt()">Check VirusTotal</button></div>'
-        +   '<div id="modal-vt-error" class="text-danger" style="display:none; padding:4px 0;"></div>'
-        + '</div>'
-        + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn btn-outline info waves-effect"><i class="material-icons left">shield</i>Open in VirusTotal</a></div>'
-        + '</div>';
-}
-function toggleDomainDetail(linkEl, domain) {
-    var row = linkEl.closest('tr');
-    var existing = row.nextElementSibling;
-    if (existing && existing.classList.contains('dpanel-row') && existing.dataset.domain === domain) {
-        existing.remove();
-        return;
-    }
-    document.querySelectorAll('.dpanel-row').forEach(function(r) { r.remove(); });
-    _modalDomain = domain;
-    var detailRow = document.createElement('tr');
-    detailRow.className = 'dpanel-row';
-    detailRow.dataset.domain = domain;
-    detailRow.innerHTML = '<td colspan="10">' + buildPanelHtml(domain) + '</td>';
-    row.parentNode.insertBefore(detailRow, row.nextSibling);
-    document.getElementById('modal-domain-title').textContent = domain;
-    document.getElementById('modal-vt').href = 'https://www.virustotal.com/gui/domain/' + encodeURIComponent(domain);
-    loadCachedWhois();
-    loadDomainTag(domain);
-    loadWatchlistStatus(domain);
-    loadVtStatus();
-    detailRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-}
-function closeDomainDetail() {
-    document.querySelectorAll('.dpanel-row').forEach(function(r) { r.remove(); });
-}
-function loadDomainTag(domain) {
-    fetch('/ajax_tag_domain.php?domain=' + encodeURIComponent(domain))
-        .then(r => r.json())
-        .then(data => {
-            const box = document.getElementById('modal-tag-current');
-            if (!box) return;
-            if (data.success && data.tag) {
-                const tag = data.tag.tag;
-                const cls = tag === 'good' ? 'tag-good-text' : (tag === 'observing' ? 'tag-observing-text' : 'tag-bad-text');
-                const label = tag === 'observing' ? 'OBSERVING (insufficient info)' : tag.toUpperCase();
-                box.innerHTML = '<span class="' + cls + '">' + label + '</span>';
-                if (data.tag.note) box.innerHTML += ' &mdash; ' + htmlspecialchars(data.tag.note);
-            } else {
-                box.textContent = 'Not classified';
-            }
-        })
-        .catch(() => {
-            const box = document.getElementById('modal-tag-current');
-            if (box) box.textContent = 'Unable to load tag';
-        });
-}
-function loadWatchlistStatus(domain) {
-    fetch('/ajax_watchlist.php?check=' + encodeURIComponent(domain))
-        .then(r => r.json())
-        .then(data => {
-            const box = document.getElementById('modal-watchlist-current');
-            const btn = document.getElementById('modal-watchlist-btn');
-            if (!box) return;
-            if (data.in_watchlist) {
-                let html = '<span class="text-in-watchlist">In watchlist</span>';
-                if (data.group_name) html += ' <span class="text-soft">(' + htmlspecialchars(data.group_name) + ')</span>';
-                if (data.note) html += ' &mdash; ' + htmlspecialchars(data.note);
-                box.innerHTML = html;
-                btn.textContent = 'Remove from Watchlist';
-                btn.classList.add('btn-danger');
-            } else {
-                box.textContent = 'Not in watchlist';
-                btn.textContent = 'Add to Watchlist';
-                btn.classList.remove('btn-danger');
-            }
-        })
-        .catch(() => {
-            const box = document.getElementById('modal-watchlist-current');
-            if (box) box.textContent = 'Unable to load watchlist status';
-        });
-}
-function toggleWatchlist(domain) {
-    fetch('/ajax_watchlist.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({domain: domain})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            loadWatchlistStatus(domain);
-        } else {
-            alert(data.error || 'Failed to update watchlist');
-        }
-    })
-    .catch(() => alert('Failed to update watchlist'));
-}
-function tagDomain(domain, tag) {
-    fetch('/ajax_tag_domain.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({domain: domain, tag: tag})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            loadDomainTag(domain);
-            window.location.reload();
-        } else {
-            alert(data.error || 'Failed to tag domain');
-        }
-    })
-    .catch(() => alert('Failed to tag domain'));
-}
-function htmlspecialchars(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
-</script>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>

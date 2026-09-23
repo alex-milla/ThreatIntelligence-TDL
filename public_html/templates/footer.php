@@ -29,6 +29,7 @@
     <script src="/assets/whois.js?v=<?= urlencode($assetVersion) ?>"></script>
     <script src="/assets/vt.js?v=<?= urlencode($assetVersion) ?>"></script>
     <script src="/assets/bulk.js?v=<?= urlencode($assetVersion) ?>"></script>
+    <script src="/assets/domain-detail.js?v=<?= urlencode($assetVersion) ?>"></script>
     <script src="/js/app.js?v=<?= urlencode($assetVersion) ?>"></script>
 </body>
 </html>

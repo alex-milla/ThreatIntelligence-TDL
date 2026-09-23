@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.14.4] - 2026-09-23
+
+### Changed - Unified rich domain detail + minimalist buttons + report groups
+
+- **One rich domain detail everywhere.** Watchlist, Notifications and the Dashboard lookup now show the same `.domain-detail` block (Assessment / Timeline / Registration / Reputation / Detection / Raw data) built by the new `includes/domain_detail.php` (`domainDetailPresent()` + `renderDomainDetail()`). The Dashboard lookup fetches it from the new `ajax_domain_detail.php`; Watchlist/Notifications render it server-side. Actions live in a compact `.dd-actions` footer (shared `assets/domain-detail.js`), so no more tall WHOIS/classification panel.
+- **Minimalist action buttons**: compact footer instead of full-width buttons.
+- **Colour rules**: semantic actions are now pastel-tinted (`.btn-good` / `.btn-bad` / `.btn-warning` / `.btn-info`), clearly visible in the light theme. Red is kept **only for destructive actions**; "Clear" (classification and filters) and "Add/Remove Watchlist" are neutral (outlined).
+- **Reports**: the **Add Group** form is now always visible above the generate button; the keyword/group assignment table stays collapsed under "Assign keywords to groups".
+- **Send to report from a keyword** now has a **group selector** (defaults to the keyword's group); the chosen group receives the domain (moved there, no duplicate). Notifications keep the automatic group-per-keyword behaviour.
+- Documentation/changelog only the version bump: no auth, data model or API changes (one new read-only endpoint).
+
 ## [v1.14.3] - 2026-09-23
 
 ### Changed - Watchlist detail uses the rich report block

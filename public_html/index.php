@@ -182,68 +182,26 @@ $sparkNonZero = count(array_filter($sparkDays));
 
 <script>
 let _modalDomain = '';
-function buildPanelHtml(domain) {
-    return '<div class="dpanel">'
-        + '<div class="dpanel-header">'
-        +   '<h3 id="modal-domain-title"></h3>'
-        +   '<button type="button" class="dpanel-close" aria-label="Close panel" onclick="closeDomainDetail()"><i class="material-icons">close</i></button>'
-        + '</div>'
-        + '<div class="dpanel-section">'
-        +   '<div class="dpanel-section-label">WHOIS Registry Data</div>'
-        +   '<button type="button" id="modal-whois-btn" class="btn btn-small waves-effect" style="width:100%; margin-bottom:8px;" onclick="fetchWhois()">Fetch WHOIS via worker</button>'
-        +   '<div id="modal-whois-loading" class="muted" style="display:none; padding:4px 0;">Consultando WHOIS...</div>'
-        +   '<div id="modal-whois-content" style="display:none;">'
-        +     '<div class="dpanel-whois-grid">'
-        +       '<div>Creation Date</div><div id="modal-creation"></div>'
-        +       '<div>Expiration Date</div><div id="modal-expiration"></div>'
-        +       '<div>Registrar</div><div id="modal-registrar"></div>'
-        +       '<div>Name Servers</div><div id="modal-ns"></div>'
-        +       '<div>First Seen (zone)</div><div id="modal-first-seen"></div>'
-        +     '</div>'
-        +   '</div>'
-        +   '<div id="modal-whois-status" class="muted" style="display:none; padding:4px 0;"></div>'
-        +   '<div id="modal-whois-error" class="text-danger" style="display:none; padding:4px 0;"></div>'
-        + '</div>'
-        + '<div class="dpanel-section" id="modal-tag-box">'
-        +   '<div class="dpanel-section-label">Classification</div>'
-        +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-tag-current">Loading...</span></div>'
-        +   '<div class="dpanel-btn-row">'
-        +     '<button type="button" class="btn btn-small btn-outline good waves-effect" onclick="tagDomain(_modalDomain, \'good\')">Mark Good</button>'
-        +     '<button type="button" class="btn btn-small btn-outline bad waves-effect" onclick="tagDomain(_modalDomain, \'bad\')">Mark Bad</button>'
-        +     '<button type="button" class="btn btn-small btn-outline warning waves-effect" onclick="tagDomain(_modalDomain, \'observing\')"><i class="material-icons left">help_outline</i>Insufficient info</button>'
-        +     '<button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain(_modalDomain, \'\')">Clear</button>'
-        +   '</div>'
-        + '</div>'
-        + '<div class="dpanel-section" id="modal-watchlist-box">'
-        +   '<div class="dpanel-section-label">Watchlist</div>'
-        +   '<div class="dpanel-status-row"><span class="muted">Status:</span><span class="status-value" id="modal-watchlist-current">Loading...</span></div>'
-        +   '<div class="dpanel-btn-row"><button type="button" id="modal-watchlist-btn" class="btn btn-small waves-effect" onclick="toggleWatchlist(_modalDomain)">Add to Watchlist</button></div>'
-        + '</div>'
-        + '<div class="dpanel-section" id="modal-vt-box">'
-        +   '<div class="dpanel-section-label">VirusTotal</div>'
-        +   '<div class="status-value" id="modal-vt-verdict">Not checked</div>'
-        +   '<div class="dpanel-btn-row"><button type="button" class="btn btn-small waves-effect" onclick="checkVt()">Check VirusTotal</button></div>'
-        +   '<div id="modal-vt-error" class="text-danger" style="display:none; padding:4px 0;"></div>'
-        + '</div>'
-        + '<div class="dpanel-footer"><a id="modal-vt" href="#" target="_blank" class="btn btn-outline info waves-effect"><i class="material-icons left">shield</i>Open in VirusTotal</a></div>'
-        + '</div>';
-}
 function showLookupPanel(domain) {
     _modalDomain = domain;
     var panel = document.getElementById('lookup-panel');
     var results = document.getElementById('lookup-results');
     if (results) results.innerHTML = '';
     if (!panel) return;
-    panel.innerHTML = buildPanelHtml(domain);
     panel.style.display = 'block';
-    document.getElementById('modal-domain-title').textContent = domain;
-    document.getElementById('modal-vt').href = 'https://www.virustotal.com/gui/domain/' + encodeURIComponent(domain);
-    loadCachedWhois();
-    loadDomainTag(domain);
-    loadWatchlistStatus(domain);
-    loadVtStatus();
-    panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    panel.innerHTML = '<p class="muted" style="padding:8px 0;">Loading details\u2026</p>';
+    fetch('/ajax_domain_detail.php?domain=' + encodeURIComponent(domain), {cache: 'no-store'})
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d || !d.success) { panel.innerHTML = '<p class="muted">Unable to load details.</p>'; return; }
+            panel.innerHTML = d.html;
+            panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        })
+        .catch(function () { panel.innerHTML = '<p class="muted">Unable to load details.</p>'; });
 }
+// Keep the lookup result on screen after an action instead of reloading the page.
+window.ddAfterAction = function (domain) { showLookupPanel(domain); };
+
 function closeDomainDetail() {
     var panel = document.getElementById('lookup-panel');
     if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
@@ -320,84 +278,6 @@ function renderLookupResults(data) {
     }).join('');
     results.innerHTML = '<table class="striped highlight responsive-table"><thead><tr>'
         + '<th>Domain</th><th>TLD</th><th>First seen</th></tr></thead><tbody>' + rows + '</tbody></table>';
-}
-function loadDomainTag(domain) {
-    fetch('/ajax_tag_domain.php?domain=' + encodeURIComponent(domain))
-        .then(r => r.json())
-        .then(data => {
-            const box = document.getElementById('modal-tag-current');
-            if (!box) return;
-            if (data.success && data.tag) {
-                const tag = data.tag.tag;
-                const cls = tag === 'good' ? 'tag-good-text' : (tag === 'observing' ? 'tag-observing-text' : 'tag-bad-text');
-                const label = tag === 'observing' ? 'OBSERVING (insufficient info)' : tag.toUpperCase();
-                box.innerHTML = '<span class="' + cls + '">' + label + '</span>';
-                if (data.tag.note) box.innerHTML += ' &mdash; ' + htmlspecialchars(data.tag.note);
-            } else {
-                box.textContent = 'Not classified';
-            }
-        })
-        .catch(() => {
-            const box = document.getElementById('modal-tag-current');
-            if (box) box.textContent = 'Unable to load tag';
-        });
-}
-function loadWatchlistStatus(domain) {
-    fetch('/ajax_watchlist.php?check=' + encodeURIComponent(domain))
-        .then(r => r.json())
-        .then(data => {
-            const box = document.getElementById('modal-watchlist-current');
-            const btn = document.getElementById('modal-watchlist-btn');
-            if (!box) return;
-            if (data.in_watchlist) {
-                let html = '<span class="text-in-watchlist">In watchlist</span>';
-                if (data.group_name) html += ' <span class="muted">(' + htmlspecialchars(data.group_name) + ')</span>';
-                if (data.note) html += ' &mdash; ' + htmlspecialchars(data.note);
-                box.innerHTML = html;
-                btn.textContent = 'Remove from Watchlist';
-                btn.classList.add('btn-danger');
-            } else {
-                box.textContent = 'Not in watchlist';
-                btn.textContent = 'Add to Watchlist';
-                btn.classList.remove('btn-danger');
-            }
-        })
-        .catch(() => {
-            const box = document.getElementById('modal-watchlist-current');
-            if (box) box.textContent = 'Unable to load watchlist status';
-        });
-}
-function toggleWatchlist(domain) {
-    fetch('/ajax_watchlist.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({domain: domain})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            loadWatchlistStatus(domain);
-        } else {
-            alert(data.error || 'Failed to update watchlist');
-        }
-    })
-    .catch(() => alert('Failed to update watchlist'));
-}
-function tagDomain(domain, tag) {
-    fetch('/ajax_tag_domain.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({domain: domain, tag: tag})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            loadDomainTag(domain);
-        } else {
-            alert(data.error || 'Failed to tag domain');
-        }
-    })
-    .catch(() => alert('Failed to tag domain'));
 }
 function htmlspecialchars(str) {
     const div = document.createElement('div');

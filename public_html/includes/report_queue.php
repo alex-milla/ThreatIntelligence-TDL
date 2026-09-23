@@ -67,11 +67,40 @@ function reportQueueDomainGroups(PDO $db, int $userId, array $domains): array {
  * entry resets it to pending. Domains that do not match any of the user's
  * keywords are ignored.
  */
-function reportQueueAdd(PDO $db, int $userId, array $domains): int {
+function reportQueueAdd(PDO $db, int $userId, array $domains, ?string $groupKey = null): int {
     $groups = reportQueueDomainGroups($db, $userId, $domains);
     if (empty($groups)) {
         return 0;
     }
+
+    // Explicit group (from the "send to report" selector): move the domains to
+    // that single group, dropping any previous pending entry so they are not
+    // queued twice.
+    if ($groupKey !== null) {
+        $gk = reportQueueNormalizeGroupKey($groupKey);
+        if ($gk !== '') {
+            $chk = $db->prepare("SELECT COUNT(*) FROM keyword_groups WHERE id = ? AND user_id = ?");
+            $chk->execute([(int)$gk, $userId]);
+            if (!(int)$chk->fetchColumn()) {
+                $gk = '';
+            }
+        }
+        $valid = array_keys($groups);
+        $placeholders = implode(',', array_fill(0, count($valid), '?'));
+        $db->prepare("DELETE FROM report_queue WHERE user_id = ? AND reported_at IS NULL AND domain IN ($placeholders)")
+           ->execute(array_merge([$userId], $valid));
+        $stmt = $db->prepare("INSERT OR REPLACE INTO report_queue
+            (user_id, domain, group_key, added_at, reported_at, report_id)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP, NULL, NULL)");
+        $count = 0;
+        foreach ($valid as $domain) {
+            $stmt->execute([$userId, $domain, $gk]);
+            $count++;
+        }
+        return $count;
+    }
+
+    // Auto: assign the domain to every group of its matched keywords.
     $stmt = $db->prepare("INSERT OR REPLACE INTO report_queue
         (user_id, domain, group_key, added_at, reported_at, report_id)
         VALUES (?, ?, ?, CURRENT_TIMESTAMP, NULL, NULL)");

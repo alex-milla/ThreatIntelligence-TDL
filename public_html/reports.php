@@ -434,6 +434,18 @@ require __DIR__ . '/templates/header.php';
 
         <p class="muted">Review domains in a keyword's <strong>match list</strong> (or in Notifications), validate WHOIS / VirusTotal and use <strong>Send to report</strong> to mark the ones to include. Each domain is assigned to the keyword group it belongs to; generating a group's report consumes only that group's pending entries.</p>
 
+        <!-- Create group (kept visible) -->
+        <form method="POST" class="group-create-form">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="create_group">
+            <div class="input-field">
+                <i class="material-icons prefix">create_new_folder</i>
+                <input id="group_name" type="text" name="group_name" placeholder=" " maxlength="60" required>
+                <label for="group_name">New group name</label>
+            </div>
+            <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">add</i>Add Group</button>
+        </form>
+
         <?php if ($queueCount === 0): ?>
             <div class="notice notice-info"><i class="material-icons">inbox</i>
                 <div>No domains in the report queue yet. Open a <a href="/keywords.php"><strong>keyword match list</strong></a>, select domains and click <strong>Send to report</strong>.</div>
@@ -501,8 +513,8 @@ require __DIR__ . '/templates/header.php';
         <?php endif; ?>
 
         <details class="report-groups" style="margin-top: 20px;">
-            <summary style="cursor: pointer; font-weight: 600; padding: 6px 0;"><i class="material-icons tiny" style="vertical-align: middle;">folder</i> Keywords &amp; groups</summary>
-            <p class="muted" style="margin-top: 8px;">Group keywords to filter your saved reports. Reports are generated from the queue above.</p>
+            <summary style="cursor: pointer; font-weight: 600; padding: 6px 0;"><i class="material-icons tiny" style="vertical-align: middle;">folder</i> Assign keywords to groups</summary>
+            <p class="muted" style="margin-top: 8px;">Pick the group of each keyword. Saved reports can be filtered by group in the History tab.</p>
 
             <!-- Scope: last sync vs every keyword -->
             <form method="GET" class="report-scope-form">
@@ -512,18 +524,6 @@ require __DIR__ . '/templates/header.php';
                     <input type="checkbox" name="scope" value="all" <?= $onlyRecent ? '' : 'checked' ?> onchange="this.form.submit()">
                     <span>Show all keywords (not only the last sync)</span>
                 </label>
-            </form>
-
-            <!-- Create group form -->
-            <form method="POST" class="group-create-form">
-                <?php csrfField(); ?>
-                <input type="hidden" name="action" value="create_group">
-                <div class="input-field">
-                    <i class="material-icons prefix">create_new_folder</i>
-                    <input id="group_name" type="text" name="group_name" placeholder=" " maxlength="60" required>
-                    <label for="group_name">New group name</label>
-                </div>
-                <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">add</i>Add Group</button>
             </form>
 
             <?php if (empty($keywords)): ?>

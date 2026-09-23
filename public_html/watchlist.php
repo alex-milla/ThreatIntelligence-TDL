@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/report_present.php';
+require_once __DIR__ . '/includes/domain_detail.php';
 requireAuth();
 
 $db = Database::get();
@@ -238,7 +239,6 @@ require __DIR__ . '/templates/header.php';
                 </tr>
             </thead>
             <tbody>
-                <?php $repSymbol = ['malicious' => '●', 'suspicious' => '⚠', 'dga' => '⚠', 'clean' => '✓', 'not_checked' => '○', 'unproven' => '○']; ?>
                 <?php foreach ($items as $item):
                     $whoisRow = $domainWhois[$item['domain']] ?? null;
                     $vtRow = $domainVt[$item['domain']] ?? null;
@@ -266,9 +266,7 @@ require __DIR__ . '/templates/header.php';
                     $dot = strrpos($item['domain'], '.');
                     $tld = ($dot !== false) ? substr($item['domain'], $dot + 1) : '';
                     $keywordsList = $match['keywords'] ?? [];
-                    $keywordsLabel = $keywordsList ? implode(', ', $keywordsList) : '';
 
-                    // Same snapshot shape the report presentation helpers expect.
                     $present = [
                         'domain'             => $item['domain'],
                         'tld'                => $tld,
@@ -297,21 +295,11 @@ require __DIR__ . '/templates/header.php';
                         '_ns'                => $ns,
                         '_is_new'            => $isNew,
                     ];
-                    $age = reportDomainAge($present['creation_date'], gmdate('Y-m-d H:i:s'));
-                    $status = reportDomainStatus($present, $rules);
-                    $rep = reportReputationContextual(reportReputation($present), $age);
-                    $avail = reportAvailability($present);
-                    $whoisInfo = $avail['whois'];
-                    $risk = reportRiskAssessment($present, $status, $avail);
-                    $ttdH = reportTimeToDetectHours($present);
-                    $timeline = reportTimeline($present, '');
-                    $rawJson = htmlspecialchars(json_encode($present, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-                    $sourceLabel = (($present['source'] ?? '') === 'ct') ? 'OpenINTEL' : ((($present['source'] ?? '') !== '') ? 'CZDS' : '—');
                     $domainArg = htmlspecialchars(addslashes($item['domain']));
                 ?>
                 <tr data-domain="<?= htmlspecialchars($item['domain']) ?>">
                     <td>
-                        <a href="javascript:void(0)" class="domain-link" onclick="toggleWlDetail(this)" aria-expanded="false"><?= htmlspecialchars($item['domain']) ?></a><?= $tagBadge ?>
+                        <a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= $domainArg ?>')" aria-expanded="false"><?= htmlspecialchars($item['domain']) ?></a><?= $tagBadge ?>
                     </td>
                     <td><?= htmlspecialchars($creationDisplay) ?></td>
                     <td>
@@ -342,90 +330,12 @@ require __DIR__ . '/templates/header.php';
                             <?php csrfField(); ?>
                             <input type="hidden" name="action" value="remove">
                             <input type="hidden" name="watch_id" value="<?= (int)$item['id'] ?>">
-                            <button type="submit" class="btn btn-small btn-danger waves-effect"><i class="material-icons left">delete</i>Remove</button>
+                            <button type="submit" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">delete</i>Remove</button>
                         </form>
                     </td>
                 </tr>
-                <tr class="domain-detail-row" style="display:none;">
-                    <td colspan="6">
-                        <div class="domain-detail">
-                            <div class="dd-grid">
-                                <div class="dd-block">
-                                    <h4>Assessment</h4>
-                                    <dl class="dd-list">
-                                        <div><dt>Risk</dt><dd><span class="risk-pill risk-<?= htmlspecialchars($risk['risk']) ?>"><?= htmlspecialchars(ucfirst($risk['risk'])) ?></span></dd></div>
-                                        <div><dt>Confidence</dt><dd><?= htmlspecialchars(ucfirst($risk['confidence'])) ?></dd></div>
-                                    </dl>
-                                    <ul class="dd-findings">
-                                        <?php foreach ($risk['reasons'] as $reason): ?>
-                                            <li class="<?= strpos($reason, 'registration period') !== false ? 'reason-warn' : '' ?>"><?= htmlspecialchars($reason) ?></li>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                </div>
-                                <div class="dd-block">
-                                    <h4>Timeline</h4>
-                                    <ul class="report-timeline">
-                                        <?php foreach ($timeline as $ev): ?>
-                                            <li><span class="tl-dot"></span><span class="tl-date"><?= htmlspecialchars(fmt_date((string)$ev['at'])) ?></span><span class="tl-label"><?= htmlspecialchars($ev['label']) ?></span><span class="tl-source muted"><?= htmlspecialchars($ev['source']) ?></span></li>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                </div>
-                                <div class="dd-block">
-                                    <h4>Registration</h4>
-                                    <dl class="dd-list">
-                                        <div><dt>Registrar</dt><dd><?= !empty($present['registrar']) ? htmlspecialchars((string)$present['registrar']) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                        <div><dt>Name servers</dt><dd><?= !empty($ns) ? htmlspecialchars(implode(', ', $ns)) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                        <div><dt>WHOIS</dt><dd><span class="avail avail-<?= htmlspecialchars($whoisInfo['state']) ?>"><?= htmlspecialchars($whoisInfo['label']) ?></span></dd></div>
-                                        <div><dt>Source</dt><dd><?= !empty($present['whois_source']) ? htmlspecialchars((string)$present['whois_source']) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                        <div><dt>Updated</dt><dd><?= !empty($present['whois_updated_at']) ? htmlspecialchars(fmt_date((string)$present['whois_updated_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                    </dl>
-                                </div>
-                                <div class="dd-block">
-                                    <h4>Reputation</h4>
-                                    <dl class="dd-list">
-                                        <div><dt>VirusTotal</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($rep['state']) ?>"><?= htmlspecialchars($repSymbol[$rep['state']] ?? '') ?> <?= htmlspecialchars($rep['label']) ?></span><?php if ($rep['detail'] !== ''): ?> <span class="muted"><?= htmlspecialchars($rep['detail']) ?></span><?php endif; ?></dd></div>
-                                        <div><dt>Last analysis</dt><dd><?= htmlspecialchars(reportFormatDate($present['last_analysis_date'] ?? null)) ?></dd></div>
-                                        <div><dt>Checked</dt><dd><?= !empty($present['vt_checked_at']) ? htmlspecialchars(fmt_date((string)$present['vt_checked_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                        <div><dt>Tag</dt><dd><?= $tagCell ?></dd></div>
-                                        <div><dt>Watchlist</dt><dd>Yes</dd></div>
-                                    </dl>
-                                </div>
-                                <div class="dd-block">
-                                    <h4>Detection</h4>
-                                    <dl class="dd-list">
-                                        <div><dt>Keywords</dt><dd><?= $keywordsLabel !== '' ? htmlspecialchars($keywordsLabel) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                        <div><dt>Source</dt><dd><?= htmlspecialchars($sourceLabel) ?></dd></div>
-                                        <div><dt>Historical</dt><dd><?= !empty($present['is_historical']) ? 'Yes' : '<span class="muted">No</span>' ?></dd></div>
-                                        <?php if ($ttdH !== null): ?>
-                                            <div><dt>Time-to-detect</dt><dd><?= (int)$ttdH ?> h from registration to first observation</dd></div>
-                                        <?php endif; ?>
-                                        <?php if (!empty($present['tag_note'])): ?>
-                                            <div><dt>Analyst note</dt><dd><?= htmlspecialchars((string)$present['tag_note']) ?></dd></div>
-                                        <?php endif; ?>
-                                    </dl>
-                                    <ul class="dd-findings">
-                                        <?php foreach (reportFindings($present, $keywordsLabel, $age) as $f): ?>
-                                            <li class="finding-<?= htmlspecialchars($f['severity']) ?>"><strong><?= htmlspecialchars($f['label']) ?></strong><?= $f['value'] !== '' ? ': <span class="muted">' . htmlspecialchars((string)$f['value']) . '</span>' : '' ?></li>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                </div>
-                            </div>
-                            <div class="dd-actions">
-                                <button type="button" class="btn btn-small btn-outline good waves-effect" onclick="tagDomain('<?= $domainArg ?>', 'good')">Mark Good</button>
-                                <button type="button" class="btn btn-small btn-outline bad waves-effect" onclick="tagDomain('<?= $domainArg ?>', 'bad')">Mark Bad</button>
-                                <button type="button" class="btn btn-small btn-outline warning waves-effect" onclick="tagDomain('<?= $domainArg ?>', 'observing')"><i class="material-icons left">help_outline</i>Insufficient info</button>
-                                <button type="button" class="btn btn-small btn-danger waves-effect" onclick="tagDomain('<?= $domainArg ?>', '')">Clear</button>
-                                <button type="button" class="btn btn-small waves-effect" onclick="wlFetchWhois('<?= $domainArg ?>')"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
-                                <button type="button" class="btn btn-small waves-effect" onclick="wlCheckVt('<?= $domainArg ?>')"><i class="material-icons left">verified_user</i>Check VirusTotal</button>
-                                <a class="btn btn-small btn-outline info waves-effect" href="https://www.virustotal.com/gui/domain/<?= rawurlencode($item['domain']) ?>" target="_blank" rel="noopener"><i class="material-icons left">shield</i>Open in VirusTotal</a>
-                                <button type="button" class="btn btn-small btn-danger waves-effect" onclick="toggleWatchlist('<?= $domainArg ?>')"><i class="material-icons left">star_border</i>Remove from Watchlist</button>
-                            </div>
-                            <details class="dd-raw">
-                                <summary>Raw data</summary>
-                                <pre><?= $rawJson ?></pre>
-                            </details>
-                        </div>
-                    </td>
+                <tr class="domain-detail-row" data-domain="<?= htmlspecialchars($item['domain']) ?>" style="display:none;">
+                    <td colspan="6"><?= renderDomainDetail($present, $keywordsList, $rules) ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -462,107 +372,5 @@ require __DIR__ . '/templates/header.php';
         <?php endif; ?>
     <?php endif; ?>
 </div>
-
-<script>
-function toggleWlDetail(link) {
-    var row = link.closest('tr');
-    if (!row) return;
-    var detail = row.nextElementSibling;
-    if (!detail || !detail.classList.contains('domain-detail-row')) return;
-    var open = detail.style.display === 'none' || detail.style.display === '';
-    detail.style.display = open ? 'table-row' : 'none';
-    link.setAttribute('aria-expanded', open ? 'true' : 'false');
-}
-function wlCsrf() {
-    var m = document.querySelector('meta[name="csrf-token"]');
-    return m ? m.content : '';
-}
-function tagDomain(domain, tag) {
-    fetch('/ajax_tag_domain.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({domain: domain, tag: tag})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            window.location.reload();
-        } else {
-            alert(data.error || 'Failed to tag domain');
-        }
-    })
-    .catch(() => alert('Failed to tag domain'));
-}
-function toggleWatchlist(domain) {
-    fetch('/ajax_watchlist.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({domain: domain})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            // The domain's watchlist membership changed, so refresh the list.
-            window.location.reload();
-        } else {
-            alert(data.error || 'Failed to update watchlist');
-        }
-    })
-    .catch(() => alert('Failed to update watchlist'));
-}
-// Queue a WHOIS refresh on the worker and reload once the result is cached.
-function wlFetchWhois(domain) {
-    fetch('/ajax_whois_request.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': wlCsrf()},
-        body: JSON.stringify({domain: domain, force: true})
-    })
-    .then(r => r.json())
-    .then(function (res) {
-        if (!res.success) throw new Error(res.error || 'request failed');
-        wlPollWhois(res.command_id, domain, 0);
-    })
-    .catch(function (e) { alert('WHOIS request failed: ' + e.message); });
-}
-function wlPollWhois(commandId, domain, tries) {
-    if (tries > 45) { alert('Timed out waiting for the worker.'); return; }
-    fetch('/ajax_whois_result.php?command_id=' + encodeURIComponent(commandId || '') + '&domain=' + encodeURIComponent(domain))
-        .then(r => r.json())
-        .then(function (data) {
-            if (data.whois) { window.location.reload(); return; }
-            if (data.command_status === 'failed' || data.command_status === 'cancelled') {
-                alert('Worker could not fetch WHOIS (' + data.command_status + ').');
-                return;
-            }
-            setTimeout(function () { wlPollWhois(commandId, domain, tries + 1); }, 4000);
-        })
-        .catch(function () { setTimeout(function () { wlPollWhois(commandId, domain, tries + 1); }, 6000); });
-}
-// Queue a VirusTotal check on the worker and reload once the verdict is cached.
-function wlCheckVt(domain) {
-    fetch('/ajax_vt_request.php', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': wlCsrf()},
-        body: JSON.stringify({domain: domain, force: true})
-    })
-    .then(r => r.json())
-    .then(function (res) {
-        if (!res.success) throw new Error(res.error || 'request failed');
-        if (!res.queued) { window.location.reload(); return; }
-        wlPollVt(domain, 0);
-    })
-    .catch(function (e) { alert('VirusTotal request failed: ' + e.message); });
-}
-function wlPollVt(domain, tries) {
-    if (tries > 40) { alert('Timed out waiting for the worker.'); return; }
-    fetch('/ajax_vt_cache.php?domain=' + encodeURIComponent(domain))
-        .then(r => r.json())
-        .then(function (data) {
-            if (data && data.success && data.vt) { window.location.reload(); return; }
-            setTimeout(function () { wlPollVt(domain, tries + 1); }, 5000);
-        })
-        .catch(function () { setTimeout(function () { wlPollVt(domain, tries + 1); }, 6000); });
-}
-</script>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>
