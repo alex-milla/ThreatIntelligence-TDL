@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.13.1] - 2026-09-23
+
+### Changed - Isolated, full-screen login and register screens
+
+- **Login and register are now standalone public screens** (outside the app shell): no header, sidebar, footer or theme toggle. They match the FinSec visual system: centered column (`max-width: 384px`), orange rounded logo tile, product title + subtitle, and a bordered card with a single soft shadow.
+- **Labels above naked inputs** (no Materialize floating labels or prefix icons), orange 2 px focus ring, and a subtle red error box between the last field and the button. Submit button is full width and shows a "Signing in…" / "Creating account…" disabled state.
+- The pages load only `fonts.css` + `app.css` (no Materialize, no `app.js`) and keep the anti-FOUC theme script; branding is **ThreatIntelligence-TDL — Domain threat monitoring**. Auth logic, CSRF, rate limiting and redirects are unchanged.
+- New self-contained `.login-*` styles in `app.css` plus `--input-bg` / `--input-border` tokens for the dark theme.
+- `install.php` and the authenticated app shell are untouched.
+
 ## [v1.13.0] - 2026-09-23
 
 ### Added - Manual report queue ("daily report")

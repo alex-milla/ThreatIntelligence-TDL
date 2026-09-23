@@ -30,6 +30,8 @@ html[data-theme="light"] {
     --text-muted: #6b7280;
     --border: #e5e7eb;
     --border-strong: #d1d5db;
+    --input-bg: #ffffff;
+    --input-border: #d1d5db;
 
     /* Action colour */
     --primary: #ea580c;
@@ -125,6 +127,8 @@ html[data-theme="dark"] {
     --text-muted: #9ca3af;
     --border: #374151;
     --border-strong: #4b5563;
+    --input-bg: #1f2937;
+    --input-border: #4b5563;
 
     --primary: #fb923c;
     --primary-hover: #fdba74;
@@ -1498,6 +1502,161 @@ table.highlight > tbody > tr:hover {
 .account-info td { border-bottom: none; padding: 6px 0; }
 .account-info .label-col { color: var(--text-muted); width: 150px; }
 .account-info .value-col { font-weight: 600; }
+
+/* ------------------------------------------------------------
+   Public auth screens (login / register) — isolated, full screen
+   Self-contained: does not rely on Materialize components.
+   ------------------------------------------------------------ */
+.login-page {
+    flex: 1 0 auto;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+    background-color: var(--bg);
+}
+
+.login-wrap {
+    width: 100%;
+    max-width: 384px;
+}
+
+.login-brand {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.login-logo {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 16px;
+    border-radius: 16px;
+    background-color: var(--primary);
+    color: var(--on-primary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-logo .material-icons {
+    font-size: 32px;
+    color: inherit;
+}
+
+.login-title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.login-subtitle {
+    margin: 4px 0 0;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.login-card {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    padding: 24px;
+}
+
+.login-field {
+    margin-bottom: 16px;
+}
+
+.login-label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 4px;
+}
+
+.login-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--input-border);
+    background-color: var(--input-bg);
+    color: var(--text);
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.login-input:focus,
+.login-input:focus-visible {
+    outline: none;
+    border-color: transparent;
+    box-shadow: 0 0 0 2px var(--primary);
+}
+
+/* Chrome autofill would repaint the field with its own colours. */
+.login-input:-webkit-autofill,
+.login-input:-webkit-autofill:hover,
+.login-input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset;
+    -webkit-text-fill-color: var(--text);
+    caret-color: var(--text);
+}
+
+.login-input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset, 0 0 0 2px var(--primary);
+}
+
+.login-error {
+    margin-bottom: 16px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    color: #ef4444;
+    background-color: #fef2f2;
+}
+
+html[data-theme="dark"] .login-error {
+    background-color: rgba(127, 29, 29, 0.2);
+}
+
+.login-btn {
+    display: block;
+    width: 100%;
+    padding: 10px 16px;
+    border: 0;
+    border-radius: 8px;
+    background-color: var(--primary);
+    color: var(--on-primary);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.login-btn:hover:not(:disabled) {
+    background-color: var(--primary-hover);
+}
+
+.login-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.login-alt {
+    margin-top: 16px;
+    text-align: center;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.login-alt a {
+    color: var(--link);
+    font-weight: 500;
+}
 
 /* ------------------------------------------------------------
    Release notes (admin update)

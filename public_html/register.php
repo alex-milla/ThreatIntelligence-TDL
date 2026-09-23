@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
+sendSecurityHeaders();
 
 if (!empty($_SESSION['user_id'])) {
     header('Location: /');
@@ -20,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $username = trim($_POST['username'] ?? '');
         $email = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
-        
+
         if (strlen($username) < 3 || strlen($username) > 30 || !preg_match('/^[a-zA-Z0-9_]+$/', $username)) {
             $error = 'Username must be 3-30 characters and contain only letters, numbers, and underscores.';
         } elseif (strlen($password) < 8 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -44,43 +45,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$pageTitle = 'Register';
-require __DIR__ . '/templates/header.php';
+$assetVersion = is_file(__DIR__ . '/VERSION') ? trim((string)file_get_contents(__DIR__ . '/VERSION')) : '0';
 ?>
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#f97316">
+    <title>Create account - ThreatIntelligence-TDL</title>
+    <script>
+    (function () {
+        try {
+            var t = localStorage.getItem('tdl-theme');
+            if (t !== 'dark' && t !== 'light') { t = 'light'; }
+            document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {
+            document.documentElement.setAttribute('data-theme', 'light');
+        }
+    })();
+    </script>
+    <link rel="stylesheet" href="/css/fonts.css?v=<?= urlencode($assetVersion) ?>">
+    <link rel="stylesheet" href="/css/app.css?v=<?= urlencode($assetVersion) ?>">
+</head>
+<body>
+    <div class="login-page">
+        <div class="login-wrap">
+            <div class="login-brand">
+                <div class="login-logo"><i class="material-icons">shield</i></div>
+                <h1 class="login-title">ThreatIntelligence-TDL</h1>
+                <p class="login-subtitle">Create your account</p>
+            </div>
 
-<div class="card auth-card">
-    <div class="auth-logo">
-        <i class="material-icons">person_add</i>
-        <h2>Create account</h2>
+            <form method="POST" class="login-card" id="register-form">
+                <?php csrfField(); ?>
+                <?php if ($registrationClosed): ?>
+                    <div class="login-error" role="alert">Registration is currently closed. Contact the administrator.</div>
+                <?php else: ?>
+                    <div class="login-field">
+                        <label class="login-label" for="username">Username</label>
+                        <input class="login-input" id="username" type="text" name="username" required minlength="3" maxlength="30" autofocus autocomplete="username">
+                    </div>
+                    <div class="login-field">
+                        <label class="login-label" for="email">Email</label>
+                        <input class="login-input" id="email" type="email" name="email" required autocomplete="email">
+                    </div>
+                    <div class="login-field">
+                        <label class="login-label" for="password">Password</label>
+                        <input class="login-input" id="password" type="password" name="password" required minlength="8" autocomplete="new-password">
+                    </div>
+                    <?php if ($error): ?>
+                        <div class="login-error" role="alert"><?= htmlspecialchars($error) ?></div>
+                    <?php endif; ?>
+                    <button type="submit" class="login-btn" id="register-submit">Create account</button>
+                <?php endif; ?>
+            </form>
+
+            <p class="login-alt">Already have an account? <a href="/login.php">Sign in</a></p>
+        </div>
     </div>
-    <p class="muted">Register to start monitoring domains</p>
-    <?php if ($error): ?>
-        <div class="alert alert-error"><i class="material-icons left">error</i><?= htmlspecialchars($error) ?></div>
-    <?php endif; ?>
-    <?php if ($registrationClosed): ?>
-        <div class="alert alert-error"><i class="material-icons left">lock</i>Registration is currently closed. Contact the administrator.</div>
-    <?php else: ?>
-    <form method="POST">
-        <?php csrfField(); ?>
-        <div class="input-field">
-            <i class="material-icons prefix">person</i>
-            <input id="username" type="text" name="username" class="validate" placeholder=" " required minlength="3">
-            <label for="username">Username</label>
-        </div>
-        <div class="input-field">
-            <i class="material-icons prefix">email</i>
-            <input id="email" type="email" name="email" class="validate" placeholder=" " required>
-            <label for="email">Email</label>
-        </div>
-        <div class="input-field">
-            <i class="material-icons prefix">lock</i>
-            <input id="password" type="password" name="password" class="validate" placeholder=" " required minlength="8">
-            <label for="password">Password</label>
-        </div>
-        <button type="submit" class="btn waves-effect" style="width:100%;"><i class="material-icons left">person_add</i>Register</button>
-    </form>
-    <p style="margin-top: 16px;">Already have an account? <a href="/login.php">Login</a></p>
-    <?php endif; ?>
-</div>
-
-<?php require __DIR__ . '/templates/footer.php'; ?>
+    <script>
+    (function () {
+        var form = document.getElementById('register-form');
+        if (!form) return;
+        form.addEventListener('submit', function () {
+            var btn = document.getElementById('register-submit');
+            if (btn) { btn.disabled = true; btn.textContent = 'Creating account\u2026'; }
+        });
+    })();
+    </script>
+</body>
+</html>
