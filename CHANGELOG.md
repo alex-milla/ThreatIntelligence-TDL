@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.13.2] - 2026-09-23
+
+### Fixed - Report queue keeps each domain in its keyword group
+
+- The manual report queue is now keyed per **(domain, keyword group)** instead of per domain. A domain is assigned to every group its keywords belong to, and **each generated report carries its group** (`group_id`/`group_name`), so History filters and the printed report show the right group.
+- The **Queue** tab's group tabs now filter the pending list and show **pending domains per group** (not keyword counts). The generate button is contextual:
+  - a specific group → one report for that group, consuming only that group's entries;
+  - **All** → one report per group with pending domains, then opens History with the summary.
+- The queue table shows the **Group** column and "Remove" deletes the exact (domain, group) entry.
+- Safe migration of the existing `report_queue` (rebuilt with the new unique key, each pending domain expanded to one row per group of its matched keywords). Saved reports are untouched.
+- Deleting a keyword group also clears its orphaned queue entries.
+
 ## [v1.13.1] - 2026-09-23
 
 ### Changed - Isolated, full-screen login and register screens

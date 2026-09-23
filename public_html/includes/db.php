@@ -236,17 +236,21 @@ class Database {
         )");
 
         // Manual report queue: per-user domains the analyst has validated and
-        // wants in the next report. `reported_at`/`report_id` are stamped when a
-        // report is generated, so pending items accumulate across days and a
-        // later report picks up everything since the last generation.
+        // wants in the next report. Keyed per (domain, group_key) so a domain
+        // that matches keywords in several groups can be reported in each
+        // group's report. `reported_at`/`report_id` are stamped when a report is
+        // generated, so pending items accumulate across days and a later report
+        // picks up everything since the last generation. `group_key` is the
+        // keyword group id as text, or '' for ungrouped keywords.
         $db->exec("CREATE TABLE IF NOT EXISTS report_queue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             domain TEXT NOT NULL,
+            group_key TEXT NOT NULL DEFAULT '',
             added_at TEXT DEFAULT CURRENT_TIMESTAMP,
             reported_at TEXT,
             report_id INTEGER,
-            UNIQUE(user_id, domain)
+            UNIQUE(user_id, domain, group_key)
         )");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_report_queue_user ON report_queue(user_id, reported_at)");
 
@@ -404,6 +408,51 @@ class Database {
             }
         } catch (PDOException $e) {
             // Leave the table as-is; callers still validate tag values in PHP.
+        }
+
+        // Safe migration (v1.13.2): the report queue moved from one entry per
+        // (user, domain) to one per (user, domain, group). SQLite cannot alter a
+        // UNIQUE constraint, so the table is rebuilt and each existing pending
+        // domain is expanded to one row per group of its matched keywords.
+        try {
+            $rqCols = $db->query("PRAGMA table_info(report_queue)")->fetchAll(PDO::FETCH_COLUMN, 1);
+            if (is_array($rqCols) && !in_array('group_key', $rqCols, true)) {
+                $db->exec("ALTER TABLE report_queue RENAME TO report_queue_old");
+                $db->exec("CREATE TABLE report_queue (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    domain TEXT NOT NULL,
+                    group_key TEXT NOT NULL DEFAULT '',
+                    added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    reported_at TEXT,
+                    report_id INTEGER,
+                    UNIQUE(user_id, domain, group_key)
+                )");
+                $oldRows = $db->query("SELECT user_id, domain, added_at, reported_at, report_id FROM report_queue_old")->fetchAll();
+                $insRow = $db->prepare("INSERT OR IGNORE INTO report_queue
+                    (user_id, domain, group_key, added_at, reported_at, report_id)
+                    VALUES (?, ?, ?, ?, ?, ?)");
+                $grpStmt = $db->prepare("SELECT DISTINCT COALESCE(CAST(k.group_id AS TEXT), '') AS gk
+                    FROM matches m JOIN keywords k ON k.id = m.keyword_id
+                    WHERE k.user_id = ? AND m.domain = ?");
+                foreach ($oldRows as $r) {
+                    $grpStmt->execute([$r['user_id'], $r['domain']]);
+                    $keys = $grpStmt->fetchAll(PDO::FETCH_COLUMN);
+                    if (empty($keys)) {
+                        $keys = [''];
+                    }
+                    foreach (array_unique($keys) as $gk) {
+                        $insRow->execute([
+                            $r['user_id'], $r['domain'], (string)$gk,
+                            $r['added_at'], $r['reported_at'], $r['report_id'],
+                        ]);
+                    }
+                }
+                $db->exec("DROP TABLE report_queue_old");
+                $db->exec("CREATE INDEX IF NOT EXISTS idx_report_queue_user ON report_queue(user_id, reported_at)");
+            }
+        } catch (PDOException $e) {
+            // Leave the table as-is; callers still resolve groups from keywords.
         }
 
         // Indexes that keep the keyword/dashboard queries fast on large data

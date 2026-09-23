@@ -228,14 +228,15 @@ function buildReportData(PDO $db, int $userId, array $keywordIds, array $filters
  * Build a report from the manual report queue (or an explicit domain list).
  *
  * Domain-driven: the analyst decides which domains go to the report, regardless
- * of date/state/source filters. The returned snapshot has exactly the same shape
- * as buildReportData(), so the report view and the print/PDF document render it
- * unchanged.
+ * of date/state/source filters. When $groupKey is given, only the keywords that
+ * belong to that group are included, and the snapshot carries the group's
+ * id/name so History filters it correctly.
  *
  * @param array|null $domains Explicit domains; null = every pending queued domain.
+ * @param string|null $groupKey Group id as string, '' for ungrouped, null = no filter.
  * @return array|null Null when there is nothing to report.
  */
-function buildReportFromQueue(PDO $db, int $userId, ?array $domains = null): ?array {
+function buildReportFromQueue(PDO $db, int $userId, ?array $domains = null, ?string $groupKey = null): ?array {
     if ($domains === null) {
         $domains = reportQueuePendingDomains($db, $userId);
     } else {
@@ -251,6 +252,20 @@ function buildReportFromQueue(PDO $db, int $userId, ?array $domains = null): ?ar
     $domains = array_slice(array_values(array_unique($domains)), 0, 5000);
     if (empty($domains)) {
         return null;
+    }
+
+    // Resolve the group header (when a group filter is applied).
+    $groupId = null;
+    $groupName = '';
+    if ($groupKey !== null && $groupKey !== '' && $groupKey !== 'ungrouped') {
+        $gid = (int)$groupKey;
+        $gStmt = $db->prepare("SELECT name FROM keyword_groups WHERE id = ? AND user_id = ? LIMIT 1");
+        $gStmt->execute([$gid, $userId]);
+        $found = $gStmt->fetchColumn();
+        if ($found !== false) {
+            $groupId = $gid;
+            $groupName = (string)$found;
+        }
     }
 
     $newDomainDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
@@ -272,10 +287,21 @@ function buildReportFromQueue(PDO $db, int $userId, ?array $domains = null): ?ar
         LEFT JOIN watchlist w ON w.user_id = ? AND w.domain = m.domain
         LEFT JOIN domain_whois dw ON dw.domain = m.domain
         LEFT JOIN domain_vt dv ON dv.domain = m.domain
-        WHERE k.user_id = ? AND m.domain IN ($placeholders)
-        ORDER BY k.keyword ASC, m.discovered_at DESC, m.domain ASC";
+        WHERE k.user_id = ? AND m.domain IN ($placeholders)";
+    $params = array_merge([$userId, $userId], $domains);
+
+    if ($groupKey !== null) {
+        if ($groupKey === '' || $groupKey === 'ungrouped') {
+            $sql .= " AND k.group_id IS NULL";
+        } else {
+            $sql .= " AND k.group_id = ?";
+            $params[] = (int)$groupKey;
+        }
+    }
+    $sql .= " ORDER BY k.keyword ASC, m.discovered_at DESC, m.domain ASC";
+
     $stmt = $db->prepare($sql);
-    $stmt->execute(array_merge([$userId, $userId], $domains));
+    $stmt->execute($params);
     $all = $stmt->fetchAll();
 
     if (empty($all)) {
@@ -301,12 +327,20 @@ function buildReportFromQueue(PDO $db, int $userId, ?array $domains = null): ?ar
         $totalDomains += $counts['domains'];
     }
 
+    if ($groupKey === null) {
+        $scope = '';
+    } elseif ($groupName !== '') {
+        $scope = 'Group "' . $groupName . '" · ';
+    } else {
+        $scope = 'Ungrouped · ';
+    }
+
     return [
         'generated_at'   => gmdate('Y-m-d H:i:s'),
-        'group_id'       => null,
-        'group_name'     => '',
-        'filters'        => ['mode' => 'queue', 'date' => 'all', 'state' => 'all', 'source' => 'all', 'archived' => true],
-        'filter_summary' => 'Manual report queue · ' . $totalDomains . ' domain(s)',
+        'group_id'       => $groupId,
+        'group_name'     => $groupName,
+        'filters'        => ['mode' => 'queue', 'group' => $groupKey, 'date' => 'all', 'state' => 'all', 'source' => 'all', 'archived' => true],
+        'filter_summary' => 'Manual report queue · ' . $scope . $totalDomains . ' domain(s)',
         'keywords'       => array_values(array_map(fn($d) => $d['keyword'], $report)),
         'report'         => $report,
         'domains'        => $totalDomains,

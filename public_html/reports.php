@@ -46,42 +46,77 @@ function buildReportTitle(array $data): string {
 
 /* ============================ POST actions ============================ */
 
-// Generate + save a report from the manual queue (everything pending).
+// Generate + save report(s) from the manual queue, assigned to their keyword
+// group. A specific group generates only that group; "All" generates one report
+// per group with pending domains.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'generate_queue_report') {
-    $data = buildReportFromQueue($db, $userId);
-    if (!$data || empty($data['report'])) {
+    $requested = (string)($_POST['group'] ?? 'all');
+    $buckets = reportQueuePendingByGroup($db, $userId);
+
+    if ($requested === 'all') {
+        $targets = $buckets;
+    } else {
+        $gk = ($requested === 'ungrouped') ? '' : (ctype_digit($requested) ? (string)(int)$requested : '');
+        $targets = isset($buckets[$gk]) ? [$gk => $buckets[$gk]] : [];
+    }
+
+    if (empty($targets)) {
         $_SESSION['flash_error'] = 'The report queue is empty or its domains no longer match your keywords.';
         header('Location: /reports.php');
         exit;
     }
-    $blob = gzcompress(json_encode($data, JSON_UNESCAPED_UNICODE));
-    $title = 'Report queue — ' . fmt_date((string)$data['generated_at']);
-    $db->prepare("INSERT INTO report_history
-            (user_id, title, group_id, group_name, filters, keywords, data, domains, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-       ->execute([
-            $userId,
-            $title,
-            null,
-            null,
-            json_encode($data['filters']),
-            json_encode($data['keywords']),
-            $blob,
-            (int)$data['domains'],
-            gmdate('c'),
-       ]);
-    $reportId = (int)$db->lastInsertId();
-    // Consume the queue: every pending domain is now attached to this report.
-    reportQueueMarkReported($db, $userId, $reportId);
-    header('Location: /report_view.php?id=' . $reportId);
+
+    $generatedIds = [];
+    foreach ($targets as $gk => $bucket) {
+        $data = buildReportFromQueue($db, $userId, $bucket['domains'], (string)$gk);
+        if (!$data || empty($data['report'])) {
+            continue;
+        }
+        $blob = gzcompress(json_encode($data, JSON_UNESCAPED_UNICODE));
+        $when = fmt_date((string)$data['generated_at']);
+        $title = ($data['group_name'] !== '') ? ('Group "' . $data['group_name'] . '" — ' . $when) : ('Ungrouped — ' . $when);
+        $db->prepare("INSERT INTO report_history
+                (user_id, title, group_id, group_name, filters, keywords, data, domains, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+           ->execute([
+                $userId,
+                $title,
+                $data['group_id'],
+                $data['group_name'],
+                json_encode($data['filters']),
+                json_encode($data['keywords']),
+                $blob,
+                (int)$data['domains'],
+                gmdate('c'),
+           ]);
+        $reportId = (int)$db->lastInsertId();
+        // Consume only this group's queue entries.
+        reportQueueMarkReported($db, $userId, $reportId, (string)$gk);
+        $generatedIds[] = $reportId;
+    }
+
+    if (empty($generatedIds)) {
+        $_SESSION['flash_error'] = 'The report queue is empty or its domains no longer match your keywords.';
+        header('Location: /reports.php');
+        exit;
+    }
+
+    if (count($generatedIds) === 1) {
+        header('Location: /report_view.php?id=' . $generatedIds[0]);
+        exit;
+    }
+
+    $_SESSION['flash_message'] = count($generatedIds) . ' report(s) generated from the queue.';
+    header('Location: /reports.php?tab=history');
     exit;
 }
 
-// Remove a single domain from the report queue.
+// Remove a single (domain, group) entry from the report queue.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'remove_queue_domain') {
     $domain = strtolower(trim((string)($_POST['domain'] ?? '')));
     if ($domain !== '') {
-        reportQueueRemove($db, $userId, [$domain]);
+        $groupKey = array_key_exists('group_key', $_POST) ? (string)$_POST['group_key'] : null;
+        reportQueueRemove($db, $userId, [$domain], $groupKey);
         $_SESSION['flash_message'] = 'Domain removed from the report queue.';
     }
     header('Location: /reports.php');
@@ -156,6 +191,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     $groupId = (int)($_POST['group_id'] ?? 0);
     $db->prepare("UPDATE keywords SET group_id = NULL WHERE group_id = ? AND user_id = ?")->execute([$groupId, $userId]);
     $db->prepare("DELETE FROM keyword_groups WHERE id = ? AND user_id = ?")->execute([$groupId, $userId]);
+    // Queued entries tied to the removed group would be orphaned; drop them.
+    $db->prepare("DELETE FROM report_queue WHERE user_id = ? AND group_key = ?")->execute([$userId, (string)$groupId]);
     $_SESSION['flash_message'] = 'Group deleted. Its keywords are now ungrouped.';
     header('Location: /reports.php');
     exit;
@@ -307,19 +344,39 @@ if ($tab === 'history') {
 
 /* ============================ Report queue ============================ */
 
-$queueRows = [];
-$queueCount = 0;
+$queueRows = [];          // rows visible under the active group filter
+$queueBuckets = [];       // group_key => bucket (pending per group)
+$queueGroupCounts = [];   // group tab counters ('ungrouped' or id => count)
+$queueCount = 0;          // distinct pending domains (all groups)
 $queueOldest = null;
 if ($tab === 'builder') {
-    $queueRows = reportQueuePending($db, $userId);
-    $queueCount = count($queueRows);
-    $queueOldest = $queueRows[0]['added_at'] ?? null;
+    $allQueueRows = reportQueuePendingRows($db, $userId);
+    $queueBuckets = reportQueuePendingByGroup($db, $userId);
+    $queueCount = reportQueuePendingCount($db, $userId);
+    foreach ($allQueueRows as $qr) {
+        if ($qr['added_at'] !== null && ($queueOldest === null || $qr['added_at'] < $queueOldest)) {
+            $queueOldest = $qr['added_at'];
+        }
+    }
+    foreach ($queueBuckets as $gk => $b) {
+        $queueGroupCounts[($gk === '') ? 'ungrouped' : (string)$gk] = $b['count'];
+    }
+    $queueRows = array_values(array_filter($allQueueRows, function ($qr) use ($groupFilter) {
+        if ($groupFilter === 'all') {
+            return true;
+        }
+        if ($groupFilter === 'ungrouped') {
+            return $qr['group_key'] === '';
+        }
+        return $qr['group_key'] === (string)$groupFilter;
+    }));
 }
 
-// Counts shown on the group tabs depend on the active tab.
-$tabCounts = $tab === 'history' ? $histGroupCounts : $groupCounts;
-$tabUngrouped = $tab === 'history' ? $histUngrouped : $ungroupedCount;
-$tabTotal = $tab === 'history' ? $histTotal : $totalKeywords;
+// Counts shown on the group tabs depend on the active tab. On the Queue tab
+// they are pending domains per group; on History, saved reports per group.
+$tabCounts = $tab === 'history' ? $histGroupCounts : $queueGroupCounts;
+$tabUngrouped = $tab === 'history' ? $histUngrouped : ($queueGroupCounts['ungrouped'] ?? 0);
+$tabTotal = $tab === 'history' ? $histTotal : $queueCount;
 $tabBase = '/reports.php?tab=' . $tab;
 
 $pageTitle = 'Reports';
@@ -375,18 +432,29 @@ require __DIR__ . '/templates/header.php';
 
     <?php if ($tab === 'builder'): ?>
 
-        <p class="muted">Review domains in a keyword's <strong>match list</strong> (or in Notifications), validate WHOIS / VirusTotal and use <strong>Send to report</strong> to mark the ones to include. Generating consumes the queue: everything pending since the previous report is included, even if several days have passed.</p>
+        <p class="muted">Review domains in a keyword's <strong>match list</strong> (or in Notifications), validate WHOIS / VirusTotal and use <strong>Send to report</strong> to mark the ones to include. Each domain is assigned to the keyword group it belongs to; generating a group's report consumes only that group's pending entries.</p>
 
         <?php if ($queueCount === 0): ?>
             <div class="notice notice-info"><i class="material-icons">inbox</i>
                 <div>No domains in the report queue yet. Open a <a href="/keywords.php"><strong>keyword match list</strong></a>, select domains and click <strong>Send to report</strong>.</div>
             </div>
         <?php else: ?>
+            <?php
+            if ($groupFilter === 'all') {
+                $generateLabel = 'Generate reports for all groups (' . count($queueBuckets) . ')';
+            } elseif ($groupFilter === 'ungrouped') {
+                $generateLabel = 'Generate report for Ungrouped (' . ($queueGroupCounts['ungrouped'] ?? 0) . ')';
+            } else {
+                $activeGroupName = $groupsById[(int)$groupFilter] ?? '';
+                $generateLabel = 'Generate report for "' . ($activeGroupName !== '' ? $activeGroupName : 'group') . '" (' . ($queueGroupCounts[(string)(int)$groupFilter] ?? 0) . ')';
+            }
+            ?>
             <div class="section-actions">
                 <form method="POST" style="margin: 0;">
                     <?php csrfField(); ?>
                     <input type="hidden" name="action" value="generate_queue_report">
-                    <button type="submit" class="btn waves-effect" onclick="return confirm('Generate a report with the <?= $queueCount ?> queued domain(s)? The queue will be marked as reported.')"><i class="material-icons left">print</i>Generate report from queue (<?= $queueCount ?>)</button>
+                    <input type="hidden" name="group" value="<?= htmlspecialchars($groupFilter) ?>">
+                    <button type="submit" class="btn waves-effect" onclick="return confirm('Generate the report(s) for the selected group(s)? Those queue entries will be marked as reported.')"><i class="material-icons left">print</i><?= htmlspecialchars($generateLabel) ?></button>
                 </form>
                 <form method="POST" style="margin: 0;" onsubmit="return confirm('Empty the report queue? This removes all pending domains.')">
                     <?php csrfField(); ?>
@@ -396,10 +464,14 @@ require __DIR__ . '/templates/header.php';
                 <span class="muted"><?= $queueCount ?> domain(s) pending<?= $queueOldest ? ' since ' . htmlspecialchars(fmt_date((string)$queueOldest)) : '' ?>.</span>
             </div>
 
+            <?php if (empty($queueRows)): ?>
+                <p class="muted">No pending domains in this group.</p>
+            <?php else: ?>
             <table class="striped highlight responsive-table">
                 <thead>
                     <tr>
                         <th>Domain</th>
+                        <th>Group</th>
                         <th>Keyword(s)</th>
                         <th>Added</th>
                         <th>Remove</th>
@@ -409,13 +481,15 @@ require __DIR__ . '/templates/header.php';
                     <?php foreach ($queueRows as $q): ?>
                     <tr>
                         <td><strong><?= htmlspecialchars($q['domain']) ?></strong></td>
-                        <td><?= htmlspecialchars((string)($q['keywords'] ?? '')) ?></td>
+                        <td><?= $q['group_name'] !== '' ? htmlspecialchars($q['group_name']) : '<span class="muted">Ungrouped</span>' ?></td>
+                        <td><?= htmlspecialchars(implode(', ', $q['keywords'])) ?></td>
                         <td><?= htmlspecialchars(fmt_date((string)$q['added_at'])) ?></td>
                         <td>
                             <form method="POST" style="margin: 0;">
                                 <?php csrfField(); ?>
                                 <input type="hidden" name="action" value="remove_queue_domain">
                                 <input type="hidden" name="domain" value="<?= htmlspecialchars($q['domain']) ?>">
+                                <input type="hidden" name="group_key" value="<?= htmlspecialchars($q['group_key']) ?>">
                                 <button type="submit" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">close</i>Remove</button>
                             </form>
                         </td>
@@ -423,6 +497,7 @@ require __DIR__ . '/templates/header.php';
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            <?php endif; ?>
         <?php endif; ?>
 
         <details class="report-groups" style="margin-top: 20px;">
