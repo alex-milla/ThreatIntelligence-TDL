@@ -428,8 +428,12 @@ def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
     whois_on = cfg.getboolean("tracking", "whois_enabled", fallback=True)
     dns_on = cfg.getboolean("tracking", "dns_enabled", fallback=True)
     cert_on = cfg.getboolean("tracking", "cert_enabled", fallback=True)
+    http_on = cfg.getboolean("tracking", "http_enabled", fallback=True)
+    http_activate_any = cfg.getboolean("tracking", "http_activate_any_200", fallback=False)
     dns_timeout = cfg.getint("tracking", "dns_timeout", fallback=10)
     cert_timeout = cfg.getint("tracking", "cert_timeout", fallback=30)
+    http_timeout = cfg.getint("tracking", "http_timeout", fallback=15)
+    http_max_bytes = cfg.getint("tracking", "http_max_bytes", fallback=200000)
     rate = cfg.getfloat("tracking", "rate_delay_seconds", fallback=1.0)
     data_dir = cfg.get("worker", "data_dir", fallback="./data")
 
@@ -445,15 +449,23 @@ def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
         vt_key = cfg.get("virustotal", "api_key", fallback="").strip()
     vt_on = reputation_on and bool(vt_key) and not vt_key.upper().startswith("TU_")
 
-    # Deduplicate by domain (a domain may be tracked under several keywords).
+    # Deduplicate by domain (a domain may be tracked under several keywords);
+    # keep every keyword so the HTTP brand match can use them.
     unique: dict = {}
     for e in due:
         d = str(e.get("domain", "")).lower().strip()
-        if d and d not in unique:
-            unique[d] = e
+        if not d:
+            continue
+        if d not in unique:
+            unique[d] = {"entry": e, "keywords": set()}
+        kw = str(e.get("keyword") or "").strip()
+        if kw:
+            unique[d]["keywords"].add(kw)
 
     results = []
-    for d, e in unique.items():
+    for d, info in unique.items():
+        e = info["entry"]
+        keywords = info["keywords"]
         baseline = e.get("baseline") or {}
         if not isinstance(baseline, dict):
             baseline = {}
@@ -488,6 +500,21 @@ def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
             enrolled_at = str(e.get("enrolled_at") or "")
             cert_new = intel.crt_sh_has_new_cert(d, enrolled_at, timeout=cert_timeout) is True
 
+        # HTTP content (F3): brand keyword, login form, plain 200 and hash change.
+        http_brand = http_login = False
+        http_200 = None
+        http_changed = False
+        http_hash = None
+        if http_on:
+            probe = intel.http_probe(d, timeout=http_timeout, max_bytes=http_max_bytes)
+            if probe.get("status") is not None:
+                http_200 = (probe["status"] == 200)
+                http_hash = probe.get("body_hash") or None
+                http_login = bool(probe.get("has_login"))
+                http_brand = intel.contains_keyword(probe.get("title"), probe.get("body"), keywords)
+                baseline_hash = baseline.get("http_hash")
+                http_changed = bool(baseline_hash and http_hash and baseline_hash != http_hash)
+
         # Refresh the local caches so the UI shows the fresh data.
         try:
             if abuse_res and abuse_res.get("status") == "ok":
@@ -501,11 +528,18 @@ def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
 
         changed, detail = intel.compare_whois(baseline, whois_now)
         ev = intel.evaluate(abuse_res, vt_res, changed, detail,
-                            dns_started=dns_started, dns_now=dns_now, cert_new=cert_new)
+                            dns_started=dns_started, dns_now=dns_now, cert_new=cert_new,
+                            http_brand=http_brand, http_login=http_login, http_200=http_200,
+                            http_changed=http_changed, http_activate_any_200=http_activate_any)
         ev["domain"] = d
-        # First DNS reading establishes the baseline instead of activating.
+        # The first reading of a signal establishes its baseline.
+        baseline_update = {}
         if dns_on and baseline_dns is None and dns_now is not None:
-            ev["baseline_update"] = {"dns": bool(dns_now)}
+            baseline_update["dns"] = bool(dns_now)
+        if http_on and baseline.get("http_hash") is None and http_hash:
+            baseline_update["http_hash"] = http_hash
+        if baseline_update:
+            ev["baseline_update"] = baseline_update
         results.append(ev)
         stats["checked"] += 1
         if ev["activated"]:

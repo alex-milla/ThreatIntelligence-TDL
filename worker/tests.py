@@ -517,6 +517,23 @@ def test_intel_signals() -> None:
     assert intel.cert_newer_than(certs, "2026-09-25 00:00:00") is False
     assert intel.cert_newer_than([], "2026-09-10 00:00:00") is False
     assert intel.cert_newer_than([{"entry_timestamp": "2026-09-21 08:00:00"}], "2026-09-10 00:00:00") is True
+
+    # F3: HTTP helpers and activation.
+    html = "<html><head><title>Acme Login</title></head><body><form><input type='password' name='p'></form></body></html>"
+    assert intel.has_login_form(html) is True
+    assert intel.has_login_form("<p>no form</p>") is False
+    assert intel.extract_title(html) == "Acme Login"
+    assert intel.contains_keyword("Acme Login", html, ["acme"]) is True
+    assert intel.contains_keyword("Other", "nothing", ["acme"]) is False
+    h1 = intel.content_hash(html)
+    assert h1 and h1 == intel.content_hash(html) and h1 != intel.content_hash(html + "x")
+    ev = intel.evaluate({"verdict": "clean"}, {"verdict": "clean"}, False, http_brand=True, http_200=200)
+    assert ev["activated"] and "brand content" in ev["activated_reason"], ev
+    ev = intel.evaluate({"verdict": "clean"}, {"verdict": "clean"}, False, http_login=True, http_200=200)
+    assert ev["activated"] and "login form" in ev["activated_reason"], ev
+    ev = intel.evaluate({"verdict": "clean"}, {"verdict": "clean"}, False, http_200=True, http_activate_any_200=True)
+    assert ev["activated"] and "responds 200" in ev["activated_reason"], ev
+    assert not intel.evaluate({"verdict": "clean"}, {"verdict": "clean"}, False, http_200=200)["activated"]
     print("[PASS] test_intel_signals")
 
 

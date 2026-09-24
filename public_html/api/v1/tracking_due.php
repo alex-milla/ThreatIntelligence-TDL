@@ -42,7 +42,7 @@ if ($domainsParam !== '') {
 }
 
 $baseSelect = "SELECT dt.domain, dt.keyword_id, dt.user_id, dt.first_seen, dt.enrolled_at, dt.expires_at,
-        dt.baseline, dt.check_count, k.tracking_interval_hours, k.tracking_days
+        dt.baseline, dt.check_count, k.keyword, k.tracking_interval_hours, k.tracking_days
     FROM domain_tracking dt
     JOIN keywords k ON k.id = dt.keyword_id
     WHERE dt.status = 'tracking'";
@@ -65,6 +65,7 @@ foreach ($stmt->fetchAll() as $r) {
     $entries[] = [
         'domain'         => $r['domain'],
         'keyword_id'     => (int)$r['keyword_id'],
+        'keyword'        => $r['keyword'],
         'user_id'        => (int)$r['user_id'],
         'first_seen'     => $r['first_seen'],
         'enrolled_at'    => $r['enrolled_at'],

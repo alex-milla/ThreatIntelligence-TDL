@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.17.3] - 2026-09-24
+
+### Added - Intelligence F3: HTTP content signal
+
+- **The HTTP content signal completes the dormant-domain tracking.** The worker fetches the tracked domain (HTTPS with an HTTP fallback, capped by `http_max_bytes`) and detects:
+  - the **matched keyword/brand** in the `<title>` or body,
+  - a **login form** (`<input type="password">`),
+  - a plain **HTTP 200**, and
+  - a **content hash** for change detection.
+- **Activation**: brand content or a login form activate the entry (a plain 200 activates only with `http_activate_any_200 = true`; the content-hash change is informational). The first check stores the content hash as the baseline.
+- **Worker** (`worker/intel.py`): new `http_probe()`, `has_login_form()`, `extract_title()`, `content_hash()` and `contains_keyword()`; `evaluate()` handles the HTTP signals. `run_tracking_check()` collects each domain's keywords (a domain tracked under several keywords is checked once) and passes the HTTP result.
+- **Config** (`[tracking]`): `http_enabled`, `http_activate_any_200`, `http_timeout`, `http_max_bytes`.
+- **Web**: `tracking_due.php` now also returns the keyword(s) so the brand match can be done server-side.
+- **Tests**: `test_intel_signals` extended with the HTTP helpers and activation cases.
+- With F1–F3 the Intelligence signals are: reputation, WHOIS/NS, DNS, TLS certificate and HTTP content.
+
 ## [v1.17.2] - 2026-09-24
 
 ### Added - Intelligence F2: DNS and TLS-certificate signals

@@ -6,7 +6,9 @@ helpers reach the network; they use free, key-less services (Google DoH and
 crt.sh) so no extra dependency is needed.
 """
 
+import hashlib
 import json
+import re
 from datetime import datetime
 from urllib.parse import quote
 
@@ -15,6 +17,10 @@ import requests
 USER_AGENT = "ThreatIntelligence-TDL-Worker/1.0"
 DOH_URL = "https://dns.google/resolve?name={name}&type={type}"
 CRTSH_URL = "https://crt.sh/?q=%25.{domain}&output=json"
+HTTP_UA = "Mozilla/5.0 (compatible; ThreatIntelligence-TDL/1.0; +https://github.com/alex-milla/ThreatIntelligence-TDL)"
+
+_LOGIN_RE = re.compile(r"<input[^>]*type\s*=\s*[\"']?password", re.IGNORECASE)
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 
 
 def _ns_set(value):
@@ -54,12 +60,16 @@ def compare_whois(baseline, whois_now):
 
 
 def evaluate(abusech_result, vt_result, whois_changed, whois_detail="",
-             dns_started=False, dns_now=None, cert_new=False):
+             dns_started=False, dns_now=None, cert_new=False,
+             http_brand=False, http_login=False, http_200=None,
+             http_changed=False, http_activate_any_200=False):
     """Combine the tracking signals into a result dict.
 
-    Activation signals: reputation malicious/suspicious (F1), a domain that
-    starts resolving after not resolving at enrollment, and a TLS certificate
-    issued after enrollment (F2). WHOIS/NS changes are informational.
+    Activation signals: reputation malicious/suspicious (F1); a domain that
+    starts resolving after not resolving at enrollment, a TLS certificate issued
+    after enrollment (F2); and HTTP content with the brand keyword or a login
+    form (F3). WHOIS/NS changes, a plain HTTP 200 and content-hash changes are
+    informational.
     """
     av = (abusech_result or {}).get("verdict")
     vv = (vt_result or {}).get("verdict")
@@ -73,6 +83,12 @@ def evaluate(abusech_result, vt_result, whois_changed, whois_detail="",
         reasons.append("DNS: now resolves")
     if cert_new:
         reasons.append("TLS certificate issued")
+    if http_brand:
+        reasons.append("HTTP: brand content")
+    if http_login:
+        reasons.append("HTTP: login form")
+    if http_activate_any_200 and http_200 is True and not (http_brand or http_login):
+        reasons.append("HTTP: responds 200")
 
     signals = [{
         "type": "reputation",
@@ -85,6 +101,14 @@ def evaluate(abusech_result, vt_result, whois_changed, whois_detail="",
         signals.append({"type": "dns", "resolves": bool(dns_now)})
     if cert_new:
         signals.append({"type": "cert", "detail": "new certificate"})
+    if http_200 is not None:
+        signals.append({
+            "type": "http",
+            "status": http_200,
+            "brand": bool(http_brand),
+            "login": bool(http_login),
+            "changed": bool(http_changed),
+        })
 
     return {
         "activated": bool(reasons),
@@ -167,3 +191,62 @@ def crt_sh_has_new_cert(domain, since_utc: str, timeout: int = 30):
     if not isinstance(data, list):
         return None
     return cert_newer_than(data, since_utc)
+
+
+def has_login_form(html: str) -> bool:
+    """True if the HTML contains a password input (login form)."""
+    return bool(_LOGIN_RE.search(html or ""))
+
+
+def extract_title(html: str) -> str:
+    """Page <title> text (trimmed, capped), or an empty string."""
+    m = _TITLE_RE.search(html or "")
+    return m.group(1).strip()[:300] if m else ""
+
+
+def content_hash(text: str) -> str:
+    """Short stable hash of the page content (for change detection)."""
+    if not text:
+        return ""
+    return hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()[:32]
+
+
+def contains_keyword(title: str, body: str, keywords) -> bool:
+    """True if any keyword appears (case-insensitive) in the title or body."""
+    haystack = ((title or "") + " " + (body or "")).lower()
+    for k in keywords or []:
+        k = str(k).strip().lower()
+        if k and k in haystack:
+            return True
+    return False
+
+
+def http_probe(domain, timeout: int = 15, max_bytes: int = 200000) -> dict:
+    """Best-effort HTTP(S) probe of a tracked domain.
+
+    Tries HTTPS then HTTP. Reads at most `max_bytes` so a huge page cannot blow
+    memory. Returns a result dict; never raises.
+    """
+    result = {
+        "ok": False, "status": None, "final_url": "", "length": 0,
+        "title": "", "has_login": False, "body_hash": "", "body": "",
+    }
+    headers = {"User-Agent": HTTP_UA, "Accept": "text/html,application/xhtml+xml"}
+    for scheme in ("https", "http"):
+        try:
+            r = requests.get(scheme + "://" + str(domain) + "/", headers=headers,
+                             timeout=timeout, allow_redirects=True)
+        except requests.RequestException:
+            continue
+        raw = (r.content or b"")[:max_bytes]
+        text = raw.decode(r.encoding or "utf-8", "ignore")
+        result["ok"] = r.status_code < 500
+        result["status"] = r.status_code
+        result["final_url"] = r.url or ""
+        result["length"] = len(r.content or b"")
+        result["title"] = extract_title(text)
+        result["has_login"] = has_login_form(text)
+        result["body_hash"] = content_hash(text)
+        result["body"] = text
+        return result
+    return result

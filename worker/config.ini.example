@@ -153,6 +153,14 @@ dns_enabled = true
 cert_enabled = true
 dns_timeout = 10
 cert_timeout = 30
+; HTTP content signal (F3): fetches the page and flags the brand keyword in the
+; title/body, a login form, a plain 200, and content-hash changes. Activation by
+; brand/login by default; set http_activate_any_200 = true to also activate on a
+; plain 200. Fetches are capped by http_max_bytes.
+http_enabled = true
+http_activate_any_200 = false
+http_timeout = 15
+http_max_bytes = 200000
 
 [openintel]
 ; Weekly ccTLD apex-domain lists from OpenINTEL (see README).
