@@ -15,34 +15,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
 }
 
+/** Validate a keyword/glob text; returns an error message or null. */
+function keywordInputError(string $keyword): ?string {
+    if (strlen($keyword) < 2) {
+        return 'Keyword must be at least 2 characters.';
+    }
+    if (strlen($keyword) > 100) {
+        return 'Keyword must be at most 100 characters.';
+    }
+    if (!preg_match('/^[a-z0-9\-.*?\[\]{}!,^]+$/', $keyword)) {
+        return 'Keyword can only contain letters, numbers, "-", "." and the wildcards * ? [ ] { } ! ,';
+    }
+    return null;
+}
+
 // Add keyword
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add') {
     $keyword = strtolower(trim($_POST['keyword'] ?? ''));
-    $matchType = ((string)($_POST['match_type'] ?? 'literal') === 'glob') ? 'glob' : 'literal';
-    if (strlen($keyword) < 2) {
-        $error = 'Keyword must be at least 2 characters.';
-    } elseif ($matchType === 'glob' && strlen($keyword) > 100) {
-        $error = 'Glob pattern must be at most 100 characters.';
-    } elseif ($matchType === 'literal' && strlen($keyword) > 50) {
-        $error = 'Keyword must be at most 50 characters.';
-    } elseif ($matchType === 'glob' && !preg_match('/^[a-z0-9\-\.\*\[\]\{\}\!\?,^]+$/', $keyword)) {
-        $error = 'Glob pattern can only contain letters, numbers, "-", "." and the wildcards * ? [ ] { } ! ,';
-    } elseif ($matchType === 'literal' && !preg_match('/^[a-z0-9\-]+$/', $keyword)) {
-        $error = 'Keyword can only contain letters, numbers, and hyphens.';
+    $err = keywordInputError($keyword);
+    if ($err !== null) {
+        $error = $err;
     } elseif (!canAddKeyword($db, $userId)) {
         $limit = getMaxKeywords($db, $userId);
         $error = $isAdmin
             ? 'You have reached your keyword limit. Increase it in Admin → Users.'
             : "You have reached your keyword limit ({$limit}). Contact the administrator.";
     } else {
-        $stmt = $db->prepare("INSERT INTO keywords (user_id, keyword, match_type, tracking_interval_hours) VALUES (?, ?, ?, 168)");
+        $stmt = $db->prepare("INSERT INTO keywords (user_id, keyword, tracking_interval_hours) VALUES (?, ?, 168)");
         try {
-            $stmt->execute([$userId, $keyword, $matchType]);
-            $message = $matchType === 'glob' ? 'Glob keyword added successfully.' : 'Keyword added successfully.';
+            $stmt->execute([$userId, $keyword]);
+            $message = 'Keyword added successfully.';
         } catch (PDOException $e) {
             $error = 'This keyword already exists in your list.';
         }
     }
+}
+
+// Edit keyword text
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_keyword') {
+    validateCsrf();
+    $keywordId = (int)($_POST['keyword_id'] ?? 0);
+    $keyword = strtolower(trim($_POST['keyword'] ?? ''));
+    $err = keywordInputError($keyword);
+    if ($err !== null) {
+        $_SESSION['flash_error'] = $err;
+    } elseif ($keywordId <= 0) {
+        $_SESSION['flash_error'] = 'Invalid keyword.';
+    } else {
+        $dup = $db->prepare("SELECT id FROM keywords WHERE user_id = ? AND lower(keyword) = ? AND id <> ? LIMIT 1");
+        $dup->execute([$userId, $keyword, $keywordId]);
+        if ($dup->fetchColumn()) {
+            $_SESSION['flash_error'] = 'Another keyword with that text already exists.';
+        } else {
+            $stmt = $db->prepare("UPDATE keywords SET keyword = ? WHERE id = ? AND user_id = ?");
+            $stmt->execute([$keyword, $keywordId, $userId]);
+            $_SESSION['flash_message'] = $stmt->rowCount() > 0 ? 'Keyword updated.' : 'Keyword not found.';
+        }
+    }
+    header('Location: /keywords.php');
+    exit;
 }
 
 // Delete keyword
@@ -136,7 +167,7 @@ $kwOrderBy = $kwSortCols[$kwSort] . ' ' . strtoupper($kwDir);
 // subquery per keyword: with the notifications(match_id) index this stays fast
 // even with many matches. Semantics are identical to the previous query.
 $newDomainDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
-$stmt = $db->prepare("SELECT k.id, k.keyword, k.match_type, k.match_count, k.created_at,
+$stmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.created_at,
     k.tracking_enabled, k.tracking_days, k.tracking_interval_hours, k.tracking_enroll_max_age_days,
     COUNT(CASE WHEN
         n.id IS NOT NULL
@@ -231,16 +262,9 @@ require __DIR__ . '/templates/header.php';
         <input type="hidden" name="action" value="add">
         <div class="input-field">
             <i class="material-icons prefix">search</i>
-            <input id="keyword" type="text" name="keyword" class="validate" placeholder=" " required>
+            <input id="keyword" type="text" name="keyword" class="validate" placeholder=" " maxlength="100" required>
             <label for="keyword">Keyword</label>
-            <span class="helper-text">e.g. santander, nasa — or a glob like <code>micro*soft</code>, <code>microsoft[0-9]</code></span>
-        </div>
-        <div class="input-field" style="max-width: 200px;">
-            <select id="match_type" name="match_type" class="browser-default">
-                <option value="literal">Literal (substring)</option>
-                <option value="glob">Glob pattern</option>
-            </select>
-            <span class="helper-text">Glob: * ? [ ] {n,m}</span>
+            <span class="helper-text">Plain text or a pattern: e.g. <code>santander</code>, <code>micro*soft</code>, <code>microsoft[0-9]</code> — wildcards <code>* ? [ ] {n,m}</code> are applied automatically</span>
         </div>
         <button type="submit" class="btn waves-effect"><i class="material-icons left">add</i>Add Keyword</button>
     </form>
@@ -299,7 +323,7 @@ require __DIR__ . '/templates/header.php';
                     <th><?= kwSortLink('matches', 'Matches', $kwSort, $kwDir, $kwSortDefaults) ?></th>
                     <th>Tracking</th>
                     <th><?= kwSortLink('added', 'Added', $kwSort, $kwDir, $kwSortDefaults) ?></th>
-                    <th style="width: 100px;">Actions</th>
+                    <th style="width: 170px;">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -308,7 +332,7 @@ require __DIR__ . '/templates/header.php';
                     <?php if ($isAdmin): ?>
                     <td><label><input type="checkbox" class="row-check kw-check" value="<?= (int)$k['id'] ?>" aria-label="Select <?= htmlspecialchars($k['keyword']) ?>"><span></span></label></td>
                     <?php endif; ?>
-                    <td><strong><?= htmlspecialchars($k['keyword']) ?></strong><?php if (($k['match_type'] ?? 'literal') === 'glob'): ?> <span class="tag-chip report" title="Glob pattern">GLOB</span><?php endif; ?></td>
+                    <td><strong><?= htmlspecialchars($k['keyword']) ?></strong><?php if (strpbrk((string)$k['keyword'], '*?[]{}') !== false): ?> <span class="tag-chip report" title="Contains wildcards (matched as a glob too)">GLOB</span><?php endif; ?></td>
                     <td>
                         <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" title="Review all matched domains"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" class="muted" title="Review all matched domains">(<?= (int)$k['match_count'] ?> total)</a><?php endif; ?>
                         <a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>" class="muted" title="View notifications for this keyword" aria-label="View notifications for this keyword"><i class="material-icons tiny">notifications</i></a>
@@ -330,6 +354,16 @@ require __DIR__ . '/templates/header.php';
                     </td>
                     <td><?= htmlspecialchars(fmt_date($k['created_at'])) ?></td>
                     <td>
+                        <details class="kw-edit">
+                            <summary class="muted" style="cursor:pointer;">Edit</summary>
+                            <form method="POST" class="kw-edit-form">
+                                <?php csrfField(); ?>
+                                <input type="hidden" name="action" value="update_keyword">
+                                <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
+                                <input type="text" name="keyword" value="<?= htmlspecialchars($k['keyword']) ?>" maxlength="100" required class="browser-default compact">
+                                <button type="submit" class="btn btn-small waves-effect">Save</button>
+                            </form>
+                        </details>
                         <form method="POST" style="display: inline;">
                             <?php csrfField(); ?>
                             <input type="hidden" name="action" value="delete">

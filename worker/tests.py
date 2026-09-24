@@ -592,11 +592,12 @@ def test_glob_matching() -> None:
     rx, _ = matcher.glob_to_regex("[0-9]{2,4}juegos")
     assert rx.search("123juegos") and not rx.search("1juegos")
 
-    # Matcher: literals + anchored glob + anchorless glob
+    # Matcher: every keyword is matched literally, and as a glob when it has
+    # wildcards (no type is configured).
     kws = [
-        {"id": 1, "keyword": "santander", "match_type": "literal"},
-        {"id": 2, "keyword": "micro*soft", "match_type": "glob"},
-        {"id": 3, "keyword": "[0-9]{3}[a-z]{0,2}", "match_type": "glob"},  # no anchor
+        {"id": 1, "keyword": "santander"},
+        {"id": 2, "keyword": "micro*soft"},
+        {"id": 3, "keyword": "[0-9]{3}[a-z]{0,2}"},  # no anchor
     ]
     m = matcher.Matcher(kws)
     got = {(x["keyword_id"], x["domain"]) for x in m.match(

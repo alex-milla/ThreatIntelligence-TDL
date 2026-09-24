@@ -21,7 +21,7 @@ $repSymbol = ['malicious' => '●', 'suspicious' => '⚠', 'dga' => '⚠', 'clea
 
 $keywordId = (int)($_GET['id'] ?? 0);
 
-$stmt = $db->prepare("SELECT id, keyword, match_type, match_count, group_id, created_at FROM keywords WHERE id = ? AND user_id = ? LIMIT 1");
+$stmt = $db->prepare("SELECT id, keyword, match_count, group_id, created_at FROM keywords WHERE id = ? AND user_id = ? LIMIT 1");
 $stmt->execute([$keywordId, $userId]);
 $keyword = $stmt->fetch();
 
@@ -237,7 +237,7 @@ require __DIR__ . '/templates/header.php';
 
 <div class="card">
     <div class="card-head">
-        <h2>Matches: <?= htmlspecialchars($keyword['keyword']) ?><?php if (($keyword['match_type'] ?? 'literal') === 'glob'): ?> <span class="tag-chip report" title="Glob pattern">GLOB</span><?php endif; ?></h2>
+        <h2>Matches: <?= htmlspecialchars($keyword['keyword']) ?><?php if (strpbrk((string)$keyword['keyword'], '*?[]{}') !== false): ?> <span class="tag-chip report" title="Contains wildcards (matched as a glob too)">GLOB</span><?php endif; ?></h2>
         <a href="/keywords.php" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">arrow_back</i>Back to Keywords</a>
     </div>
 

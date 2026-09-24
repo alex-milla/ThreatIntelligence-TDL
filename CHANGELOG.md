@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.5] - 2026-09-24
+
+### Changed - A keyword now covers both substring and glob matching
+
+- **No more match type to choose.** Every keyword is matched **both** as a literal substring and, when it contains glob metacharacters (`* ? [ ] { }`), as a glob pattern; a match on either form counts. `microsoft` keeps matching as a substring, and `micro*soft` matches `micro-soft` / `microxsoft` in one and the same keyword. The `match_type` column/selector is retired (the column is kept for compatibility but no longer used).
+- **Worker** (`worker/matcher.py`): literals still use Aho-Corasick; a keyword with wildcards also compiles a regex, pre-filtered by its longest literal anchor. Patterns without a usable anchor are skipped by the full-cache recheck, as before.
+- **Keywords UI**: the **Match type** selector was removed; the keyword field accepts wildcards (`* ? [ ] { } ! ,`); a **GLOB** badge is shown by syntax. Added an **Edit** action per keyword to change its text (e.g. turn `microsoft` into `micro*soft`), with duplicate checks.
+- **Tests**: `test_glob_matching` updated to the no-type model.
+
 ## [v1.18.4] - 2026-09-24
 
 ### Added - Glob (pattern) keywords

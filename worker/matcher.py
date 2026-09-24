@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Keyword matching engine.
 
-Two kinds of keyword:
+Two kinds of keyword match are applied together, so a keyword covers both:
 
-  * ``literal`` (default): case-insensitive substring, the long-standing
-    behaviour. Accelerated with an Aho-Corasick automaton (pyahocorasick) when
-    available; otherwise a simple substring loop.
+  * ``literal``: case-insensitive substring, the long-standing behaviour.
+    Accelerated with an Aho-Corasick automaton (pyahocorasick) when available;
+    otherwise a simple substring loop.
   * ``glob``: a safe pattern subset — ``*`` (any sequence), ``?`` (one char),
     ``[abc]`` / ``[0-9]`` character classes (``[!...]`` negation) and ``{n,m}``
-    repetition. It matches anywhere in the domain name part (no TLD), like the
-    literal mode.
+    repetition. It matches anywhere in the domain name part (no TLD).
+
+Every keyword is matched literally, and additionally as a glob when it contains
+a glob metacharacter (``* ? [ ] { }``); a match on either form counts. No type
+has to be chosen.
 
 Glob patterns are compiled to a regex once. To keep the full-cache recheck fast,
 each glob also yields its longest mandatory literal ("anchor"); the regex is only
@@ -36,12 +39,12 @@ _QUANT_MAX = 100
 
 
 def is_glob(match_type, keyword: str) -> bool:
-    """Whether a keyword is a glob pattern (explicit type, else by syntax)."""
-    mt = str(match_type or "").strip().lower()
-    if mt == "glob":
-        return True
-    if mt == "literal":
-        return False
+    """Deprecated: glob-ness is now detected from the keyword syntax."""
+    return has_glob_chars(keyword)
+
+
+def has_glob_chars(keyword: str) -> bool:
+    """Whether a keyword contains a glob metacharacter (``* ? [ ] { }``)."""
     return any(ch in str(keyword or "") for ch in "*?[]{}")
 
 
@@ -179,14 +182,15 @@ class Matcher:
             if not kw:
                 continue
             kid = k.get("id")
-            if is_glob(k.get("match_type"), kw):
-                compiled, anchor = glob_to_regex(str(kw).lower())
+            text = str(kw).lower()
+            # Every keyword is matched literally; patterns additionally as a glob.
+            self.keyword_list.append((kid, text))
+            if has_glob_chars(text):
+                compiled, anchor = glob_to_regex(text)
                 if len(anchor) >= _ANCHOR_MIN:
                     anchors[anchor].append((kid, compiled))
                 else:
                     self._anchorless.append((kid, compiled))
-            else:
-                self.keyword_list.append((kid, str(kw).lower()))
 
         self._anchor_map = dict(anchors)
         self._automaton = None

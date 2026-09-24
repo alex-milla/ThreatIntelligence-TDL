@@ -1105,6 +1105,9 @@ tr.unread {
 .kw-tracking-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
 .kw-tracking-form label { font-size: 0.78rem; display: inline-flex; align-items: center; gap: 4px; }
 .kw-tracking-form input.compact { width: 72px; }
+.kw-edit summary { font-size: 0.8rem; text-decoration: underline; }
+.kw-edit-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+.kw-edit-form input[type="text"] { width: 160px; }
 
 /* VirusTotal verdict badges */
 .vt-badge {
