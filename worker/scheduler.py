@@ -361,17 +361,16 @@ def enroll_tracking_matches(cfg: configparser.ConfigParser, host_url: str, api_k
     """Send recently matched domains to the hosting API for Intelligence tracking.
 
     The web applies the per-keyword policy (tracking enabled, recent WHOIS age,
-    not flagged). Best effort: never raises. Returns the number of candidates
-    sent.
+    not flagged) and also sweeps domains already tagged `excluded`. Always calls
+    the endpoint (even with no new matches) so that sweep runs each cycle. Best
+    effort: never raises. Returns the number of candidates sent.
     """
-    if not matches:
-        return 0
     if cfg.has_section("tracking") and not cfg.getboolean("tracking", "enroll_enabled", fallback=True):
         return 0
 
     entries = []
     seen = set()
-    for m in matches:
+    for m in (matches or []):
         if m.get("is_historical"):
             continue
         d = str(m.get("domain", "")).lower().strip()
@@ -385,8 +384,6 @@ def enroll_tracking_matches(cfg: configparser.ConfigParser, host_url: str, api_k
         entries.append({"domain": d, "keyword_id": kid, "first_seen": m.get("first_seen")})
         if len(entries) >= 2000:
             break
-    if not entries:
-        return 0
     try:
         return len(entries) if sync_client.send_tracking_enroll(host_url, api_key, entries) else 0
     except Exception as e:

@@ -112,3 +112,73 @@ function trackingExpireDue(PDO $db): int {
     }
     return count($ids);
 }
+
+/**
+ * Enroll one (domain, keyword) pair if it passes the tracking policy.
+ *
+ * Domains tagged `excluded` (benign, kept out of reports) ARE enrolled so they
+ * can be monitored; `bad` (confirmed malicious) is not. Requires a recent WHOIS
+ * creation date and a non-malicious reputation. Returns true when enrolled.
+ */
+function trackingTryEnroll(PDO $db, array $keyword, string $domain,
+                           ?string $firstSeen = null, ?string $creationDate = null): bool {
+    $domain = strtolower(trim($domain));
+    if ($domain === '' || strlen($domain) > 253 || strpos($domain, '..') !== false
+        || !preg_match('/^[a-z0-9\p{L}\-\.]+$/u', $domain)) {
+        return false;
+    }
+
+    $stmt = $db->prepare("SELECT tag FROM domain_tags WHERE domain = ? LIMIT 1");
+    $stmt->execute([$domain]);
+    $tag = (string)$stmt->fetchColumn();
+    if ($tag === 'bad') {
+        return false; // confirmed malicious: not a dormant candidate
+    }
+
+    $stmt = $db->prepare("SELECT verdict FROM domain_abusech WHERE domain = ? LIMIT 1");
+    $stmt->execute([$domain]);
+    if (in_array((string)$stmt->fetchColumn(), ['malicious', 'suspicious'], true)) {
+        return false;
+    }
+
+    if ($creationDate === null || trim($creationDate) === '') {
+        $stmt = $db->prepare("SELECT creation_date FROM domain_whois WHERE domain = ? LIMIT 1");
+        $stmt->execute([$domain]);
+        $creationDate = (string)($stmt->fetchColumn() ?: '');
+    }
+    $age = trackingAgeDays($creationDate);
+    $maxAge = max(1, (int)($keyword['tracking_enroll_max_age_days'] ?? 30));
+    if ($age === null || $age > $maxAge) {
+        return false;
+    }
+
+    $now = trackingNow();
+    $expires = trackingAddDays($now, max(1, (int)($keyword['tracking_days'] ?? 90)));
+    $baseline = json_encode(trackingBaseline($db, $domain), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $ins = $db->prepare("INSERT OR IGNORE INTO domain_tracking
+        (domain, keyword_id, user_id, first_seen, enrolled_at, expires_at, status, baseline, next_check_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'tracking', ?, ?)");
+    $ins->execute([$domain, (int)$keyword['id'], (int)$keyword['user_id'], $firstSeen ?: null, $now, $expires, $baseline, $now]);
+    if ($ins->rowCount() > 0) {
+        $note = 'age ' . $age . 'd' . ($tag === 'excluded' ? ' (excluded)' : '');
+        trackingEvent($db, (int)$db->lastInsertId(), 'enrolled', $note);
+        return true;
+    }
+    return false; // already tracked
+}
+
+/**
+ * Reactivate an excluded domain when Intelligence detects movement: swap its
+ * `excluded` tag for `observing` (visible again and included in reports) with a
+ * note. Returns true when the tag was changed.
+ */
+function trackingReactivate(PDO $db, string $domain, string $reason): bool {
+    $stmt = $db->prepare("SELECT tag FROM domain_tags WHERE domain = ? LIMIT 1");
+    $stmt->execute([$domain]);
+    if ((string)$stmt->fetchColumn() !== 'excluded') {
+        return false;
+    }
+    $db->prepare("UPDATE domain_tags SET tag = 'observing', note = ? WHERE domain = ?")
+       ->execute([trackingTruncate('Intelligence: ' . $reason, 255), $domain]);
+    return true;
+}

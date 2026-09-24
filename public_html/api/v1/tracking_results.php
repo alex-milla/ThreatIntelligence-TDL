@@ -86,6 +86,9 @@ try {
 
         if ($activated) {
             trackingActivate($db, $domain, $reason);
+            // A domain the analyst had excluded (benign) is reactivated for
+            // review: its tag becomes 'observing' so it re-enters the reports.
+            trackingReactivate($db, $domain, $reason);
             foreach ($rows as $row) {
                 $updActivated->execute([$now, (int)$row['id']]);
                 $activatedCount++;

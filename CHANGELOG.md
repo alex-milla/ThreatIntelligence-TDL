@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.17.4] - 2026-09-24
+
+### Changed - Intelligence keeps tracking excluded (benign) domains and reactivates them
+
+- **`excluded` no longer excludes a domain from Intelligence.** Marking a match as `excluded` (benign, kept out of reports) now keeps it monitored for the keyword's tracking window, so a "sleeping" domain that wakes up is still caught. `bad` (confirmed malicious) is still not enrolled.
+- **Enrollment**: `tracking_enroll.php` allows `excluded` and adds a per-cycle **sweep** that enrolls already-excluded recent domains for tracked keywords (so it does not depend on the domain being a "new" match of the cycle). The worker now calls the enrollment endpoint every cycle (even with no new matches) so the sweep runs. Shared logic in `includes/tracking.php` (`trackingTryEnroll`).
+- **Reactivation**: when a tracked domain activates, an excluded one is switched from `excluded` to **`observing`** with the note "Intelligence: <reason>" (`trackingReactivate`), so it becomes visible again and returns to the next report for review, alongside the **INTELLIGENCE** notification. Domains with another tag (e.g. `good`) are left untouched.
+- API response of `tracking_enroll.php` now includes `swept`.
+
 ## [v1.17.3] - 2026-09-24
 
 ### Added - Intelligence F3: HTTP content signal
