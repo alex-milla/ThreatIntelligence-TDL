@@ -46,12 +46,19 @@
     }
 
     window.fetchVisibleWhois = function () {
-        var domains = selectedDomains();
+        // If rows are explicitly checked, force a refresh of exactly those
+        // domains (re-queue even if already cached). With no explicit selection,
+        // fill in the missing WHOIS for every visible row (no forced refresh).
+        var checked = checkedDomains(false);
+        var explicit = checked.length > 0;
+        var domains = explicit ? checked : selectedDomains();
         if (!domains.length) { alert('No domains to fetch.'); return; }
+        var payload = { domains: domains };
+        if (explicit) { payload.force = true; }
         fetch('/ajax_whois_request.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
-            body: JSON.stringify({ domains: domains })
+            body: JSON.stringify(payload)
         })
             .then(function (r) { return r.json(); })
             .then(function (data) {

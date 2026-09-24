@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.1] - 2026-09-24
+
+### Fixed - "Fetch WHOIS (worker)" now refreshes the selected domains
+
+- The bulk **Fetch WHOIS (worker)** button silently did nothing ("Queued 0 domain(s)") when the domains already had cached WHOIS, because it skipped cached entries and used no `force`. Now, when rows are **explicitly selected**, it forces a refresh of exactly those domains (re-queues even if cached). With no explicit selection it keeps the previous behaviour (fill in the missing WHOIS for the visible rows, no forced refresh).
+- Frontend only (`assets/bulk.js`); no backend or schema changes.
+
 ## [v1.18.0] - 2026-09-24
 
 ### Added - IOCs page: indicator export per keyword
