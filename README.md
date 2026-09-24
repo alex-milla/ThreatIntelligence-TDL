@@ -258,6 +258,17 @@ Attackers often register a domain and leave it dormant until it ages past reputa
 - **Lifecycle**: a domain that activates gets an **INTELLIGENCE** notification (and email if enabled); one that reaches the end of its window without a signal is archived as **dormant**. Nothing is discarded.
 - **UI**: the **Intelligence** page lists tracked domains with status, age, days left, checks and signals, with **Check now** / **Extend** / **Mark dormant** / **Delete** actions.
 
+## IOCs (indicator export)
+
+The **IOCs** page (sidebar, under Intelligence) lists the **malicious/suspicious domains per keyword** and exports them as indicators:
+
+- **Source**: **Live** (current state: analyst tag `bad`, VirusTotal or abuse.ch `malicious`/`suspicious`) or **Generated reports** (the domains that were reported as malicious/suspicious in saved report snapshots).
+- **Filters**: keyword (or all) and severity (`Malicious`, or `Malicious + Suspicious`).
+- **Export**: **plain text** (one domain per line — EDL, or MISP *freetext* import) and **MISP event JSON** (domain attributes with `to_ids`). Both are authenticated downloads; a copy-to-clipboard of the TXT is included.
+- A domain that matches several keywords appears in each keyword's list; the "all keywords" view deduplicates.
+
+> A hosted **feed URL (EDL)** with a read-only token, for automatic consumption by a firewall, is noted as a future enhancement (see the project checkpoint).
+
 ## OpenINTEL ccTLD import (optional, weekly)
 
 CZDS only covers gTLDs. For **country-code TLDs** (`.io`, `.es`, `.fr`, ...) the worker can additionally import the **weekly apex-domain lists** published by [OpenINTEL](https://www.openintel.nl/data/domain-lists/cctld-names/), extracted from Certificate Transparency logs.

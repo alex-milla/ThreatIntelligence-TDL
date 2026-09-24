@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.0] - 2026-09-24
+
+### Added - IOCs page: indicator export per keyword
+
+- **New "IOCs" page** (sidebar, under Intelligence) listing the malicious/suspicious domains per keyword, with filters for **source** and **severity**:
+  - **Live** (default): current state — analyst tag `bad`, VirusTotal or abuse.ch `malicious`/`suspicious`.
+  - **Generated reports**: the domains reported as malicious/suspicious in saved report snapshots (`report_history`), deduplicated across reports.
+  - **Severity**: `Malicious` (default) or `Malicious + Suspicious`.
+- **Exports** (authenticated manual download): **plain text** (one domain per line, for EDL / MISP *freetext* import) and **MISP event JSON** (domain attributes, `category=Network activity`, `to_ids=true`). A **Copy TXT** button is included.
+- **Helpers** in `includes/iocs.php` (`iocLiveRows`, `iocReportRows`, `iocStatusFromRow`, `iocFormatTxt`, `iocFormatMispJson`); sidebar entry and `assets/iocs.js`.
+- No schema changes.
+- Noted as a future enhancement: a hosted **feed URL (EDL) with a read-only token** for automatic firewall consumption.
+
 ## [v1.17.5] - 2026-09-24
 
 ### Changed - Intelligence runs one weekly pass (Sunday night)

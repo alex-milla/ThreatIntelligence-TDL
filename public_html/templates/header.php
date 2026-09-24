@@ -26,6 +26,7 @@ $isNotifications = ($current === 'notifications.php');
 $isWatchlist     = ($current === 'watchlist.php');
 $isReports       = in_array($current, ['reports.php', 'report_view.php'], true);
 $isIntelligence  = ($current === 'intelligence.php');
+$isIocs          = ($current === 'iocs.php');
 $isTlds          = ($current === 'tlds.php');
 $isAdminPanel    = ($isAdminArea && !$isTlds);
 $tldSource       = (string)($_GET['source'] ?? 'czds');
@@ -98,6 +99,9 @@ if (!in_array($tldSource, ['czds', 'openintel'], true)) {
             <div class="sidebar-group-label">Intelligence</div>
             <a href="/intelligence.php" class="sidebar-link<?= $isIntelligence ? ' active' : '' ?>">
                 <i class="material-icons">travel_explore</i>Intelligence
+            </a>
+            <a href="/iocs.php" class="sidebar-link<?= $isIocs ? ' active' : '' ?>">
+                <i class="material-icons">bug_report</i>IOCs
             </a>
             <a href="/reports.php" class="sidebar-link<?= $isReports ? ' active' : '' ?>">
                 <i class="material-icons">assessment</i>Informes
@@ -175,6 +179,7 @@ if (!in_array($tldSource, ['czds', 'openintel'], true)) {
             <li><a href="/keywords.php" class="<?= $isKeywords ? 'active' : '' ?>"><i class="material-icons">search</i>Keywords</a></li>
             <li><a href="/watchlist.php" class="<?= $isWatchlist ? 'active' : '' ?>"><i class="material-icons">visibility</i>Watchlist</a></li>
             <li><a href="/intelligence.php" class="<?= $isIntelligence ? 'active' : '' ?>"><i class="material-icons">travel_explore</i>Intelligence</a></li>
+            <li><a href="/iocs.php" class="<?= $isIocs ? 'active' : '' ?>"><i class="material-icons">bug_report</i>IOCs</a></li>
             <li><a href="/reports.php" class="<?= $isReports ? 'active' : '' ?>"><i class="material-icons">assessment</i>Informes</a></li>
             <?php if ($isAdmin): ?>
                 <li><div class="sidenav-group-label">Administration</div></li>
