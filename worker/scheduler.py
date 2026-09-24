@@ -32,6 +32,7 @@ import matcher
 import sync_client
 import virustotal
 import abusech
+import intel
 import whois
 
 log = logging.getLogger("tdl_worker")
@@ -139,6 +140,12 @@ def init_local_db(db_path: str, cache_mb: int = 2048) -> sqlite3.Connection:
             PRIMARY KEY (domain, source)
         );
         CREATE TABLE IF NOT EXISTS abusech_feed_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+
+        -- Intelligence tracking pass guard (last run timestamp).
+        CREATE TABLE IF NOT EXISTS tracking_meta (
             key TEXT PRIMARY KEY,
             value TEXT
         );
@@ -328,6 +335,168 @@ def auto_abusech_new_matches(cfg: configparser.ConfigParser, db: sqlite3.Connect
     except Exception as e:  # never abort the cycle
         log.warning("abuse.ch feed lookup failed: %s", e)
         return 0
+
+
+def tracking_cycle_due(cfg: configparser.ConfigParser, db: sqlite3.Connection) -> bool:
+    """True when a tracking pass should run (own cadence, independent of TLDs)."""
+    if not cfg.has_section("tracking") or not cfg.getboolean("tracking", "enabled", fallback=True):
+        return False
+    interval = max(1, cfg.getint("tracking", "run_interval_minutes", fallback=60))
+    try:
+        row = db.execute("SELECT value FROM tracking_meta WHERE key = 'last_run'").fetchone()
+    except sqlite3.OperationalError:
+        return True
+    if not row or not row[0]:
+        return True
+    try:
+        last = datetime.strptime(str(row[0]), "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return True
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    return (now - last).total_seconds() >= interval * 60
+
+
+def enroll_tracking_matches(cfg: configparser.ConfigParser, host_url: str, api_key: str,
+                            matches: list[dict]) -> int:
+    """Send recently matched domains to the hosting API for Intelligence tracking.
+
+    The web applies the per-keyword policy (tracking enabled, recent WHOIS age,
+    not flagged). Best effort: never raises. Returns the number of candidates
+    sent.
+    """
+    if not matches:
+        return 0
+    if cfg.has_section("tracking") and not cfg.getboolean("tracking", "enroll_enabled", fallback=True):
+        return 0
+
+    entries = []
+    seen = set()
+    for m in matches:
+        if m.get("is_historical"):
+            continue
+        d = str(m.get("domain", "")).lower().strip()
+        try:
+            kid = int(m.get("keyword_id") or 0)
+        except (TypeError, ValueError):
+            kid = 0
+        if not d or kid <= 0 or (d, kid) in seen:
+            continue
+        seen.add((d, kid))
+        entries.append({"domain": d, "keyword_id": kid, "first_seen": m.get("first_seen")})
+        if len(entries) >= 2000:
+            break
+    if not entries:
+        return 0
+    try:
+        return len(entries) if sync_client.send_tracking_enroll(host_url, api_key, entries) else 0
+    except Exception as e:
+        log.warning("Tracking enrollment failed: %s", e)
+        return 0
+
+
+def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
+                       host_url: str, api_key: str, domains: list | None = None) -> dict:
+    """Validate the due tracked domains and report activation signals.
+
+    F1 signals: reputation (abuse.ch + VirusTotal) and WHOIS/NS changes. Best
+    effort per domain; never raises. Returns stats.
+    """
+    stats = {"due": 0, "checked": 0, "activated": 0, "sent": False}
+    if not cfg.has_section("tracking") or not cfg.getboolean("tracking", "enabled", fallback=True):
+        return stats
+
+    # Stamp the run up front so the cadence guard does not busy-loop.
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        db.execute("INSERT OR REPLACE INTO tracking_meta (key, value) VALUES ('last_run', ?)", (now,))
+        db.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    limit = max(1, cfg.getint("tracking", "batch_max", fallback=200))
+    try:
+        due = sync_client.get_tracking_due(host_url, api_key, limit=limit, domains=domains)
+    except Exception as e:
+        log.warning("Tracking: could not fetch due list: %s", e)
+        return stats
+    if not due:
+        return stats
+    stats["due"] = len(due)
+
+    reputation_on = cfg.getboolean("tracking", "reputation_enabled", fallback=True)
+    whois_on = cfg.getboolean("tracking", "whois_enabled", fallback=True)
+    rate = cfg.getfloat("tracking", "rate_delay_seconds", fallback=1.0)
+    data_dir = cfg.get("worker", "data_dir", fallback="./data")
+
+    abuse_key = ""
+    abuse_timeout = 20
+    if cfg.has_section("abusech"):
+        abuse_key = cfg.get("abusech", "auth_key", fallback="").strip()
+        abuse_timeout = cfg.getint("abusech", "timeout", fallback=20)
+    abuse_on = reputation_on and bool(abuse_key) and not abuse_key.upper().startswith("TU_")
+
+    vt_key = ""
+    if cfg.has_section("virustotal"):
+        vt_key = cfg.get("virustotal", "api_key", fallback="").strip()
+    vt_on = reputation_on and bool(vt_key) and not vt_key.upper().startswith("TU_")
+
+    # Deduplicate by domain (a domain may be tracked under several keywords).
+    unique: dict = {}
+    for e in due:
+        d = str(e.get("domain", "")).lower().strip()
+        if d and d not in unique:
+            unique[d] = e
+
+    results = []
+    for d, e in unique.items():
+        abuse_res = vt_res = whois_now = None
+        if abuse_on:
+            try:
+                abuse_res = abusech.lookup_domain(d, abuse_key, timeout=abuse_timeout)
+            except Exception:
+                abuse_res = None
+        if vt_on:
+            try:
+                vt_res = virustotal.lookup_domain(d, vt_key)
+            except Exception:
+                vt_res = None
+        if whois_on:
+            try:
+                entries = whois_lookup_entries(cfg, data_dir, [d])
+                if entries:
+                    whois_now = entries[0]
+            except Exception:
+                whois_now = None
+
+        # Refresh the local caches so the UI shows the fresh data.
+        try:
+            if abuse_res and abuse_res.get("status") == "ok":
+                sync_client.send_abusech_results(host_url, api_key, [abuse_res])
+            if vt_res and vt_res.get("status") in ("ok", "not_found"):
+                sync_client.send_vt_results(host_url, api_key, [vt_res])
+            if whois_now and whois_now.get("status") == "ok":
+                sync_client.send_whois_results(host_url, api_key, [whois_now])
+        except Exception:
+            pass
+
+        changed, detail = intel.compare_whois(e.get("baseline") or {}, whois_now)
+        ev = intel.evaluate(abuse_res, vt_res, changed, detail)
+        ev["domain"] = d
+        results.append(ev)
+        stats["checked"] += 1
+        if ev["activated"]:
+            stats["activated"] += 1
+        if rate > 0:
+            time.sleep(rate)
+
+    if results:
+        try:
+            stats["sent"] = sync_client.send_tracking_results(host_url, api_key, results)
+        except Exception as e:
+            log.warning("Tracking: could not send results: %s", e)
+    log.info("Intelligence tracking: %s checked, %s activated (sent=%s)",
+             stats["checked"], stats["activated"], stats["sent"])
+    return stats
 
 
 def _timing_add(timing: dict | None, key: str, seconds: float) -> None:
@@ -1070,6 +1239,14 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         log.warning("Auto-abuse.ch validation failed: %s", e)
         stats["abusech_validated"] = 0
 
+    # 6d. Add recently registered clean matches to Intelligence tracking (the
+    # web applies the per-keyword policy).
+    try:
+        stats["tracking_enrolled"] = enroll_tracking_matches(cfg, host_url, api_key, all_matches)
+    except Exception as e:  # never abort the cycle for an enrichment failure
+        log.warning("Tracking enrollment failed: %s", e)
+        stats["tracking_enrolled"] = 0
+
     stats["domains_processed"] = domains_processed
     set_last_run(db)
     # Send final heartbeat clearing progress
@@ -1797,6 +1974,29 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                         if not ok:
                             status = "failed"
 
+            elif command == "tracking_check":
+                opts = {}
+                if payload:
+                    try:
+                        opts = json.loads(payload) if isinstance(payload, str) else {}
+                    except (ValueError, TypeError):
+                        opts = {}
+                domains = opts.get("domains")
+                if not isinstance(domains, list) or not domains:
+                    domains = None
+                domains = [str(d).lower().strip() for d in (domains or []) if str(d).strip()][:200] or None
+                try:
+                    tstats = run_tracking_check(cfg, db, host_url, api_key, domains=domains)
+                    result = json.dumps(tstats)
+                    logs.append({"level": "info", "message":
+                                 f"Intelligence tracking: {tstats['checked']} checked, {tstats['activated']} activated"})
+                    if tstats["checked"] and not tstats["sent"]:
+                        status = "failed"
+                except Exception as e:
+                    result = f"tracking_check failed: {e}"
+                    status = "failed"
+                    logs.append({"level": "error", "message": result})
+
             elif command == "search_domain":
                 opts = {}
                 if payload:
@@ -2126,6 +2326,18 @@ def main() -> int:
                                          f"Scheduled daily cycle done: {worker_stats['tlds_processed']} TLDs, "
                                          f"{worker_stats['matches_found']} matches"})
 
+                    # Intelligence tracking pass (its own cadence, independent
+                    # of the heavy daily TLD cycle).
+                    try:
+                        if tracking_cycle_due(cfg, db):
+                            tstats = run_tracking_check(cfg, db, host_url, api_key)
+                            if tstats["checked"]:
+                                logs.append({"level": "info", "message":
+                                             f"Intelligence tracking: {tstats['checked']} checked, "
+                                             f"{tstats['activated']} activated"})
+                    except Exception as e:
+                        log.error(f"Tracking pass error: {e}")
+
                     heartbeat_payload = {
                         "last_heartbeat": datetime.now(timezone.utc).isoformat(),
                         "is_running": 0,
@@ -2164,6 +2376,13 @@ def main() -> int:
             worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version,
                                             force=args.force, refresh=args.refresh)
             logs.append({"level": "info", "message": f"Worker cycle completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
+
+        # Intelligence tracking pass (own cadence).
+        try:
+            if tracking_cycle_due(cfg, db):
+                run_tracking_check(cfg, db, host_url, api_key)
+        except Exception as e:
+            log.error(f"Tracking pass error: {e}")
 
         heartbeat_payload = {
             "last_run": datetime.now(timezone.utc).isoformat(),

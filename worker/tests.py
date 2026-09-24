@@ -13,6 +13,7 @@ import scheduler
 import openintel
 import virustotal
 import abusech
+import intel
 import whois
 
 
@@ -487,6 +488,24 @@ def test_abusech_feed_lookup() -> None:
     print("[PASS] test_abusech_feed_lookup")
 
 
+def test_intel_signals() -> None:
+    base = {"whois": {"name_servers": '["ns1.park.example","ns2.park.example"]', "registrar": "Park Inc"}}
+    changed, detail = intel.compare_whois(base, {"name_servers": ["ns1.host.example", "ns2.host.example"], "registrar": "Park Inc"})
+    assert changed and "nameservers" in detail, (changed, detail)
+    assert intel.compare_whois(base, {"name_servers": ["ns1.park.example", "ns2.park.example"], "registrar": "Park Inc"})[0] is False
+    assert intel.compare_whois({}, {"name_servers": ["x"]})[0] is False
+    assert intel.compare_whois(base, {"name_servers": ["ns1.park.example", "ns2.park.example"], "registrar": "Other Ltd"})[0] is True
+
+    ev = intel.evaluate({"verdict": "suspicious"}, {"verdict": "clean"}, False)
+    assert ev["activated"] and "abuse.ch" in ev["activated_reason"]
+    ev = intel.evaluate({"verdict": "clean"}, {"verdict": "malicious"}, False)
+    assert ev["activated"] and "VirusTotal" in ev["activated_reason"]
+    ev = intel.evaluate({"verdict": "clean"}, {"verdict": "clean"}, True, "nameservers changed")
+    assert not ev["activated"] and ev["whois_changed"]
+    assert any(s["type"] == "whois_change" for s in ev["signals"])
+    print("[PASS] test_intel_signals")
+
+
 def test_local_db_vt_usage() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
@@ -740,6 +759,7 @@ if __name__ == "__main__":
     test_abusech_classify()
     test_abusech_feed_parse()
     test_abusech_feed_lookup()
+    test_intel_signals()
     test_local_db_vt_usage()
     test_daily_schedule_resolution()
     test_daily_cycle_due()

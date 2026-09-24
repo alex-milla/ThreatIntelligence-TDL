@@ -194,6 +194,55 @@ class Database {
             checked_at TEXT DEFAULT CURRENT_TIMESTAMP
         )");
 
+        // Dormant-domain intelligence tracking. Each (domain, keyword) pair is
+        // followed for the keyword's tracking window; the worker re-validates it
+        // periodically and reports activation signals.
+        $db->exec("CREATE TABLE IF NOT EXISTS domain_tracking (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            domain TEXT NOT NULL,
+            keyword_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            first_seen TEXT,
+            enrolled_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            expires_at TEXT,
+            status TEXT DEFAULT 'tracking',
+            baseline TEXT,
+            check_count INTEGER DEFAULT 0,
+            last_checked_at TEXT,
+            next_check_at TEXT,
+            activated_at TEXT,
+            activated_reason TEXT,
+            UNIQUE(domain, keyword_id)
+        )");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_tracking_due ON domain_tracking(status, next_check_at)");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_tracking_user ON domain_tracking(user_id)");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_tracking_domain ON domain_tracking(domain)");
+
+        $db->exec("CREATE TABLE IF NOT EXISTS domain_tracking_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tracking_id INTEGER NOT NULL,
+            at TEXT DEFAULT CURRENT_TIMESTAMP,
+            type TEXT,
+            detail TEXT
+        )");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_tracking_events ON domain_tracking_events(tracking_id)");
+
+        // Per-keyword tracking configuration (window + cadence). New keywords
+        // default to tracking disabled.
+        foreach ([
+            "ALTER TABLE keywords ADD COLUMN tracking_enabled INTEGER DEFAULT 0",
+            "ALTER TABLE keywords ADD COLUMN tracking_days INTEGER DEFAULT 90",
+            "ALTER TABLE keywords ADD COLUMN tracking_interval_hours INTEGER DEFAULT 24",
+            "ALTER TABLE keywords ADD COLUMN tracking_enroll_max_age_days INTEGER DEFAULT 30",
+            "ALTER TABLE notifications ADD COLUMN kind TEXT DEFAULT 'match'",
+        ] as $alter) {
+            try {
+                $db->exec($alter);
+            } catch (PDOException $e) {
+                // Column already exists.
+            }
+        }
+
         $db->exec("CREATE TABLE IF NOT EXISTS watchlist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,

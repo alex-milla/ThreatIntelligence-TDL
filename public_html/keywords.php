@@ -49,6 +49,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $message = 'Keyword deleted.';
 }
 
+// Update per-keyword Intelligence tracking settings
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_tracking') {
+    validateCsrf();
+    $keywordId = (int)($_POST['keyword_id'] ?? 0);
+    $enabled = isset($_POST['tracking_enabled']) ? 1 : 0;
+    $days = max(1, min(3650, (int)($_POST['tracking_days'] ?? 90)));
+    $interval = max(1, min(8760, (int)($_POST['tracking_interval_hours'] ?? 24)));
+    $maxAge = max(1, min(3650, (int)($_POST['tracking_enroll_max_age_days'] ?? 30)));
+    $stmt = $db->prepare("UPDATE keywords SET tracking_enabled = ?, tracking_days = ?, tracking_interval_hours = ?, tracking_enroll_max_age_days = ? WHERE id = ? AND user_id = ?");
+    $stmt->execute([$enabled, $days, $interval, $maxAge, $keywordId, $userId]);
+    $_SESSION['flash_message'] = 'Tracking settings updated.';
+    header('Location: /keywords.php');
+    exit;
+}
+
 // Admin recheck
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'recheck_keywords') {
     validateCsrf();
@@ -118,6 +133,7 @@ $kwOrderBy = $kwSortCols[$kwSort] . ' ' . strtoupper($kwDir);
 // even with many matches. Semantics are identical to the previous query.
 $newDomainDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
 $stmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.created_at,
+    k.tracking_enabled, k.tracking_days, k.tracking_interval_hours, k.tracking_enroll_max_age_days,
     COUNT(CASE WHEN
         n.id IS NOT NULL
         AND w.user_id IS NULL
@@ -270,6 +286,7 @@ require __DIR__ . '/templates/header.php';
                     <?php endif; ?>
                     <th><?= kwSortLink('keyword', 'Keyword', $kwSort, $kwDir, $kwSortDefaults) ?></th>
                     <th><?= kwSortLink('matches', 'Matches', $kwSort, $kwDir, $kwSortDefaults) ?></th>
+                    <th>Tracking</th>
                     <th><?= kwSortLink('added', 'Added', $kwSort, $kwDir, $kwSortDefaults) ?></th>
                     <th style="width: 100px;">Actions</th>
                 </tr>
@@ -284,6 +301,21 @@ require __DIR__ . '/templates/header.php';
                     <td>
                         <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" title="Review all matched domains"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" class="muted" title="Review all matched domains">(<?= (int)$k['match_count'] ?> total)</a><?php endif; ?>
                         <a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>" class="muted" title="View notifications for this keyword" aria-label="View notifications for this keyword"><i class="material-icons tiny">notifications</i></a>
+                    </td>
+                    <td>
+                        <details class="kw-tracking">
+                            <summary><?= !empty($k['tracking_enabled']) ? 'On &middot; ' . (int)$k['tracking_days'] . 'd / ' . (int)$k['tracking_interval_hours'] . 'h' : 'Off' ?></summary>
+                            <form method="POST" class="kw-tracking-form">
+                                <?php csrfField(); ?>
+                                <input type="hidden" name="action" value="update_tracking">
+                                <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
+                                <label class="check-inline"><input type="checkbox" name="tracking_enabled" value="1" <?= !empty($k['tracking_enabled']) ? 'checked' : '' ?>><span></span>Enabled</label>
+                                <label class="muted">Window (days) <input type="number" name="tracking_days" min="1" max="3650" value="<?= (int)$k['tracking_days'] ?>" class="browser-default compact"></label>
+                                <label class="muted">Every (hours) <input type="number" name="tracking_interval_hours" min="1" max="8760" value="<?= (int)$k['tracking_interval_hours'] ?>" class="browser-default compact"></label>
+                                <label class="muted">Enroll if &le; (days old) <input type="number" name="tracking_enroll_max_age_days" min="1" max="3650" value="<?= (int)$k['tracking_enroll_max_age_days'] ?>" class="browser-default compact"></label>
+                                <button type="submit" class="btn btn-small waves-effect">Save</button>
+                            </form>
+                        </details>
                     </td>
                     <td><?= htmlspecialchars(fmt_date($k['created_at'])) ?></td>
                     <td>

@@ -129,6 +129,24 @@ feed_timeout = 120
 ; URLhaus dump to download: recent.csv (recommended) or another export name.
 feed_urlhaus_dump = recent.csv
 
+[tracking]
+; --- Intelligence: dormant-domain tracking ---
+; Recently registered keyword matches that are still clean are enrolled (per
+; keyword, from the web UI) and re-validated periodically. F1 signals:
+; reputation (abuse.ch + VirusTotal) and WHOIS/NS changes.
+enabled = true
+; Enroll freshly matched domains into tracking (the web applies the per-keyword policy).
+enroll_enabled = true
+; Seconds between tracked-domain checks.
+rate_delay_seconds = 1.0
+; Maximum tracked domains checked per pass.
+batch_max = 200
+; Minimum minutes between tracking passes (independent of the TLD cycle).
+run_interval_minutes = 60
+; Signal toggles.
+reputation_enabled = true
+whois_enabled = true
+
 [openintel]
 ; Weekly ccTLD apex-domain lists from OpenINTEL (see README).
 ; Data license: CC BY-NC-SA 4.0 (non-commercial, attribution required).

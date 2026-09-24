@@ -158,7 +158,7 @@ $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 50;
 $offset = ($page - 1) * $perPage;
 
-$where = "WHERE n.user_id = ? AND NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain)";
+$where = "WHERE n.user_id = ? AND (n.kind = 'intelligence' OR NOT EXISTS (SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain))";
 $params = [$userId, $userId];
 
 // Default view hides historical, good/bad and validated-as-old domains, but
@@ -167,7 +167,7 @@ $params = [$userId, $userId];
 if ($observingOnly) {
     $where .= " AND " . $observingClause;
 } elseif (!$includeArchived) {
-    $where .= " AND NOT (" . $hiddenPredicate . ")";
+    $where .= " AND (n.kind = 'intelligence' OR NOT (" . $hiddenPredicate . "))";
 }
 
 if ($search !== '') {
@@ -210,7 +210,7 @@ $archivedCount = 0;
 if (!$includeArchived && !$observingOnly) {
     $archivedCountStmt = $db->prepare(
         "SELECT COUNT(*) FROM notifications n JOIN matches m ON n.match_id = m.id "
-        . "WHERE n.user_id = ? AND (" . $hiddenPredicate . ")"
+        . "WHERE n.user_id = ? AND n.kind <> 'intelligence' AND (" . $hiddenPredicate . ")"
     );
     $archivedCountStmt->execute([$userId]);
     $archivedCount = (int)$archivedCountStmt->fetchColumn();
@@ -220,7 +220,7 @@ $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
 // Fetch page. The domain_whois join lets "Created" be sorted server-side.
-$sql = "SELECT n.id, n.is_read, n.created_at, m.domain, m.tld, m.discovered_at, m.first_seen, m.is_historical, m.source, k.keyword 
+$sql = "SELECT n.id, n.is_read, n.created_at, n.kind, m.domain, m.tld, m.discovered_at, m.first_seen, m.is_historical, m.source, k.keyword 
     FROM notifications n 
     JOIN matches m ON n.match_id = m.id 
     JOIN keywords k ON m.keyword_id = k.id 
@@ -468,6 +468,9 @@ require __DIR__ . '/templates/header.php';
                         $cls = in_array($tagVal, ['good', 'bad', 'observing'], true) ? $tagVal : 'bad';
                         $tagBadge = ' <span class="tag-chip ' . $cls . '">' . ($tagLabels[$tagVal] ?? strtoupper($tagVal)) . '</span>';
                     }
+                    $intelBadge = (($n['kind'] ?? 'match') === 'intelligence')
+                        ? ' <span class="tag-chip intel" title="Intelligence: tracked domain activation">INTELLIGENCE</span>'
+                        : '';
                     $whoisRow = $domainWhois[$n['domain']] ?? null;
                     $creationDate = $whoisRow['creation_date'] ?? null;
                     $isNew = false;
@@ -524,7 +527,7 @@ require __DIR__ . '/templates/header.php';
                 <tr class="<?= $n['is_read'] ? '' : 'unread' ?>" data-domain="<?= htmlspecialchars($n['domain']) ?>">
                     <td><label><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form"><span></span></label></td>
                     <td><?= $n['is_read'] ? '<span class="status-badge status-cancelled">Read</span>' : '<span class="status-badge status-pending">Unread</span>' ?></td>
-                    <td><a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><?= htmlspecialchars($n['domain']) ?></a><?= $tagBadge ?><?= $queueBadge ?></td>
+                    <td><a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><?= htmlspecialchars($n['domain']) ?></a><?= $intelBadge ?><?= $tagBadge ?><?= $queueBadge ?></td>
                     <td><?= $vtCell ?></td>
                     <td><?= $abuseCell ?></td>
                     <td><?= htmlspecialchars($n['tld']) ?></td>

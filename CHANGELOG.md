@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.17.1] - 2026-09-24
+
+### Added - Intelligence: dormant-domain tracking (F1)
+
+- **Track the clean domains of the day instead of discarding them.** Recently registered keyword matches that come out clean are enrolled in a tracking list and re-validated for a configurable window, so a domain that "wakes up" after aging past reputation blocks is detected.
+- **Per-keyword config** (`Keywords`): `tracking_enabled`, `tracking_days` (window), `tracking_interval_hours` (cadence) and `tracking_enroll_max_age_days` (only enroll domains younger than this). New web tables `domain_tracking` + `domain_tracking_events` and a `notifications.kind` column.
+- **Worker** (`[tracking]`): after a TLD cycle the new matches are proposed for enrollment (`tracking_enroll`); a pass with its own cadence (`run_interval_minutes`) fetches the due list (`tracking_due.php`), checks the **F1 signals** — reputation (`abusech.lookup_domain` + `virustotal.lookup_domain`) and WHOIS/NS changes (new `worker/intel.py`) — refreshes the local caches, and posts the results. A `tracking_check` command supports manual "Check now". New worker table `tracking_meta`.
+- **Activation**: an abuse.ch/VirusTotal verdict of `malicious`/`suspicious` marks the domain `activated` and raises an **INTELLIGENCE** notification (plus email if enabled); WHOIS/NS changes are recorded as informational. Reaching the end of the window without a signal marks it `dormant`.
+- **Web**: new **Intelligence** page (sidebar, under Monitoring) with status/age/days-left/signals and actions (Check now, Extend, Mark dormant, Delete); `ajax_tracking.php`; APIs `tracking_enroll.php`, `tracking_due.php`, `tracking_results.php`; `includes/tracking.php`.
+- **Tests**: `test_intel_signals` (WHOIS/NS comparison and reputation activation).
+- Later releases will add DNS, TLS certificate (crt.sh) and HTTP-content signals.
+
 ## [v1.17.0] - 2026-09-24
 
 ### Added - abuse.ch bulk feed (local URLhaus + ThreatFox blacklist)

@@ -138,6 +138,51 @@ def send_abusech_results(host_url: str, api_key: str, entries: list[dict]) -> bo
     return False
 
 
+def get_tracking_due(host_url: str, api_key: str, limit: int = 200,
+                     domains: list | None = None) -> list[dict]:
+    """Fetch due Intelligence tracking entries from the hosting API.
+
+    When ``domains`` is given, those domains are returned regardless of their
+    next_check_at (used by the manual "Check now" action).
+    """
+    url = f"{host_url}/api/v1/tracking_due.php?limit={int(limit)}"
+    if domains:
+        url += "&domains=" + requests.utils.quote(",".join(domains), safe=",")
+    headers = {"X-API-Key": api_key}
+    r = requests.get(url, headers=headers, timeout=30)
+    r.raise_for_status()
+    data = r.json()
+    if data.get("success"):
+        return data.get("entries", [])
+    return []
+
+
+def send_tracking_enroll(host_url: str, api_key: str, entries: list[dict]) -> bool:
+    """Send candidate domains to enroll in Intelligence tracking."""
+    if not entries:
+        return True
+    url = f"{host_url}/api/v1/tracking_enroll.php"
+    headers = {"X-API-Key": api_key, "Content-Type": "application/json"}
+    r = requests.post(url, headers=headers, json={"entries": entries}, timeout=60)
+    if r.status_code == 200:
+        return True
+    print(f"[-] Failed to send tracking enrollment: HTTP {r.status_code} - {r.text}")
+    return False
+
+
+def send_tracking_results(host_url: str, api_key: str, entries: list[dict]) -> bool:
+    """Send Intelligence tracking check results to the hosting API."""
+    if not entries:
+        return True
+    url = f"{host_url}/api/v1/tracking_results.php"
+    headers = {"X-API-Key": api_key, "Content-Type": "application/json"}
+    r = requests.post(url, headers=headers, json={"entries": entries}, timeout=60)
+    if r.status_code == 200:
+        return True
+    print(f"[-] Failed to send tracking results: HTTP {r.status_code} - {r.text}")
+    return False
+
+
 def get_running_commands(host_url: str, api_key: str) -> list[dict]:
     """Return commands left in 'running' state (e.g. after a worker restart)."""
     url = f"{host_url}/api/v1/commands.php?recover=1"
