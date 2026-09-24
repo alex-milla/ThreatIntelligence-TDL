@@ -16,7 +16,7 @@ if (!$domain || strlen($domain) > 253 || !preg_match('/^[a-z0-9\p{L}\-\.]+$/u', 
 
 $db = Database::get();
 $stmt = $db->prepare(
-    "SELECT domain, verdict, urlhaus_verdict, urlhaus_url_count, urlhaus_online, urlhaus_dbl, "
+    "SELECT domain, verdict, status, error, urlhaus_verdict, urlhaus_url_count, urlhaus_online, urlhaus_dbl, "
     . "threatfox_verdict, threatfox_matches, threat_type, malware_family, confidence, tags, "
     . "last_analysis_date, checked_at FROM domain_abusech WHERE domain = ? LIMIT 1"
 );
@@ -33,6 +33,8 @@ echo json_encode([
     'abusech' => [
         'domain' => $row['domain'],
         'verdict' => $row['verdict'],
+        'status' => $row['status'],
+        'error' => $row['error'],
         'urlhaus_verdict' => $row['urlhaus_verdict'],
         'urlhaus_url_count' => (int)$row['urlhaus_url_count'],
         'urlhaus_online' => (int)$row['urlhaus_online'],

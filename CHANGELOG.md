@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.6] - 2026-09-25
+
+### Fixed - abuse.ch errors no longer look like "Not found"
+
+- **A failed abuse.ch query is now recorded as an error, not as a clean result.** Previously an invalid/rotated Auth-Key (URLhaus returns `403` with `query_status: unknown_auth_key`) was treated like a quota hit and the batch stopped **silently**, leaving the old cached verdict in place (so the UI kept showing "Not found" for a domain that was never actually checked). Now:
+  - **Worker** (`worker/abusech.py`): a new `AuthError` distinguishes a bad/unknown key from a quota/rate limit; unexpected `query_status` values are **not** classified as `clean`; `error_result()` records the failure. The `abusech_lookup` handler reports an authentication failure clearly (log + command `failed`) and stores an error entry for the domain so the UI reflects it.
+  - **Web**: `domain_abusech` gains `status`/`error`; the API stores them; the domain detail and the lists show **"Error"** and an **AC ERROR** badge (with the reason) instead of a misleading "Not found". `reportAvailability` also reports the abuse.ch error state.
+- **Tests**: `test_abusech_errors` (auth vs quota detection, `error_result`).
+
 ## [v1.18.5] - 2026-09-24
 
 ### Changed - A keyword now covers both substring and glob matching

@@ -188,6 +188,8 @@ class Database {
         $db->exec("CREATE TABLE IF NOT EXISTS domain_abusech (
             domain TEXT PRIMARY KEY,
             verdict TEXT,
+            status TEXT,
+            error TEXT,
             urlhaus_verdict TEXT,
             urlhaus_url_count INTEGER DEFAULT 0,
             urlhaus_online INTEGER DEFAULT 0,
@@ -243,6 +245,8 @@ class Database {
             "ALTER TABLE keywords ADD COLUMN tracking_interval_hours INTEGER DEFAULT 168",
             "ALTER TABLE keywords ADD COLUMN tracking_enroll_max_age_days INTEGER DEFAULT 30",
             "ALTER TABLE keywords ADD COLUMN match_type TEXT DEFAULT 'literal'",
+            "ALTER TABLE domain_abusech ADD COLUMN status TEXT",
+            "ALTER TABLE domain_abusech ADD COLUMN error TEXT",
             "ALTER TABLE notifications ADD COLUMN kind TEXT DEFAULT 'match'",
         ] as $alter) {
             try {

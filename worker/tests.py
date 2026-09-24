@@ -429,6 +429,18 @@ def test_abusech_classify() -> None:
     print("[PASS] test_abusech_classify")
 
 
+def test_abusech_errors() -> None:
+    assert abusech.is_auth_failure(401, "") is True
+    assert abusech.is_auth_failure(403, '{"query_status": "unknown_auth_key"}') is True
+    assert abusech.is_auth_failure(403, '{"query_status": "no_results"}') is False
+    assert abusech.is_auth_failure(429, "quota") is False
+    r = abusech.error_result("x.example", "urlhaus HTTP 403 authentication failed")
+    assert r["status"] == "error" and r["domain"] == "x.example" and "auth" in r["error"]
+    # Unexpected query_status is no longer treated as clean (pure classify stays
+    # the same, but lookup_domain guards it; here we only assert the helpers).
+    print("[PASS] test_abusech_errors")
+
+
 def test_abusech_feed_parse() -> None:
     uh_csv = (
         "################################################################\n"
@@ -864,6 +876,7 @@ if __name__ == "__main__":
     test_search_cached_domains_with_cctld()
     test_virustotal_classify()
     test_abusech_classify()
+    test_abusech_errors()
     test_abusech_feed_parse()
     test_abusech_feed_lookup()
     test_intel_signals()

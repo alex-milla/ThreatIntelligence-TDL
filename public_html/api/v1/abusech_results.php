@@ -33,10 +33,10 @@ $allowedVerdicts = ['malicious', 'suspicious', 'clean', ''];
 
 $stmt = $db->prepare(
     "INSERT OR REPLACE INTO domain_abusech "
-    . "(domain, verdict, urlhaus_verdict, urlhaus_url_count, urlhaus_online, urlhaus_dbl, "
+    . "(domain, verdict, status, error, urlhaus_verdict, urlhaus_url_count, urlhaus_online, urlhaus_dbl, "
     . "threatfox_verdict, threatfox_matches, threat_type, malware_family, confidence, tags, "
     . "last_analysis_date, checked_at) "
-    . "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
+    . "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"
 );
 
 $stored = 0;
@@ -50,16 +50,27 @@ try {
         if ($domain === '' || strlen($domain) > 253 || !preg_match('/^[a-z0-9\p{L}\-\.]+$/u', $domain)) {
             continue;
         }
+        $status = strtolower((string)($entry['status'] ?? ''));
+        if (!in_array($status, ['ok', 'not_found', 'error'], true)) {
+            $status = '';
+        }
         $verdict = strtolower((string)($entry['verdict'] ?? ''));
         if (!in_array($verdict, $allowedVerdicts, true)) {
             $verdict = '';
         }
+        // A failed lookup carries no verdict, so the UI shows the error instead.
+        if ($status === 'error') {
+            $verdict = '';
+        }
+        $error = substr((string)($entry['error'] ?? ''), 0, 255);
         $lastDate = isset($entry['last_analysis_date']) && $entry['last_analysis_date'] !== null
             ? substr((string)$entry['last_analysis_date'], 0, 40) : null;
 
         $stmt->execute([
             $domain,
             $verdict,
+            $status,
+            $error,
             (string)($entry['urlhaus_verdict'] ?? ''),
             (int)($entry['urlhaus_url_count'] ?? 0),
             (int)($entry['urlhaus_online'] ?? 0),

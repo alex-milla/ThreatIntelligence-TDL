@@ -2076,11 +2076,18 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                         batch = domains[:remaining]
                         entries = []
                         quota_hit = False
+                        auth_error = None
                         for d in batch:
                             try:
                                 entries.append(abusech.lookup_domain(
                                     d, abuse_key, timeout=abuse_timeout,
                                     urlhaus_enabled=abuse_urlhaus, threatfox_enabled=abuse_tf))
+                            except abusech.AuthError as e:
+                                # Bad/unknown key: record an error entry for this domain so
+                                # the UI shows the failure instead of a stale verdict.
+                                auth_error = str(e)[:200]
+                                entries.append(abusech.error_result(d, auth_error))
+                                break
                             except abusech.QuotaError:
                                 quota_hit = True
                                 break
@@ -2092,13 +2099,19 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                         ok = sync_client.send_abusech_results(host_url, api_key, entries)
                         result = json.dumps({
                             "requested": len(domains), "looked_up": len(entries), "sent": ok,
-                            "quota_hit": quota_hit, "remaining_today": max(0, abuse_daily - (used + len(entries))),
+                            "quota_hit": quota_hit, "auth_error": auth_error,
+                            "remaining_today": max(0, abuse_daily - (used + len(entries))),
                         })
-                        logs.append({"level": "info", "message":
-                                     f"abuse.ch lookup: {len(entries)} domain(s), sent={ok}"
-                                     + (" [quota reached]" if quota_hit else "")})
-                        if not ok:
+                        if auth_error:
                             status = "failed"
+                            logs.append({"level": "error", "message":
+                                         f"abuse.ch authentication failed: {auth_error}. Check [abusech] auth_key."})
+                        else:
+                            logs.append({"level": "info", "message":
+                                         f"abuse.ch lookup: {len(entries)} domain(s), sent={ok}"
+                                         + (" [quota reached]" if quota_hit else "")})
+                            if not ok:
+                                status = "failed"
 
             elif command == "tracking_check":
                 opts = {}

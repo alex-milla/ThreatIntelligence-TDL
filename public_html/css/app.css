@@ -1124,6 +1124,7 @@ tr.unread {
 .vt-dga        { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
 .vt-clean      { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
 .vt-unknown    { background: var(--neutral-bg); color: var(--neutral); border-color: var(--neutral-border); }
+.vt-error      { background: var(--info-bg);    color: var(--info);    border-color: var(--info-border); }
 
 /* ------------------------------------------------------------
    Tables

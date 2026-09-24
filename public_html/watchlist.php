@@ -137,7 +137,7 @@ $domainAbusech = [];
 if (!empty($items)) {
     $domains = array_column($items, 'domain');
     $placeholders = implode(',', array_fill(0, count($domains), '?'));
-    $abStmt = $db->prepare("SELECT domain, verdict, urlhaus_verdict, urlhaus_url_count, urlhaus_online,
+    $abStmt = $db->prepare("SELECT domain, verdict, status, error, urlhaus_verdict, urlhaus_url_count, urlhaus_online,
             urlhaus_dbl, threatfox_verdict, threatfox_matches, threat_type, malware_family,
             confidence, tags, last_analysis_date, checked_at
         FROM domain_abusech WHERE domain IN ($placeholders)");

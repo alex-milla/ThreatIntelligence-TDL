@@ -54,9 +54,50 @@ DBL_SUSPICIOUS = {
 
 THREATFOX_MALICIOUS_TYPES = {"botnet_cc", "payload_delivery", "cc_skimming"}
 
+# `query_status` values that mean "the query worked, no record".
+URLHAUS_OK_STATUS = {"ok", "no_results", "invalid_host", "http_post_expected", ""}
+THREATFOX_OK_STATUS = {"ok", "no_result", "no_results", "illegal_search_term", ""}
+
 
 class QuotaError(Exception):
-    """Raised on 401/403/429 so the caller can stop the batch (quota/key issue)."""
+    """Raised on a quota/rate limit so the caller can stop the batch."""
+
+
+class AuthError(Exception):
+    """Raised when the abuse.ch Auth-Key is missing/invalid/unknown."""
+
+
+_AUTH_HINTS = ("unknown_auth_key", "unauthorized", "invalid auth", "invalid api",
+               "missing auth", "auth key")
+
+
+def is_auth_failure(status_code: int, body: str) -> bool:
+    """Whether an HTTP error response is an authentication problem."""
+    if status_code == 401:
+        return True
+    text = str(body or "").lower()
+    return any(h in text for h in _AUTH_HINTS)
+
+
+def _raise_http_error(r, service: str) -> None:
+    """Turn a 401/403/429 response into AuthError or QuotaError."""
+    if r.status_code == 429:
+        raise QuotaError(f"{service} HTTP 429")
+    try:
+        body = r.text or ""
+    except Exception:
+        body = ""
+    if is_auth_failure(r.status_code, body):
+        raise AuthError(f"{service} authentication failed (HTTP {r.status_code})")
+    raise QuotaError(f"{service} HTTP {r.status_code}")
+
+
+def error_result(domain: str, error: str) -> dict:
+    """A result dict flagged as an error (so the UI shows it, not a stale verdict)."""
+    out = _empty_result(domain)
+    out["error"] = str(error or "error")[:200]
+    return out
+
 
 
 def _int(value) -> int:
@@ -257,7 +298,7 @@ def lookup_domain(domain: str, api_key: str, timeout: int = 20,
             result["error"] = ("urlhaus: " + str(e))[:200]
             return result
         if r.status_code in (401, 403, 429):
-            raise QuotaError(f"urlhaus HTTP {r.status_code}")
+            _raise_http_error(r, "urlhaus")
         if r.status_code != 200:
             result["error"] = f"urlhaus HTTP {r.status_code}"
             return result
@@ -268,6 +309,11 @@ def lookup_domain(domain: str, api_key: str, timeout: int = 20,
             return result
         if not isinstance(u_data, dict):
             result["error"] = "urlhaus unexpected response"
+            return result
+        u_status = str(u_data.get("query_status") or "").strip().lower()
+        if u_status not in URLHAUS_OK_STATUS:
+            # Never treat an unexpected status (bad key, etc.) as "clean".
+            result["error"] = f"urlhaus query_status={u_status or 'unknown'}"
             return result
     else:
         u_data = {"query_status": "no_results"}
@@ -283,7 +329,7 @@ def lookup_domain(domain: str, api_key: str, timeout: int = 20,
             result["error"] = ("threatfox: " + str(e))[:200]
             return result
         if r.status_code in (401, 403, 429):
-            raise QuotaError(f"threatfox HTTP {r.status_code}")
+            _raise_http_error(r, "threatfox")
         if r.status_code != 200:
             result["error"] = f"threatfox HTTP {r.status_code}"
             return result
@@ -294,6 +340,10 @@ def lookup_domain(domain: str, api_key: str, timeout: int = 20,
             return result
         if not isinstance(t_data, dict):
             result["error"] = "threatfox unexpected response"
+            return result
+        t_status = str(t_data.get("query_status") or "").strip().lower()
+        if t_status not in THREATFOX_OK_STATUS:
+            result["error"] = f"threatfox query_status={t_status or 'unknown'}"
             return result
     else:
         t_data = {"query_status": "no_results"}

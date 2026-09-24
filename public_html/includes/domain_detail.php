@@ -38,7 +38,7 @@ function domainDetailPresent(PDO $db, int $userId, string $domain): ?array {
     $vStmt->execute([$domain]);
     $vtRow = $vStmt->fetch() ?: null;
 
-    $aStmt = $db->prepare("SELECT domain, verdict, urlhaus_verdict, urlhaus_url_count, urlhaus_online,
+    $aStmt = $db->prepare("SELECT domain, verdict, status, error, urlhaus_verdict, urlhaus_url_count, urlhaus_online,
             urlhaus_dbl, threatfox_verdict, threatfox_matches, threat_type, malware_family,
             confidence, tags, last_analysis_date, checked_at
         FROM domain_abusech WHERE domain = ? LIMIT 1");
@@ -106,6 +106,8 @@ function domainDetailPresent(PDO $db, int $userId, string $domain): ?array {
         'last_analysis_date' => $vtRow['last_analysis_date'] ?? null,
         'vt_checked_at'      => $vtRow['checked_at'] ?? null,
         'abusech_verdict'    => $abuseRow['verdict'] ?? null,
+        'abusech_status'     => $abuseRow['status'] ?? null,
+        'abusech_error'      => $abuseRow['error'] ?? null,
         'abusech_urlhaus_verdict' => $abuseRow['urlhaus_verdict'] ?? null,
         'abusech_urlhaus_url_count' => $abuseRow['urlhaus_url_count'] ?? null,
         'abusech_urlhaus_online' => $abuseRow['urlhaus_online'] ?? null,

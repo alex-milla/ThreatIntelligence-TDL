@@ -163,7 +163,12 @@ function reportReputation(array $row): array {
  * confirmed IOCs, so any match is malicious.
  */
 function reportAbusech(array $row): array {
-    if (($row['abusech_verdict'] ?? null) === null) {
+    $status = strtolower((string)($row['abusech_status'] ?? ''));
+    $error  = trim((string)($row['abusech_error'] ?? ''));
+    if ($status === 'error' || $error !== '') {
+        return ['state' => 'error', 'label' => 'Error', 'detail' => $error !== '' ? $error : 'query failed'];
+    }
+    if (($row['abusech_verdict'] ?? null) === null || (string)$row['abusech_verdict'] === '') {
         return ['state' => 'not_checked', 'label' => 'Not checked', 'detail' => ''];
     }
     $verdict = (string)$row['abusech_verdict'];
@@ -201,6 +206,8 @@ function reportAbusech(array $row): array {
 function abusechPresentKeys(?array $row): array {
     return [
         'abusech_verdict'            => $row['verdict'] ?? null,
+        'abusech_status'             => $row['status'] ?? null,
+        'abusech_error'              => $row['error'] ?? null,
         'abusech_urlhaus_verdict'    => $row['urlhaus_verdict'] ?? null,
         'abusech_urlhaus_url_count'  => $row['urlhaus_url_count'] ?? null,
         'abusech_urlhaus_online'     => $row['urlhaus_online'] ?? null,
@@ -220,6 +227,10 @@ function abusechPresentKeys(?array $row): array {
 function abusechBadge(?array $row): string {
     if (!$row) {
         return '<span class="muted">&mdash;</span>';
+    }
+    if (strtolower((string)($row['status'] ?? '')) === 'error') {
+        $err = trim((string)($row['error'] ?? ''));
+        return '<span class="vt-badge vt-error" title="' . htmlspecialchars($err !== '' ? $err : 'abuse.ch query failed') . '">AC ERROR</span>';
     }
     $v = (string)($row['verdict'] ?? '');
     $labels = ['malicious' => 'MALICIOUS', 'suspicious' => 'SUSPICIOUS', 'clean' => 'NOT FOUND'];
@@ -256,9 +267,14 @@ function reportAvailability(array $row): array {
     $vt = ($row['verdict'] ?? null) === null
         ? ['state' => 'not_checked', 'label' => 'Not checked']
         : ['state' => 'ok', 'label' => 'Checked'];
-    $abusech = ($row['abusech_verdict'] ?? null) === null
-        ? ['state' => 'not_checked', 'label' => 'Not checked']
-        : ['state' => 'ok', 'label' => 'Checked'];
+    $abusechStatus = strtolower((string)($row['abusech_status'] ?? ''));
+    if ($abusechStatus === 'error') {
+        $abusech = ['state' => 'error', 'label' => 'Error'];
+    } elseif (($row['abusech_verdict'] ?? null) === null || (string)$row['abusech_verdict'] === '') {
+        $abusech = ['state' => 'not_checked', 'label' => 'Not checked'];
+    } else {
+        $abusech = ['state' => 'ok', 'label' => 'Checked'];
+    }
     return ['whois' => $whois, 'vt' => $vt, 'abusech' => $abusech];
 }
 
