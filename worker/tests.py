@@ -12,6 +12,7 @@ import matcher
 import scheduler
 import openintel
 import virustotal
+import abusech
 import whois
 
 
@@ -377,6 +378,53 @@ def test_virustotal_classify() -> None:
     print("[PASS] test_virustotal_classify")
 
 
+def test_abusech_classify() -> None:
+    uh = {
+        "query_status": "ok",
+        "url_count": "3",
+        "firstseen": "2026-09-01 10:00:00 UTC",
+        "blacklists": {"spamhaus_dbl": "phishing_domain", "surbl": "listed"},
+        "urls": [
+            {"url_status": "online", "tags": ["emotet", "exe"]},
+            {"url_status": "offline", "tags": ["emotet"]},
+        ],
+    }
+    tf_hit = {
+        "query_status": "ok",
+        "data": [{"threat_type": "botnet_cc", "ioc_type": "domain",
+                  "malware_printable": "Dridex", "confidence_level": 75,
+                  "first_seen": "2026-09-02 00:00:00 UTC", "last_seen": None,
+                  "tags": ["exe"]}],
+    }
+    got = abusech.classify(uh, tf_hit)
+    assert got["verdict"] == "malicious", got
+    assert got["urlhaus_verdict"] == "malicious"
+    assert got["urlhaus_online"] == 1
+    assert got["urlhaus_dbl"] == "phishing_domain"
+    assert got["threatfox_verdict"] == "malicious"
+    assert got["threatfox_matches"] == 1
+    assert got["malware_family"] == "Dridex"
+    assert got["threat_type"] == "botnet_cc"
+    assert "emotet" in got["tags"] and "exe" in got["tags"]
+    assert got["last_analysis_date"] == "2026-09-02 00:00:00 UTC"
+
+    # URLhaus offline + spammer DBL, no ThreatFox -> suspicious.
+    uh2 = {"query_status": "ok", "url_count": "2",
+           "blacklists": {"spamhaus_dbl": "spammer_domain"}, "urls": []}
+    assert abusech.classify(uh2, {"query_status": "no_results"})["verdict"] == "suspicious"
+
+    # URLhaus found but offline / not listed -> suspicious (it tracks malware URLs).
+    uh3 = {"query_status": "ok", "url_count": "1",
+           "blacklists": {"spamhaus_dbl": "not listed"},
+           "urls": [{"url_status": "offline", "tags": []}]}
+    assert abusech.classify(uh3, {"query_status": "no_results"})["verdict"] == "suspicious"
+
+    # Not found anywhere -> clean.
+    assert abusech.classify({"query_status": "no_results"}, {"query_status": "no_results"})["verdict"] == "clean"
+    assert abusech.classify({}, {})["verdict"] == "clean"
+    print("[PASS] test_abusech_classify")
+
+
 def test_local_db_vt_usage() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
@@ -627,6 +675,7 @@ if __name__ == "__main__":
     test_openintel_csv_gz_read()
     test_search_cached_domains_with_cctld()
     test_virustotal_classify()
+    test_abusech_classify()
     test_local_db_vt_usage()
     test_daily_schedule_resolution()
     test_daily_cycle_due()

@@ -51,11 +51,12 @@ function reportAgeLabel(?int $days): string {
 function reportDomainStatus(array $row, array $rules): string {
     $verdict = (string)($row['verdict'] ?? '');
     $tag = (string)($row['tag'] ?? '');
+    $abuseVerdict = (string)($row['abusech_verdict'] ?? '');
 
-    if ($tag === 'bad' || $verdict === 'malicious') {
+    if ($tag === 'bad' || $verdict === 'malicious' || $abuseVerdict === 'malicious') {
         return 'malicious';
     }
-    if ($verdict === 'suspicious' || $verdict === 'dga') {
+    if ($verdict === 'suspicious' || $verdict === 'dga' || $abuseVerdict === 'suspicious') {
         return 'suspicious';
     }
     if ($tag === 'good') {
@@ -122,6 +123,12 @@ function reportFindings(array $row, string $keyword, ?int $ageDays): array {
     if (!empty($row['in_watchlist'])) {
         $out[] = ['type' => 'watchlist', 'label' => 'In watchlist', 'value' => '', 'severity' => 'info'];
     }
+    $abuse = reportAbusech($row);
+    if (in_array($abuse['state'], ['malicious', 'suspicious'], true)) {
+        $out[] = ['type' => 'abusech', 'label' => 'Abuse.ch',
+                  'value' => $abuse['label'] . ($abuse['detail'] !== '' ? ' (' . $abuse['detail'] . ')' : ''),
+                  'severity' => 'warning'];
+    }
     return $out;
 }
 
@@ -148,7 +155,92 @@ function reportReputation(array $row): array {
 }
 
 /**
- * Data availability per source (WHOIS + VirusTotal).
+ * abuse.ch validation from the cached URLhaus + ThreatFox data.
+ *
+ * URLhaus confirms the host is used for malware distribution (Spamhaus DBL
+ * phishing/botnet/abused classifications and currently-serving payloads are
+ * malicious; offline/other listings are suspicious). ThreatFox only accepts
+ * confirmed IOCs, so any match is malicious.
+ */
+function reportAbusech(array $row): array {
+    if (($row['abusech_verdict'] ?? null) === null) {
+        return ['state' => 'not_checked', 'label' => 'Not checked', 'detail' => ''];
+    }
+    $verdict = (string)$row['abusech_verdict'];
+
+    $bits = [];
+    $urlhausV = (string)($row['abusech_urlhaus_verdict'] ?? '');
+    $urlCount = (int)($row['abusech_urlhaus_url_count'] ?? 0);
+    if ($urlhausV === 'malicious') {
+        $bits[] = 'URLhaus: ' . $urlCount . ' malware URL' . ($urlCount === 1 ? '' : 's');
+    } elseif ($urlhausV === 'suspicious') {
+        $dbl = trim((string)($row['abusech_urlhaus_dbl'] ?? ''));
+        $bits[] = 'URLhaus' . ($dbl !== '' && $dbl !== 'not listed' ? ': ' . $dbl : ($urlCount > 0 ? ': ' . $urlCount . ' URL(s)' : ''));
+    }
+    $tfV = (string)($row['abusech_threatfox_verdict'] ?? '');
+    if ($tfV === 'malicious') {
+        $fam = trim((string)($row['abusech_malware_family'] ?? ''));
+        $tt = trim((string)($row['abusech_threat_type'] ?? ''));
+        $bits[] = 'ThreatFox' . ($fam !== '' ? ': ' . $fam : ($tt !== '' ? ': ' . $tt : ''));
+    }
+    $detail = implode(' · ', array_filter($bits));
+
+    $labels = ['malicious' => 'Malicious', 'suspicious' => 'Suspicious', 'clean' => 'Not found'];
+    return [
+        'state'  => ($verdict === 'clean') ? 'clean' : $verdict,
+        'label'  => $labels[$verdict] ?? ucfirst($verdict),
+        'detail' => $detail,
+    ];
+}
+
+/**
+ * Map a `domain_abusech` row to the abusech_* keys used by the presentation
+ * helpers (reportAbusech / renderDomainDetail). Missing rows yield nulls, which
+ * reportAbusech renders as "Not checked".
+ */
+function abusechPresentKeys(?array $row): array {
+    return [
+        'abusech_verdict'            => $row['verdict'] ?? null,
+        'abusech_urlhaus_verdict'    => $row['urlhaus_verdict'] ?? null,
+        'abusech_urlhaus_url_count'  => $row['urlhaus_url_count'] ?? null,
+        'abusech_urlhaus_online'     => $row['urlhaus_online'] ?? null,
+        'abusech_urlhaus_dbl'        => $row['urlhaus_dbl'] ?? null,
+        'abusech_threatfox_verdict'  => $row['threatfox_verdict'] ?? null,
+        'abusech_threatfox_matches'  => $row['threatfox_matches'] ?? null,
+        'abusech_threat_type'        => $row['threat_type'] ?? null,
+        'abusech_malware_family'     => $row['malware_family'] ?? null,
+        'abusech_confidence'         => $row['confidence'] ?? null,
+        'abusech_tags'               => $row['tags'] ?? null,
+        'abusech_last_analysis_date' => $row['last_analysis_date'] ?? null,
+        'abusech_checked_at'         => $row['checked_at'] ?? null,
+    ];
+}
+
+/** Compact badge cell for the abuse.ch column of the match/notification lists. */
+function abusechBadge(?array $row): string {
+    if (!$row) {
+        return '<span class="muted">&mdash;</span>';
+    }
+    $v = (string)($row['verdict'] ?? '');
+    $labels = ['malicious' => 'MALICIOUS', 'suspicious' => 'SUSPICIOUS', 'clean' => 'NOT FOUND'];
+    if (!isset($labels[$v])) {
+        return '<span class="muted">&mdash;</span>';
+    }
+    $title = [];
+    if ((string)($row['urlhaus_verdict'] ?? '') === 'malicious') {
+        $title[] = 'URLhaus: ' . (int)($row['urlhaus_url_count'] ?? 0) . ' malware URL(s)';
+    } elseif ((string)($row['urlhaus_verdict'] ?? '') === 'suspicious') {
+        $title[] = 'URLhaus: ' . ((string)($row['urlhaus_dbl'] ?? '') !== '' ? $row['urlhaus_dbl'] : 'listed');
+    }
+    if ((string)($row['threatfox_verdict'] ?? '') === 'malicious') {
+        $fam = trim((string)($row['malware_family'] ?? ''));
+        $title[] = 'ThreatFox: ' . ($fam !== '' ? $fam : 'confirmed IOC');
+    }
+    return '<span class="vt-badge vt-' . htmlspecialchars($v) . '" title="' . htmlspecialchars(implode(' · ', $title)) . '">AC ' . $labels[$v] . '</span>';
+}
+
+/**
+ * Data availability per source (WHOIS + VirusTotal + abuse.ch).
  */
 function reportAvailability(array $row): array {
     $ws = (string)($row['whois_status'] ?? '');
@@ -164,7 +256,10 @@ function reportAvailability(array $row): array {
     $vt = ($row['verdict'] ?? null) === null
         ? ['state' => 'not_checked', 'label' => 'Not checked']
         : ['state' => 'ok', 'label' => 'Checked'];
-    return ['whois' => $whois, 'vt' => $vt];
+    $abusech = ($row['abusech_verdict'] ?? null) === null
+        ? ['state' => 'not_checked', 'label' => 'Not checked']
+        : ['state' => 'ok', 'label' => 'Checked'];
+    return ['whois' => $whois, 'vt' => $vt, 'abusech' => $abusech];
 }
 
 /**
@@ -233,11 +328,18 @@ function reportRiskAssessment(array $row, string $status, array $avail): array {
         }
     }
 
+    // abuse.ch: URLhaus malware host / ThreatFox confirmed IOC.
+    $abuse = reportAbusech($row);
+    if (in_array($abuse['state'], ['malicious', 'suspicious'], true)) {
+        $reasons[] = 'Abuse.ch: ' . ($abuse['detail'] !== '' ? $abuse['detail'] : $abuse['label']);
+    }
+
     $whoisOk = (($avail['whois']['state'] ?? '') === 'ok');
     $vtChecked = (($avail['vt']['state'] ?? '') === 'ok');
-    if ($whoisOk && $vtChecked) {
+    $abuseChecked = (($avail['abusech']['state'] ?? '') === 'ok');
+    if ($whoisOk && $vtChecked && $abuseChecked) {
         $confidence = 'high';
-    } elseif ($whoisOk || $vtChecked) {
+    } elseif ($whoisOk || $vtChecked || $abuseChecked) {
         $confidence = 'medium';
     } else {
         $confidence = 'low';
@@ -247,6 +349,9 @@ function reportRiskAssessment(array $row, string $status, array $avail): array {
     }
     if (!$vtChecked) {
         $reasons[] = 'Reputation not checked';
+    }
+    if (!$abuseChecked) {
+        $reasons[] = 'Abuse.ch not checked';
     }
     return ['risk' => $risk, 'confidence' => $confidence, 'reasons' => $reasons];
 }

@@ -31,6 +31,7 @@ import parser
 import matcher
 import sync_client
 import virustotal
+import abusech
 import whois
 
 log = logging.getLogger("tdl_worker")
@@ -112,6 +113,11 @@ def init_local_db(db_path: str, cache_mb: int = 2048) -> sqlite3.Connection:
         );
 
         CREATE TABLE IF NOT EXISTS vt_usage (
+            day TEXT PRIMARY KEY,
+            count INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS abusech_usage (
             day TEXT PRIMARY KEY,
             count INTEGER DEFAULT 0
         );
@@ -1638,6 +1644,69 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                         })
                         logs.append({"level": "info", "message":
                                      f"VirusTotal lookup: {len(entries)} domain(s), sent={ok}"
+                                     + (" [quota reached]" if quota_hit else "")})
+                        if not ok:
+                            status = "failed"
+
+            elif command == "abusech_lookup":
+                opts = {}
+                if payload:
+                    try:
+                        opts = json.loads(payload) if isinstance(payload, str) else {}
+                    except (ValueError, TypeError):
+                        opts = {}
+                domains = opts.get("domains")
+                if not isinstance(domains, list):
+                    domains = []
+                domains = [str(d).lower().strip() for d in domains if d][:200]
+
+                if cfg.has_section("abusech"):
+                    abuse_key = cfg.get("abusech", "auth_key", fallback="").strip()
+                    abuse_rate = cfg.getfloat("abusech", "rate_delay_seconds", fallback=1.0)
+                    abuse_daily = cfg.getint("abusech", "daily_limit", fallback=10000)
+                    abuse_timeout = cfg.getint("abusech", "timeout", fallback=20)
+                    abuse_urlhaus = cfg.getboolean("abusech", "urlhaus_enabled", fallback=True)
+                    abuse_tf = cfg.getboolean("abusech", "threatfox_enabled", fallback=True)
+                else:
+                    abuse_key, abuse_rate, abuse_daily, abuse_timeout, abuse_urlhaus, abuse_tf = "", 1.0, 10000, 20, True, True
+
+                if not abuse_key or abuse_key.upper().startswith("TU_"):
+                    result = "abuse.ch Auth-Key not configured ([abusech] auth_key)."
+                    status = "failed"
+                    logs.append({"level": "error", "message": result})
+                else:
+                    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                    row = db.execute("SELECT count FROM abusech_usage WHERE day = ?", (today,)).fetchone()
+                    used = int(row[0]) if row else 0
+                    remaining = max(0, abuse_daily - used)
+                    if remaining <= 0:
+                        result = f"abuse.ch daily limit reached ({abuse_daily}). Try again tomorrow."
+                        status = "failed"
+                        logs.append({"level": "warning", "message": result})
+                    else:
+                        batch = domains[:remaining]
+                        entries = []
+                        quota_hit = False
+                        for d in batch:
+                            try:
+                                entries.append(abusech.lookup_domain(
+                                    d, abuse_key, timeout=abuse_timeout,
+                                    urlhaus_enabled=abuse_urlhaus, threatfox_enabled=abuse_tf))
+                            except abusech.QuotaError:
+                                quota_hit = True
+                                break
+                            if abuse_rate > 0:
+                                time.sleep(abuse_rate)
+                        db.execute("INSERT OR REPLACE INTO abusech_usage (day, count) VALUES (?, ?)",
+                                   (today, used + len(entries)))
+                        db.commit()
+                        ok = sync_client.send_abusech_results(host_url, api_key, entries)
+                        result = json.dumps({
+                            "requested": len(domains), "looked_up": len(entries), "sent": ok,
+                            "quota_hit": quota_hit, "remaining_today": max(0, abuse_daily - (used + len(entries))),
+                        })
+                        logs.append({"level": "info", "message":
+                                     f"abuse.ch lookup: {len(entries)} domain(s), sent={ok}"
                                      + (" [quota reached]" if quota_hit else "")})
                         if not ok:
                             status = "failed"

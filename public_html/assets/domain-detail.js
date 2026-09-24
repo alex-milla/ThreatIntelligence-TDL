@@ -111,4 +111,31 @@
             })
             .catch(function () { setTimeout(function () { ddPollVt(domain, tries + 1); }, 6000); });
     }
+
+    // Queue an abuse.ch (URLhaus + ThreatFox) check, then refresh once cached.
+    window.ddCheckAbusech = function (domain) {
+        fetch('/ajax_abusech_request.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+            body: JSON.stringify({ domain: domain, force: true })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+            if (!res.success) throw new Error(res.error || 'request failed');
+            if (!res.queued) { window.ddAfterAction(domain); return; }
+            ddPollAbusech(domain, 0);
+        })
+        .catch(function (e) { alert('abuse.ch request failed: ' + e.message); });
+    };
+
+    function ddPollAbusech(domain, tries) {
+        if (tries > 40) { alert('Timed out waiting for the worker.'); return; }
+        fetch('/ajax_abusech_cache.php?domain=' + encodeURIComponent(domain))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data && data.success && data.abusech) { window.ddAfterAction(domain); return; }
+                setTimeout(function () { ddPollAbusech(domain, tries + 1); }, 5000);
+            })
+            .catch(function () { setTimeout(function () { ddPollAbusech(domain, tries + 1); }, 6000); });
+    }
 })();

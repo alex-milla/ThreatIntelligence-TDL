@@ -221,13 +221,19 @@ Additionally, after each download the worker automatically caches the WHOIS/RDAP
 - Lookups are spaced by `[whois] rate_delay` (config) to be gentle with registries.
 - Command latency depends on `[worker] poll_interval` (default 20 s).
 
-## Reputation lookups (VirusTotal)
+## Reputation lookups (VirusTotal + abuse.ch)
 
-The domain detail (Watchlist, Notifications, Dashboard lookup and the reports) shows the VirusTotal reputation, cached and refreshed **on demand** through the worker command queue:
+The domain detail (Watchlist, Notifications, Dashboard lookup and the reports) shows two reputation sources, both cached and refreshed **on demand** through the worker command queue:
 
 - **VirusTotal** (`vt_lookup`): per-domain verdict from the VirusTotal API v3 (`[virustotal] api_key`, `rate_delay_seconds`, `daily_limit`, `cache_days`). Buttons: **Check VirusTotal (worker)** / **Open in VirusTotal**.
+- **abuse.ch** (`abusech_lookup`): validates the matched domain against two free abuse.ch services with a single Auth-Key (`[abusech] auth_key`):
+  - **URLhaus** host lookup — malware distribution sites; the Spamhaus DBL result (`phishing_domain`, `botnet_cc_domain`, `abused_legit_*`) and currently-serving payloads drive the verdict.
+  - **ThreatFox** IOC search — confirmed IOCs (botnet C2, payload delivery, cc-skimming) with the malware family and confidence level.
 
-Results are cached in `domain_vt`, so repeat views are instant. A missing API key makes the command fail with a clear message (the rest of the worker is unaffected).
+  Buttons: **Check Abuse.ch** (per-domain and batch) / **Open in URLhaus**. Each domain takes up to two requests, spaced by `rate_delay_seconds` and capped by `daily_limit`.
+  - Verdict: `malicious` (URLhaus online/DBL phishing-botnet, or a ThreatFox IOC), `suspicious` (URLhaus listed but offline/not listed, or a spammer/redirector DBL entry), or `clean` (not found). `urlhaus_enabled` / `threatfox_enabled` toggle each source.
+
+Results are cached in `domain_vt` and `domain_abusech`, so repeat views are instant. A missing API key makes the command fail with a clear message (the rest of the worker is unaffected).
 
 ## OpenINTEL ccTLD import (optional, weekly)
 

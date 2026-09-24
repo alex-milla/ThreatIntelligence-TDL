@@ -180,6 +180,21 @@ if (!empty($rows)) {
     }
 }
 
+// Cached abuse.ch (URLhaus + ThreatFox) validations for the visible rows.
+$domainAbusech = [];
+if (!empty($rows)) {
+    $domains = array_column($rows, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domains), '?'));
+    $abStmt = $db->prepare("SELECT domain, verdict, urlhaus_verdict, urlhaus_url_count, urlhaus_online,
+            urlhaus_dbl, threatfox_verdict, threatfox_matches, threat_type, malware_family,
+            confidence, tags, last_analysis_date, checked_at
+        FROM domain_abusech WHERE domain IN ($placeholders)");
+    $abStmt->execute($domains);
+    foreach ($abStmt->fetchAll() as $a) {
+        $domainAbusech[$a['domain']] = $a;
+    }
+}
+
 // Report-queue status for the visible rows (Report column + detail panel).
 $domainQueue = [];
 if (!empty($rows)) {
@@ -268,6 +283,7 @@ require __DIR__ . '/templates/header.php';
         </label>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleAbusech()"><i class="material-icons left">gpp_maybe</i>Check Abuse.ch</button>
         <label class="check-inline" title="Report group the selected domains will be sent to">
             <span class="muted">Report group:</span>
             <select id="report-group" class="browser-default compact">
@@ -295,6 +311,7 @@ require __DIR__ . '/templates/header.php';
                     <th><?= kwmSortLink('domain', 'Domain', $sort, $dir, $sortDefaults) ?></th>
                     <th><?= kwmSortLink('tld', 'TLD', $sort, $dir, $sortDefaults) ?></th>
                     <th>VT</th>
+                    <th>Abuse.ch</th>
                     <th>Tag</th>
                     <th>Report</th>
                     <th>Watchlist</th>
@@ -333,6 +350,8 @@ require __DIR__ . '/templates/header.php';
                     $vtCell = isset($vtLabels[$vtVerdict])
                         ? '<span class="vt-badge vt-' . $vtVerdict . '">' . $vtLabels[$vtVerdict] . '</span>'
                         : '<span class="muted">&mdash;</span>';
+                    $abuseRow = $domainAbusech[$r['domain']] ?? null;
+                    $abuseCell = abusechBadge($abuseRow);
 
                     $queueRow = $domainQueue[$r['domain']] ?? null;
                     $isQueued = $queueRow !== null && $queueRow['reported_at'] === null;
@@ -370,7 +389,7 @@ require __DIR__ . '/templates/header.php';
                         'vt_checked_at'      => $vtRow['checked_at'] ?? null,
                         '_ns'                => $ns,
                         '_is_new'            => $isNew,
-                    ];
+                    ] + abusechPresentKeys($abuseRow);
                     $age = reportDomainAge($present['creation_date'], gmdate('Y-m-d H:i:s'));
                     $status = reportDomainStatus($present, $rules);
                     $rep = reportReputationContextual(reportReputation($present), $age);
@@ -388,6 +407,7 @@ require __DIR__ . '/templates/header.php';
                     </td>
                     <td><?= htmlspecialchars($r['tld']) ?></td>
                     <td><?= $vtCell ?></td>
+                    <td><?= $abuseCell ?></td>
                     <td><?= $tagCell ?></td>
                     <td><?= $reportCell ?></td>
                     <td><?= !empty($r['in_watchlist']) ? '<i class="material-icons tiny" title="In watchlist">star</i>' : '<span class="muted">&mdash;</span>' ?></td>
@@ -405,7 +425,7 @@ require __DIR__ . '/templates/header.php';
                     <td><?= !empty($r['is_historical']) ? '<span class="status-badge status-cancelled">Yes</span>' : '<span class="muted">No</span>' ?></td>
                 </tr>
                 <tr class="domain-detail-row" style="display:none;">
-                    <td colspan="13">
+                    <td colspan="14">
                         <div class="domain-detail">
                             <div class="dd-grid">
                                 <div class="dd-block">

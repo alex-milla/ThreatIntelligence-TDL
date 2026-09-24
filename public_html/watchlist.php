@@ -132,6 +132,21 @@ if (!empty($items)) {
     }
 }
 
+// Cached abuse.ch (URLhaus + ThreatFox) validations for the visible rows.
+$domainAbusech = [];
+if (!empty($items)) {
+    $domains = array_column($items, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domains), '?'));
+    $abStmt = $db->prepare("SELECT domain, verdict, urlhaus_verdict, urlhaus_url_count, urlhaus_online,
+            urlhaus_dbl, threatfox_verdict, threatfox_matches, threat_type, malware_family,
+            confidence, tags, last_analysis_date, checked_at
+        FROM domain_abusech WHERE domain IN ($placeholders)");
+    $abStmt->execute($domains);
+    foreach ($abStmt->fetchAll() as $a) {
+        $domainAbusech[$a['domain']] = $a;
+    }
+}
+
 // Load domain tags
 $domainTags = [];
 if (!empty($items)) {
@@ -294,7 +309,7 @@ require __DIR__ . '/templates/header.php';
                         'vt_checked_at'      => $vtRow['checked_at'] ?? null,
                         '_ns'                => $ns,
                         '_is_new'            => $isNew,
-                    ];
+                    ] + abusechPresentKeys($domainAbusech[$item['domain']] ?? null);
                     $domainArg = htmlspecialchars(addslashes($item['domain']));
                 ?>
                 <tr data-domain="<?= htmlspecialchars($item['domain']) ?>">

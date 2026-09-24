@@ -136,7 +136,8 @@ function buildReportData(PDO $db, int $userId, array $keywordIds, array $filters
             LEFT JOIN domain_tags dt ON dt.domain = m.domain
             LEFT JOIN watchlist w ON w.user_id = ? AND w.domain = m.domain
             LEFT JOIN domain_whois dw ON dw.domain = m.domain
-            LEFT JOIN domain_vt dv ON dv.domain = m.domain";
+            LEFT JOIN domain_vt dv ON dv.domain = m.domain
+            LEFT JOIN domain_abusech ab ON ab.domain = m.domain";
 
         $where = "WHERE m.keyword_id = ?";
         $params = [$userId, $kwId];
@@ -173,7 +174,14 @@ function buildReportData(PDO $db, int $userId, array $keywordIds, array $filters
                 dw.creation_date, dw.expiration_date, dw.registrar, dw.name_servers, dw.status AS whois_status,
                 dw.source AS whois_source, dw.updated_at AS whois_updated_at,
                 dv.verdict, dv.malicious, dv.suspicious, dv.harmless, dv.undetected, dv.reputation,
-                dv.last_analysis_date, dv.checked_at AS vt_checked_at
+                dv.last_analysis_date, dv.checked_at AS vt_checked_at,
+                ab.verdict AS abusech_verdict, ab.urlhaus_verdict AS abusech_urlhaus_verdict,
+                ab.urlhaus_url_count AS abusech_urlhaus_url_count, ab.urlhaus_online AS abusech_urlhaus_online,
+                ab.urlhaus_dbl AS abusech_urlhaus_dbl, ab.threatfox_verdict AS abusech_threatfox_verdict,
+                ab.threatfox_matches AS abusech_threatfox_matches, ab.threat_type AS abusech_threat_type,
+                ab.malware_family AS abusech_malware_family, ab.confidence AS abusech_confidence,
+                ab.tags AS abusech_tags, ab.last_analysis_date AS abusech_last_analysis_date,
+                ab.checked_at AS abusech_checked_at
             $from
             $where
             ORDER BY m.discovered_at DESC, m.domain ASC
@@ -280,13 +288,21 @@ function buildReportFromQueue(PDO $db, int $userId, ?array $domains = null, ?str
             dw.creation_date, dw.expiration_date, dw.registrar, dw.name_servers, dw.status AS whois_status,
             dw.source AS whois_source, dw.updated_at AS whois_updated_at,
             dv.verdict, dv.malicious, dv.suspicious, dv.harmless, dv.undetected, dv.reputation,
-            dv.last_analysis_date, dv.checked_at AS vt_checked_at
+            dv.last_analysis_date, dv.checked_at AS vt_checked_at,
+            ab.verdict AS abusech_verdict, ab.urlhaus_verdict AS abusech_urlhaus_verdict,
+            ab.urlhaus_url_count AS abusech_urlhaus_url_count, ab.urlhaus_online AS abusech_urlhaus_online,
+            ab.urlhaus_dbl AS abusech_urlhaus_dbl, ab.threatfox_verdict AS abusech_threatfox_verdict,
+            ab.threatfox_matches AS abusech_threatfox_matches, ab.threat_type AS abusech_threat_type,
+            ab.malware_family AS abusech_malware_family, ab.confidence AS abusech_confidence,
+            ab.tags AS abusech_tags, ab.last_analysis_date AS abusech_last_analysis_date,
+            ab.checked_at AS abusech_checked_at
         FROM matches m
         JOIN keywords k ON k.id = m.keyword_id
         LEFT JOIN domain_tags dt ON dt.domain = m.domain
         LEFT JOIN watchlist w ON w.user_id = ? AND w.domain = m.domain
         LEFT JOIN domain_whois dw ON dw.domain = m.domain
         LEFT JOIN domain_vt dv ON dv.domain = m.domain
+        LEFT JOIN domain_abusech ab ON ab.domain = m.domain
         WHERE k.user_id = ? AND m.domain IN ($placeholders)";
     $params = array_merge([$userId, $userId], $domains);
 

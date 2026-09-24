@@ -38,6 +38,13 @@ function domainDetailPresent(PDO $db, int $userId, string $domain): ?array {
     $vStmt->execute([$domain]);
     $vtRow = $vStmt->fetch() ?: null;
 
+    $aStmt = $db->prepare("SELECT domain, verdict, urlhaus_verdict, urlhaus_url_count, urlhaus_online,
+            urlhaus_dbl, threatfox_verdict, threatfox_matches, threat_type, malware_family,
+            confidence, tags, last_analysis_date, checked_at
+        FROM domain_abusech WHERE domain = ? LIMIT 1");
+    $aStmt->execute([$domain]);
+    $abuseRow = $aStmt->fetch() ?: null;
+
     $tStmt = $db->prepare("SELECT tag, note FROM domain_tags WHERE domain = ? LIMIT 1");
     $tStmt->execute([$domain]);
     $tagRow = $tStmt->fetch() ?: null;
@@ -98,6 +105,19 @@ function domainDetailPresent(PDO $db, int $userId, string $domain): ?array {
         'reputation'         => $vtRow['reputation'] ?? null,
         'last_analysis_date' => $vtRow['last_analysis_date'] ?? null,
         'vt_checked_at'      => $vtRow['checked_at'] ?? null,
+        'abusech_verdict'    => $abuseRow['verdict'] ?? null,
+        'abusech_urlhaus_verdict' => $abuseRow['urlhaus_verdict'] ?? null,
+        'abusech_urlhaus_url_count' => $abuseRow['urlhaus_url_count'] ?? null,
+        'abusech_urlhaus_online' => $abuseRow['urlhaus_online'] ?? null,
+        'abusech_urlhaus_dbl' => $abuseRow['urlhaus_dbl'] ?? null,
+        'abusech_threatfox_verdict' => $abuseRow['threatfox_verdict'] ?? null,
+        'abusech_threatfox_matches' => $abuseRow['threatfox_matches'] ?? null,
+        'abusech_threat_type' => $abuseRow['threat_type'] ?? null,
+        'abusech_malware_family' => $abuseRow['malware_family'] ?? null,
+        'abusech_confidence' => $abuseRow['confidence'] ?? null,
+        'abusech_tags'       => $abuseRow['tags'] ?? null,
+        'abusech_last_analysis_date' => $abuseRow['last_analysis_date'] ?? null,
+        'abusech_checked_at' => $abuseRow['checked_at'] ?? null,
         '_ns'                => $ns,
         '_is_new'            => $isNew,
     ];
@@ -123,6 +143,7 @@ function renderDomainDetail(array $present, array $keywords, array $rules): stri
     $age = reportDomainAge($present['creation_date'] ?? null, gmdate('Y-m-d H:i:s'));
     $status = reportDomainStatus($present, $rules);
     $rep = reportReputationContextual(reportReputation($present), $age);
+    $abuse = reportAbusech($present);
     $avail = reportAvailability($present);
     $whoisInfo = $avail['whois'];
     $risk = reportRiskAssessment($present, $status, $avail);
@@ -176,6 +197,7 @@ function renderDomainDetail(array $present, array $keywords, array $rules): stri
             <h4>Reputation</h4>
             <dl class="dd-list">
                 <div><dt>VirusTotal</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($rep['state']) ?>"><?= htmlspecialchars($repSymbol[$rep['state']] ?? '') ?> <?= htmlspecialchars($rep['label']) ?></span><?php if ($rep['detail'] !== ''): ?> <span class="muted"><?= htmlspecialchars($rep['detail']) ?></span><?php endif; ?></dd></div>
+                <div><dt>Abuse.ch</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($abuse['state']) ?>"><?= htmlspecialchars($repSymbol[$abuse['state']] ?? '') ?> <?= htmlspecialchars($abuse['label']) ?></span><?php if ($abuse['detail'] !== ''): ?> <span class="muted"><?= htmlspecialchars($abuse['detail']) ?></span><?php endif; ?></dd></div>
                 <div><dt>Last analysis</dt><dd><?= htmlspecialchars(reportFormatDate($present['last_analysis_date'] ?? null)) ?></dd></div>
                 <div><dt>Checked</dt><dd><?= !empty($present['vt_checked_at']) ? htmlspecialchars(fmt_date((string)$present['vt_checked_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
                 <div><dt>Tag</dt><dd><?= $tagCell ?></dd></div>
@@ -210,7 +232,9 @@ function renderDomainDetail(array $present, array $keywords, array $rules): stri
         <button type="button" class="btn btn-small btn-outline waves-effect" onclick="ddWatchlist('<?= $domainArg ?>')"><i class="material-icons left">star</i><?= !empty($present['in_watchlist']) ? 'Remove from Watchlist' : 'Add to Watchlist' ?></button>
         <button type="button" class="btn btn-small waves-effect" onclick="ddFetchWhois('<?= $domainArg ?>')"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
         <button type="button" class="btn btn-small waves-effect" onclick="ddCheckVt('<?= $domainArg ?>')"><i class="material-icons left">verified_user</i>Check VirusTotal</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="ddCheckAbusech('<?= $domainArg ?>')"><i class="material-icons left">gpp_maybe</i>Check Abuse.ch</button>
         <a class="btn btn-small btn-info waves-effect" href="https://www.virustotal.com/gui/domain/<?= rawurlencode($domain) ?>" target="_blank" rel="noopener"><i class="material-icons left">shield</i>Open in VirusTotal</a>
+        <a class="btn btn-small btn-info waves-effect" href="https://urlhaus.abuse.ch/host/<?= rawurlencode($domain) ?>/" target="_blank" rel="noopener"><i class="material-icons left">bug_report</i>Open in URLhaus</a>
     </div>
     <details class="dd-raw">
         <summary>Raw data</summary>

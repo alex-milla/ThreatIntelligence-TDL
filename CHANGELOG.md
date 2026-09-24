@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.16.0] - 2026-09-24
+
+### Added - abuse.ch (URLhaus + ThreatFox) domain validation
+
+- **abuse.ch as the reputation source for keyword-matched domains**, replacing the removed AlienVault OTX. A single free Auth-Key (`https://auth.abuse.ch/`) covers both services. **VirusTotal is kept unchanged**; both now live side by side in the domain detail.
+- **Worker**: new `worker/abusech.py` (`abusech_lookup` command). Per domain it performs one URLhaus `POST /v1/host/` lookup and one ThreatFox `search_ioc` lookup, then derives a verdict: URLhaus online/Spamhaus-DBL phishing-botnet or a ThreatFox confirmed IOC → `malicious`; URLhaus listed but offline/not-listed or spammer/redirector DBL → `suspicious`; no data → `clean`. Daily limit and rate delay via a new `abusech_usage` table; `urlhaus_enabled` / `threatfox_enabled` toggle each source. Results are posted to `api/v1/abusech_results.php`.
+- **Config**: new `[abusech]` section (`auth_key`, `rate_delay_seconds`, `daily_limit`, `cache_days`, `timeout`, `urlhaus_enabled`, `threatfox_enabled`). A missing key fails the command gracefully, like VirusTotal.
+- **Web**: cached in `domain_abusech`; new endpoints `ajax_abusech_request.php` (queue) and `ajax_abusech_cache.php` (read); a dedicated **Abuse.ch** column and badge next to **VT** in Notifications and the per-keyword match list, a batch **Check Abuse.ch** button, **Check Abuse.ch** / **Open in URLhaus** actions in the domain detail, and an **Abuse.ch** line in the report (screen + print). `worker/tests.py` adds `test_abusech_classify`.
+- **Bulk local feed** (download the full URLhaus/ThreatFox datasets and match locally) is planned next; the config/table are ready for it.
+
 ## [v1.15.4] - 2026-09-24
 
 ### Removed - AlienVault OTX reputation source

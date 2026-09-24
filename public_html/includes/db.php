@@ -176,6 +176,24 @@ class Database {
             checked_at TEXT DEFAULT CURRENT_TIMESTAMP
         )");
 
+        // abuse.ch domain validation (URLhaus malware hosts + ThreatFox IOCs).
+        $db->exec("CREATE TABLE IF NOT EXISTS domain_abusech (
+            domain TEXT PRIMARY KEY,
+            verdict TEXT,
+            urlhaus_verdict TEXT,
+            urlhaus_url_count INTEGER DEFAULT 0,
+            urlhaus_online INTEGER DEFAULT 0,
+            urlhaus_dbl TEXT,
+            threatfox_verdict TEXT,
+            threatfox_matches INTEGER DEFAULT 0,
+            threat_type TEXT,
+            malware_family TEXT,
+            confidence INTEGER DEFAULT 0,
+            tags TEXT,
+            last_analysis_date TEXT,
+            checked_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )");
+
         $db->exec("CREATE TABLE IF NOT EXISTS watchlist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,

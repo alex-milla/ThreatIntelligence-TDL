@@ -98,6 +98,23 @@ daily_limit = 500
 cache_days = 7
 timeout = 20
 
+[abusech]
+; abuse.ch community API Auth-Key (https://auth.abuse.ch/). A single free key
+; covers both URLhaus (malware distribution sites) and ThreatFox (confirmed
+; IOCs). Used to validate the domains matched by your keywords: one URLhaus
+; `host` lookup + one ThreatFox `search_ioc` lookup per domain.
+auth_key = TU_AUTH_KEY_ABUSECH
+; Seconds between domain lookups (each domain may be two requests).
+rate_delay_seconds = 1.0
+; Hard cap of domain lookups per calendar day (UTC).
+daily_limit = 10000
+; Skip domains already checked within this many days (unless force is requested).
+cache_days = 7
+timeout = 20
+; Sources queried on demand. Disable one to halve the requests per domain.
+urlhaus_enabled = true
+threatfox_enabled = true
+
 [openintel]
 ; Weekly ccTLD apex-domain lists from OpenINTEL (see README).
 ; Data license: CC BY-NC-SA 4.0 (non-commercial, attribution required).
