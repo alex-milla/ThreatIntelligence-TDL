@@ -146,6 +146,13 @@ run_interval_minutes = 60
 ; Signal toggles.
 reputation_enabled = true
 whois_enabled = true
+; DNS (Google DoH) and TLS certificate (crt.sh) signals — no key, no dependency.
+; A domain that starts resolving after not resolving at enrollment, or a
+; certificate issued after enrollment, activates the tracking entry.
+dns_enabled = true
+cert_enabled = true
+dns_timeout = 10
+cert_timeout = 30
 
 [openintel]
 ; Weekly ccTLD apex-domain lists from OpenINTEL (see README).

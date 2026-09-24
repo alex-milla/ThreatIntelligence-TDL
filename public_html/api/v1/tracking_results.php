@@ -31,7 +31,7 @@ if (!is_array($entries)) {
     jsonResponse(['success' => false, 'error' => 'Invalid entries payload'], 400);
 }
 
-$rowsStmt = $db->prepare("SELECT dt.id, dt.keyword_id, dt.user_id, k.tracking_interval_hours, k.keyword
+$rowsStmt = $db->prepare("SELECT dt.id, dt.keyword_id, dt.user_id, dt.baseline, k.tracking_interval_hours, k.keyword
     FROM domain_tracking dt JOIN keywords k ON k.id = dt.keyword_id
     WHERE dt.domain = ? AND dt.status = 'tracking'");
 $matchStmt = $db->prepare("SELECT m.id AS match_id, k.user_id, k.keyword, u.email, u.username, u.email_notifications
@@ -41,6 +41,7 @@ $existNotif = $db->prepare("SELECT 1 FROM notifications WHERE user_id = ? AND ma
 $insNotif = $db->prepare("INSERT INTO notifications (user_id, match_id, kind) VALUES (?, ?, 'intelligence')");
 $updCheck = $db->prepare("UPDATE domain_tracking SET check_count = check_count + 1, last_checked_at = ?, next_check_at = ? WHERE id = ?");
 $updActivated = $db->prepare("UPDATE domain_tracking SET check_count = check_count + 1, last_checked_at = ?, next_check_at = NULL WHERE id = ?");
+$updBaseline = $db->prepare("UPDATE domain_tracking SET baseline = ? WHERE id = ?");
 
 $applied = 0;
 $activatedCount = 0;
@@ -68,6 +69,20 @@ try {
             continue;
         }
         $applied++;
+
+        // Establish the DNS baseline on the first check (no activation yet).
+        $baselineUpdate = (isset($entry['baseline_update']) && is_array($entry['baseline_update']))
+            ? $entry['baseline_update'] : null;
+        if ($baselineUpdate) {
+            foreach ($rows as $row) {
+                $b = json_decode((string)$row['baseline'], true);
+                if (!is_array($b)) {
+                    $b = [];
+                }
+                $b = array_merge($b, $baselineUpdate);
+                $updBaseline->execute([json_encode($b, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), (int)$row['id']]);
+            }
+        }
 
         if ($activated) {
             trackingActivate($db, $domain, $reason);

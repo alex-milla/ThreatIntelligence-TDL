@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.17.2] - 2026-09-24
+
+### Added - Intelligence F2: DNS and TLS-certificate signals
+
+- **Two more activation signals for dormant-domain tracking** (key-less, no new dependency):
+  - **DNS resolution**: a domain that starts resolving after not resolving at enrollment is flagged. Uses Google DNS-over-HTTPS (`dns.google`); the first check records the baseline so "starts resolving" is a real change.
+  - **TLS certificate**: a certificate issued after enrollment (the domain is going live) is flagged via the free [crt.sh](https://crt.sh/) log. `not_before` is compared against the enrollment time.
+- **Worker** (`worker/intel.py`): new `dns_resolves()` and `crt_sh_has_new_cert()`; `evaluate()` now also activates on DNS/cert and lists the signals. `run_tracking_check()` reads `dns_enabled`/`cert_enabled`, computes the signals, and sends a `baseline_update` on the first DNS reading.
+- **Config** (`[tracking]`): `dns_enabled`, `cert_enabled`, `dns_timeout`, `cert_timeout`.
+- **Web**: `tracking_due.php` now returns `enrolled_at` (needed for the crt.sh window); `tracking_results.php` merges the DNS baseline into the tracking row.
+- **Tests**: `test_intel_signals` extended with the DNS/cert activation cases.
+- The **HTTP content** signal (brand/login) remains for a later release.
+
 ## [v1.17.1] - 2026-09-24
 
 ### Added - Intelligence: dormant-domain tracking (F1)

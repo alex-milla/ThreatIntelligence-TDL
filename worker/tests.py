@@ -503,6 +503,20 @@ def test_intel_signals() -> None:
     ev = intel.evaluate({"verdict": "clean"}, {"verdict": "clean"}, True, "nameservers changed")
     assert not ev["activated"] and ev["whois_changed"]
     assert any(s["type"] == "whois_change" for s in ev["signals"])
+
+    # F2: DNS starts resolving / a new TLS certificate activate the entry.
+    ev = intel.evaluate({"verdict": "clean"}, {"verdict": "clean"}, False, dns_started=True, dns_now=True)
+    assert ev["activated"] and "DNS" in ev["activated_reason"], ev
+    ev = intel.evaluate({"verdict": "clean"}, {"verdict": "clean"}, False, cert_new=True)
+    assert ev["activated"] and "certificate" in ev["activated_reason"], ev
+    ev = intel.evaluate({"verdict": "clean"}, {"verdict": "clean"}, False, dns_started=False, dns_now=False)
+    assert not ev["activated"] and any(s["type"] == "dns" for s in ev["signals"])
+
+    certs = [{"not_before": "2026-08-01T00:00:00"}, {"not_before": "2026-09-20T10:00:00"}]
+    assert intel.cert_newer_than(certs, "2026-09-10 00:00:00") is True
+    assert intel.cert_newer_than(certs, "2026-09-25 00:00:00") is False
+    assert intel.cert_newer_than([], "2026-09-10 00:00:00") is False
+    assert intel.cert_newer_than([{"entry_timestamp": "2026-09-21 08:00:00"}], "2026-09-10 00:00:00") is True
     print("[PASS] test_intel_signals")
 
 

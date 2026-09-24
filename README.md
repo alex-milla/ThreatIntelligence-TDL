@@ -249,10 +249,11 @@ Besides the on-demand lookup, the worker keeps a **local copy of the full URLhau
 Attackers often register a domain and leave it dormant until it ages past reputation blocks (many defenses block domains younger than ~30 days) and then activate it to impersonate a legitimate site. **Intelligence** follows those domains instead of discarding them when they are still clean.
 
 - **Enrollment (per keyword)**: each keyword has a tracking config (enable, window `tracking_days`, cadence `tracking_interval_hours`, and `tracking_enroll_max_age_days`). After a cycle the worker proposes the new matches; the web enrolls those whose WHOIS creation date is recent enough, are not flagged by abuse.ch and are not tagged `bad`/`excluded`. Configure it in **Keywords → Tracking**.
-- **Checks**: the worker re-validates tracked domains on their own cadence (`[tracking]` in `config.ini`) and reports signals. F1 signals: **reputation** (abuse.ch + VirusTotal) and **WHOIS/NS changes**. A reputation verdict of `malicious`/`suspicious` **activates** the domain; WHOIS/NS changes are recorded as informational.
+- **Checks**: the worker re-validates tracked domains on their own cadence (`[tracking]` in `config.ini`) and reports signals: **reputation** (abuse.ch + VirusTotal), **WHOIS/NS changes**, **DNS resolution** (Google DoH) and **TLS certificate issuance** (crt.sh, key-less). Reputation `malicious`/`suspicious`, a domain that starts resolving after not resolving at enrollment, or a certificate issued after enrollment **activate** the entry; WHOIS/NS changes are recorded as informational. `dns_enabled`/`cert_enabled` toggle each signal.
+- **Baseline**: the first check records the DNS status so "starts resolving" is a real change; WHOIS/NS and reputation come from enrollment.
 - **Lifecycle**: after each check the next one is scheduled from the keyword's interval. A domain that activates gets an **INTELLIGENCE** notification (and email if enabled); one that reaches the end of its window without a signal is archived as **dormant**. Nothing is discarded.
 - **UI**: the **Intelligence** page lists tracked domains with status, age, days left, checks and signals, with **Check now** / **Extend** / **Mark dormant** / **Delete** actions.
-- **Signals planned**: DNS resolution, TLS certificate issuance (crt.sh) and HTTP content (brand/login) will be added in later releases.
+- **Signals planned**: HTTP content (brand/login) will be added in a later release.
 
 ## OpenINTEL ccTLD import (optional, weekly)
 

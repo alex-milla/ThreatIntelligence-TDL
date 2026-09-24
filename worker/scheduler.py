@@ -398,8 +398,9 @@ def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
                        host_url: str, api_key: str, domains: list | None = None) -> dict:
     """Validate the due tracked domains and report activation signals.
 
-    F1 signals: reputation (abuse.ch + VirusTotal) and WHOIS/NS changes. Best
-    effort per domain; never raises. Returns stats.
+    Signals: reputation (abuse.ch + VirusTotal), WHOIS/NS changes, DNS
+    resolution and a TLS certificate issued after enrollment. Best effort per
+    domain; never raises. Returns stats.
     """
     stats = {"due": 0, "checked": 0, "activated": 0, "sent": False}
     if not cfg.has_section("tracking") or not cfg.getboolean("tracking", "enabled", fallback=True):
@@ -425,6 +426,10 @@ def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
 
     reputation_on = cfg.getboolean("tracking", "reputation_enabled", fallback=True)
     whois_on = cfg.getboolean("tracking", "whois_enabled", fallback=True)
+    dns_on = cfg.getboolean("tracking", "dns_enabled", fallback=True)
+    cert_on = cfg.getboolean("tracking", "cert_enabled", fallback=True)
+    dns_timeout = cfg.getint("tracking", "dns_timeout", fallback=10)
+    cert_timeout = cfg.getint("tracking", "cert_timeout", fallback=30)
     rate = cfg.getfloat("tracking", "rate_delay_seconds", fallback=1.0)
     data_dir = cfg.get("worker", "data_dir", fallback="./data")
 
@@ -449,6 +454,11 @@ def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
 
     results = []
     for d, e in unique.items():
+        baseline = e.get("baseline") or {}
+        if not isinstance(baseline, dict):
+            baseline = {}
+        baseline_dns = baseline.get("dns")
+
         abuse_res = vt_res = whois_now = None
         if abuse_on:
             try:
@@ -468,6 +478,16 @@ def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
             except Exception:
                 whois_now = None
 
+        dns_now = None
+        if dns_on:
+            dns_now = intel.dns_resolves(d, timeout=dns_timeout)
+        dns_started = (dns_now is True and baseline_dns is False)
+
+        cert_new = False
+        if cert_on:
+            enrolled_at = str(e.get("enrolled_at") or "")
+            cert_new = intel.crt_sh_has_new_cert(d, enrolled_at, timeout=cert_timeout) is True
+
         # Refresh the local caches so the UI shows the fresh data.
         try:
             if abuse_res and abuse_res.get("status") == "ok":
@@ -479,9 +499,13 @@ def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
         except Exception:
             pass
 
-        changed, detail = intel.compare_whois(e.get("baseline") or {}, whois_now)
-        ev = intel.evaluate(abuse_res, vt_res, changed, detail)
+        changed, detail = intel.compare_whois(baseline, whois_now)
+        ev = intel.evaluate(abuse_res, vt_res, changed, detail,
+                            dns_started=dns_started, dns_now=dns_now, cert_new=cert_new)
         ev["domain"] = d
+        # First DNS reading establishes the baseline instead of activating.
+        if dns_on and baseline_dns is None and dns_now is not None:
+            ev["baseline_update"] = {"dns": bool(dns_now)}
         results.append(ev)
         stats["checked"] += 1
         if ev["activated"]:
