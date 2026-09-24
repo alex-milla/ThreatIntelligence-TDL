@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.15.4] - 2026-09-24
+
+### Removed - AlienVault OTX reputation source
+
+- **AlienVault OTX is dismantled.** The OTX pulse-based verdict had no signal for newly registered domains (a domain seen for the first time almost always has 0 pulses), so it was removed to make room for a different reputation source. **VirusTotal is kept unchanged.**
+- **Worker**: deleted `worker/alienvault.py`; removed the `otx_lookup` command handler and the `otx_usage` table from `scheduler.py`; removed `send_otx_results()` from `sync_client.py`; removed the `[alienvault]` section from `config.ini.example` and the `test_alienvault_classify` test.
+- **Web**: deleted `ajax_otx_request.php`, `ajax_otx_cache.php` and `api/v1/otx_results.php`; stopped creating the `domain_otx` table; removed the OTX column/badge, the **Check AlienVault OTX** button and the **Open in AlienVault OTX** link from Notifications, the per-keyword match list, Watchlist, the domain detail block and the Dashboard lookup; removed OTX from the report triage table, the printable report and the risk/reputation helpers.
+- **Data note**: an existing `domain_otx` table (if present) is left untouched but unused; it can be dropped manually. VirusTotal verdicts, reports and every other feature are unaffected.
+
 ## [v1.15.3] - 2026-09-23
 
 ### Added - Defanged IOC support in the Dashboard domain lookup

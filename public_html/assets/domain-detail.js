@@ -111,31 +111,4 @@
             })
             .catch(function () { setTimeout(function () { ddPollVt(domain, tries + 1); }, 6000); });
     }
-
-    // Queue an AlienVault OTX lookup on the worker, then refresh once cached.
-    window.ddCheckOtx = function (domain) {
-        fetch('/ajax_otx_request.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
-            body: JSON.stringify({ domain: domain, force: true })
-        })
-        .then(function (r) { return r.json(); })
-        .then(function (res) {
-            if (!res.success) throw new Error(res.error || 'request failed');
-            if (!res.queued) { window.ddAfterAction(domain); return; }
-            ddPollOtx(domain, 0);
-        })
-        .catch(function (e) { alert('AlienVault OTX request failed: ' + e.message); });
-    };
-
-    function ddPollOtx(domain, tries) {
-        if (tries > 40) { alert('Timed out waiting for the worker.'); return; }
-        fetch('/ajax_otx_cache.php?domain=' + encodeURIComponent(domain))
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (data && data.success && data.otx) { window.ddAfterAction(domain); return; }
-                setTimeout(function () { ddPollOtx(domain, tries + 1); }, 5000);
-            })
-            .catch(function () { setTimeout(function () { ddPollOtx(domain, tries + 1); }, 6000); });
-    }
 })();

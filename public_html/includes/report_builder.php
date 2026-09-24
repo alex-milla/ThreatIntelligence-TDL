@@ -136,8 +136,7 @@ function buildReportData(PDO $db, int $userId, array $keywordIds, array $filters
             LEFT JOIN domain_tags dt ON dt.domain = m.domain
             LEFT JOIN watchlist w ON w.user_id = ? AND w.domain = m.domain
             LEFT JOIN domain_whois dw ON dw.domain = m.domain
-            LEFT JOIN domain_vt dv ON dv.domain = m.domain
-            LEFT JOIN domain_otx dotx ON dotx.domain = m.domain";
+            LEFT JOIN domain_vt dv ON dv.domain = m.domain";
 
         $where = "WHERE m.keyword_id = ?";
         $params = [$userId, $kwId];
@@ -174,12 +173,7 @@ function buildReportData(PDO $db, int $userId, array $keywordIds, array $filters
                 dw.creation_date, dw.expiration_date, dw.registrar, dw.name_servers, dw.status AS whois_status,
                 dw.source AS whois_source, dw.updated_at AS whois_updated_at,
                 dv.verdict, dv.malicious, dv.suspicious, dv.harmless, dv.undetected, dv.reputation,
-                dv.last_analysis_date, dv.checked_at AS vt_checked_at,
-                dotx.verdict AS otx_verdict, dotx.pulse_count AS otx_pulse_count,
-                dotx.references_count AS otx_references_count, dotx.whitelisted AS otx_whitelisted,
-                dotx.adversary AS otx_adversary, dotx.malware_families AS otx_malware_families,
-                dotx.tags AS otx_tags, dotx.last_analysis_date AS otx_last_analysis_date,
-                dotx.checked_at AS otx_checked_at
+                dv.last_analysis_date, dv.checked_at AS vt_checked_at
             $from
             $where
             ORDER BY m.discovered_at DESC, m.domain ASC
@@ -286,19 +280,13 @@ function buildReportFromQueue(PDO $db, int $userId, ?array $domains = null, ?str
             dw.creation_date, dw.expiration_date, dw.registrar, dw.name_servers, dw.status AS whois_status,
             dw.source AS whois_source, dw.updated_at AS whois_updated_at,
             dv.verdict, dv.malicious, dv.suspicious, dv.harmless, dv.undetected, dv.reputation,
-            dv.last_analysis_date, dv.checked_at AS vt_checked_at,
-            dotx.verdict AS otx_verdict, dotx.pulse_count AS otx_pulse_count,
-            dotx.references_count AS otx_references_count, dotx.whitelisted AS otx_whitelisted,
-            dotx.adversary AS otx_adversary, dotx.malware_families AS otx_malware_families,
-            dotx.tags AS otx_tags, dotx.last_analysis_date AS otx_last_analysis_date,
-            dotx.checked_at AS otx_checked_at
+            dv.last_analysis_date, dv.checked_at AS vt_checked_at
         FROM matches m
         JOIN keywords k ON k.id = m.keyword_id
         LEFT JOIN domain_tags dt ON dt.domain = m.domain
         LEFT JOIN watchlist w ON w.user_id = ? AND w.domain = m.domain
         LEFT JOIN domain_whois dw ON dw.domain = m.domain
         LEFT JOIN domain_vt dv ON dv.domain = m.domain
-        LEFT JOIN domain_otx dotx ON dotx.domain = m.domain
         WHERE k.user_id = ? AND m.domain IN ($placeholders)";
     $params = array_merge([$userId, $userId], $domains);
 

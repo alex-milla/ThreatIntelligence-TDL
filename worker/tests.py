@@ -12,7 +12,6 @@ import matcher
 import scheduler
 import openintel
 import virustotal
-import alienvault
 import whois
 
 
@@ -378,30 +377,6 @@ def test_virustotal_classify() -> None:
     print("[PASS] test_virustotal_classify")
 
 
-def test_alienvault_classify() -> None:
-    def otx(count, whitelist=False, pulses=None):
-        data = {"pulse_info": {"count": count, "pulses": pulses or [], "references": []}}
-        if whitelist:
-            data["validation"] = [{"source": "whitelist", "name": "Whitelisted"}]
-        return data
-
-    assert alienvault.classify(otx(0))["verdict"] == "clean"
-    assert alienvault.classify(otx(1))["verdict"] == "suspicious"
-    assert alienvault.classify(otx(2))["verdict"] == "suspicious"
-    assert alienvault.classify(otx(3))["verdict"] == "malicious"
-    assert alienvault.classify(otx(50, whitelist=True))["verdict"] == "clean"
-    # Aggregates adversary / malware families / pulse count from the pulses.
-    pulse = {"adversary": "APT-X", "malware_families": [{"display_name": "Zbot"}],
-             "tags": ["phishing"], "modified": "2026-09-01T00:00:00"}
-    got = alienvault.classify(otx(3, pulses=[pulse]))
-    assert got["pulse_count"] == 3
-    assert "APT-X" in got["adversary"]
-    assert "Zbot" in got["malware_families"]
-    assert "phishing" in got["tags"]
-    assert got["last_analysis_date"] == "2026-09-01T00:00:00"
-    print("[PASS] test_alienvault_classify")
-
-
 def test_local_db_vt_usage() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
@@ -652,7 +627,6 @@ if __name__ == "__main__":
     test_openintel_csv_gz_read()
     test_search_cached_domains_with_cctld()
     test_virustotal_classify()
-    test_alienvault_classify()
     test_local_db_vt_usage()
     test_daily_schedule_resolution()
     test_daily_cycle_due()
