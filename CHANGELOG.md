@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.3] - 2026-09-24
+
+### Fixed - Report groups and already-reported domains
+
+- **Generating a report now honors the group the domains were sent to.** Previously, a domain sent to a group other than its keyword's group (via the "Report group" selector) made the generation fail with *"The report queue is empty or its domains no longer match your keywords."* Now `buildReportFromQueue()` keeps, per domain, the keywords of the requested group; when a queued domain has **none** in that group (it was explicitly moved there), all its keywords are included, so it appears in the chosen group's report. Normal (non-moved) cases are unchanged and not duplicated.
+- **The Queue tab's "Keyword(s)" column** now lists the domain's keywords regardless of the group, so a moved domain is no longer blank.
+- **The per-keyword match list hides already-reported domains by default** (state "All"): a domain with a `report_queue` entry whose `reported_at` is set (already included in a report) is hidden, so the list focuses on the new/pending domains. A new **"Include reported"** checkbox shows them again. The specific states (good/bad/observing/excluded/watchlist/historical/untagged) are unchanged.
+
 ## [v1.18.2] - 2026-09-24
 
 ### Added - Monthly reminder to review excluded domains (Dashboard)

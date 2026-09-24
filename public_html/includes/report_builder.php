@@ -281,7 +281,7 @@ function buildReportFromQueue(PDO $db, int $userId, ?array $domains = null, ?str
 
     // Every match of the user's keywords for the queued domains. A domain that
     // matched several keywords appears under each of them.
-    $sql = "SELECT k.id AS keyword_id, k.keyword,
+    $sql = "SELECT k.id AS keyword_id, k.keyword, k.group_id AS keyword_group_id,
             m.domain, m.tld, m.discovered_at, m.first_seen, m.is_historical, m.source,
             dt.tag AS tag, dt.note AS tag_note,
             CASE WHEN w.id IS NULL THEN 0 ELSE 1 END AS in_watchlist,
@@ -305,15 +305,6 @@ function buildReportFromQueue(PDO $db, int $userId, ?array $domains = null, ?str
         LEFT JOIN domain_abusech ab ON ab.domain = m.domain
         WHERE k.user_id = ? AND m.domain IN ($placeholders)";
     $params = array_merge([$userId, $userId], $domains);
-
-    if ($groupKey !== null) {
-        if ($groupKey === '' || $groupKey === 'ungrouped') {
-            $sql .= " AND k.group_id IS NULL";
-        } else {
-            $sql .= " AND k.group_id = ?";
-            $params[] = (int)$groupKey;
-        }
-    }
     $sql .= " ORDER BY k.keyword ASC, m.discovered_at DESC, m.domain ASC";
 
     $stmt = $db->prepare($sql);
@@ -324,6 +315,35 @@ function buildReportFromQueue(PDO $db, int $userId, ?array $domains = null, ?str
         return null;
     }
 
+    // Apply the group filter per domain: keep the keywords that belong to the
+    // requested group; when a queued domain has none there (it was explicitly
+    // sent to this group), keep all its keywords so it is still included.
+    if ($groupKey !== null) {
+        $wantUngrouped = ($groupKey === '' || $groupKey === 'ungrouped');
+        $wantGroup = (int)$groupKey;
+        $byDomain = [];
+        foreach ($all as $row) {
+            $byDomain[$row['domain']][] = $row;
+        }
+        $all = [];
+        foreach ($byDomain as $rows) {
+            $selected = [];
+            foreach ($rows as $row) {
+                $g = $row['keyword_group_id'];
+                $matchesGroup = $wantUngrouped ? ($g === null) : ((int)$g === $wantGroup);
+                if ($matchesGroup) {
+                    $selected[] = $row;
+                }
+            }
+            foreach (($selected ?: $rows) as $row) {
+                $all[] = $row;
+            }
+        }
+        if (empty($all)) {
+            return null;
+        }
+    }
+
     // Group the joined rows by keyword, preserving query order.
     $byKeyword = [];
     foreach ($all as $row) {
@@ -331,7 +351,7 @@ function buildReportFromQueue(PDO $db, int $userId, ?array $domains = null, ?str
         if (!isset($byKeyword[$kwId])) {
             $byKeyword[$kwId] = ['keyword' => $row['keyword'], 'rows' => []];
         }
-        unset($row['keyword_id'], $row['keyword']);
+        unset($row['keyword_id'], $row['keyword'], $row['keyword_group_id']);
         $byKeyword[$kwId]['rows'][] = $row;
     }
 

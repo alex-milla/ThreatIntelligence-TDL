@@ -173,8 +173,9 @@ function reportQueuePendingRows(PDO $db, int $userId, int $limit = 5000): array 
     $domains = array_values(array_unique(array_column($rows, 'domain')));
     $placeholders = implode(',', array_fill(0, count($domains), '?'));
 
-    // Keyword labels per (domain, group).
-    $kwStmt = $db->prepare("SELECT DISTINCT m.domain, COALESCE(CAST(k.group_id AS TEXT), '') AS gk, k.keyword
+    // Keyword labels per domain. A report group does not restrict which of the
+    // domain's keywords are shown, so a domain sent to another group is not blank.
+    $kwStmt = $db->prepare("SELECT DISTINCT m.domain, k.keyword
         FROM matches m
         JOIN keywords k ON k.id = m.keyword_id
         WHERE k.user_id = ? AND m.domain IN ($placeholders)
@@ -182,7 +183,7 @@ function reportQueuePendingRows(PDO $db, int $userId, int $limit = 5000): array 
     $kwStmt->execute(array_merge([$userId], $domains));
     $kwMap = [];
     foreach ($kwStmt->fetchAll() as $r) {
-        $kwMap[strtolower($r['domain'])][(string)$r['gk']][] = $r['keyword'];
+        $kwMap[strtolower($r['domain'])][] = $r['keyword'];
     }
 
     // Group names.
@@ -202,7 +203,7 @@ function reportQueuePendingRows(PDO $db, int $userId, int $limit = 5000): array 
             'group_key'  => $gk,
             'group_id'   => ($gk !== '' && ctype_digit($gk)) ? (int)$gk : null,
             'group_name' => ($gk !== '' && isset($names[$gk])) ? $names[$gk] : '',
-            'keywords'   => $kwMap[$domain][$gk] ?? [],
+            'keywords'   => $kwMap[$domain] ?? [],
             'added_at'   => $r['added_at'],
         ];
     }

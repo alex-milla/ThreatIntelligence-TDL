@@ -67,6 +67,10 @@ if (!in_array($source, $validSources, true)) {
 // excluded" (and the dedicated Excluded filter) brings them back.
 $includeExcluded = isset($_GET['incl']) && $_GET['incl'] === '1';
 
+// Domains already included in a report are hidden from the main "All states"
+// view; "Include reported" brings them back.
+$includeReported = isset($_GET['incl_reported']) && $_GET['incl_reported'] === '1';
+
 // Show only domains currently queued for the next report.
 $queuedOnly = isset($_GET['queued']) && $_GET['queued'] === '1';
 
@@ -109,6 +113,11 @@ if ($state === 'all') {
     // Main view: keep excluded domains out unless explicitly requested.
     if (!$includeExcluded) {
         $where .= " AND NOT EXISTS (SELECT 1 FROM domain_tags dx WHERE dx.domain = m.domain AND dx.tag = 'excluded')";
+    }
+    // Keep already-reported domains out unless explicitly requested.
+    if (!$includeReported) {
+        $where .= " AND NOT EXISTS (SELECT 1 FROM report_queue rq WHERE rq.user_id = ? AND rq.domain = m.domain AND rq.reported_at IS NOT NULL)";
+        $params[] = $userId;
     }
 } elseif (in_array($state, ['good', 'bad', 'observing', 'excluded'], true)) {
     $where .= " AND dt.tag = ?";
@@ -265,12 +274,16 @@ require __DIR__ . '/templates/header.php';
             <input type="checkbox" name="incl" value="1" <?= $includeExcluded ? 'checked' : '' ?>>
             <span>Include excluded</span>
         </label>
+        <label class="check-inline" title="Show domains already included in a report (All states view)">
+            <input type="checkbox" name="incl_reported" value="1" <?= $includeReported ? 'checked' : '' ?>>
+            <span>Include reported</span>
+        </label>
         <label class="check-inline" title="Show only domains queued for the next report">
             <input type="checkbox" name="queued" value="1" <?= $queuedOnly ? 'checked' : '' ?>>
             <span>Only queued for report</span>
         </label>
         <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">search</i>Search</button>
-        <?php if ($search !== '' || $state !== 'all' || $source !== 'all' || $includeExcluded || $queuedOnly): ?>
+        <?php if ($search !== '' || $state !== 'all' || $source !== 'all' || $includeExcluded || $includeReported || $queuedOnly): ?>
         <a href="/keyword_matches.php?id=<?= $keywordId ?>" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">clear</i>Clear</a>
         <?php endif; ?>
     </form>
