@@ -21,7 +21,7 @@ if (empty($user['is_admin'])) {
     jsonResponse(['success' => false, 'error' => 'Forbidden'], 403);
 }
 
-$stmt = $db->query("SELECT id, user_id, keyword FROM keywords WHERE is_active = 1");
+$stmt = $db->query("SELECT id, user_id, keyword, match_type FROM keywords WHERE is_active = 1");
 $keywords = $stmt->fetchAll();
 
 jsonResponse(['success' => true, 'keywords' => $keywords]);

@@ -18,11 +18,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Add keyword
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add') {
     $keyword = strtolower(trim($_POST['keyword'] ?? ''));
+    $matchType = ((string)($_POST['match_type'] ?? 'literal') === 'glob') ? 'glob' : 'literal';
     if (strlen($keyword) < 2) {
         $error = 'Keyword must be at least 2 characters.';
-    } elseif (strlen($keyword) > 50) {
+    } elseif ($matchType === 'glob' && strlen($keyword) > 100) {
+        $error = 'Glob pattern must be at most 100 characters.';
+    } elseif ($matchType === 'literal' && strlen($keyword) > 50) {
         $error = 'Keyword must be at most 50 characters.';
-    } elseif (!preg_match('/^[a-z0-9\-]+$/', $keyword)) {
+    } elseif ($matchType === 'glob' && !preg_match('/^[a-z0-9\-\.\*\[\]\{\}\!\?,^]+$/', $keyword)) {
+        $error = 'Glob pattern can only contain letters, numbers, "-", "." and the wildcards * ? [ ] { } ! ,';
+    } elseif ($matchType === 'literal' && !preg_match('/^[a-z0-9\-]+$/', $keyword)) {
         $error = 'Keyword can only contain letters, numbers, and hyphens.';
     } elseif (!canAddKeyword($db, $userId)) {
         $limit = getMaxKeywords($db, $userId);
@@ -30,10 +35,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             ? 'You have reached your keyword limit. Increase it in Admin → Users.'
             : "You have reached your keyword limit ({$limit}). Contact the administrator.";
     } else {
-        $stmt = $db->prepare("INSERT INTO keywords (user_id, keyword, tracking_interval_hours) VALUES (?, ?, 168)");
+        $stmt = $db->prepare("INSERT INTO keywords (user_id, keyword, match_type, tracking_interval_hours) VALUES (?, ?, ?, 168)");
         try {
-            $stmt->execute([$userId, $keyword]);
-            $message = 'Keyword added successfully.';
+            $stmt->execute([$userId, $keyword, $matchType]);
+            $message = $matchType === 'glob' ? 'Glob keyword added successfully.' : 'Keyword added successfully.';
         } catch (PDOException $e) {
             $error = 'This keyword already exists in your list.';
         }
@@ -131,7 +136,7 @@ $kwOrderBy = $kwSortCols[$kwSort] . ' ' . strtoupper($kwDir);
 // subquery per keyword: with the notifications(match_id) index this stays fast
 // even with many matches. Semantics are identical to the previous query.
 $newDomainDays = max(1, (int)getSetting($db, 'new_domain_days', '1'));
-$stmt = $db->prepare("SELECT k.id, k.keyword, k.match_count, k.created_at,
+$stmt = $db->prepare("SELECT k.id, k.keyword, k.match_type, k.match_count, k.created_at,
     k.tracking_enabled, k.tracking_days, k.tracking_interval_hours, k.tracking_enroll_max_age_days,
     COUNT(CASE WHEN
         n.id IS NOT NULL
@@ -228,7 +233,14 @@ require __DIR__ . '/templates/header.php';
             <i class="material-icons prefix">search</i>
             <input id="keyword" type="text" name="keyword" class="validate" placeholder=" " required>
             <label for="keyword">Keyword</label>
-            <span class="helper-text">e.g. santander, nasa, caixabank</span>
+            <span class="helper-text">e.g. santander, nasa — or a glob like <code>micro*soft</code>, <code>microsoft[0-9]</code></span>
+        </div>
+        <div class="input-field" style="max-width: 200px;">
+            <select id="match_type" name="match_type" class="browser-default">
+                <option value="literal">Literal (substring)</option>
+                <option value="glob">Glob pattern</option>
+            </select>
+            <span class="helper-text">Glob: * ? [ ] {n,m}</span>
         </div>
         <button type="submit" class="btn waves-effect"><i class="material-icons left">add</i>Add Keyword</button>
     </form>
@@ -296,7 +308,7 @@ require __DIR__ . '/templates/header.php';
                     <?php if ($isAdmin): ?>
                     <td><label><input type="checkbox" class="row-check kw-check" value="<?= (int)$k['id'] ?>" aria-label="Select <?= htmlspecialchars($k['keyword']) ?>"><span></span></label></td>
                     <?php endif; ?>
-                    <td><strong><?= htmlspecialchars($k['keyword']) ?></strong></td>
+                    <td><strong><?= htmlspecialchars($k['keyword']) ?></strong><?php if (($k['match_type'] ?? 'literal') === 'glob'): ?> <span class="tag-chip report" title="Glob pattern">GLOB</span><?php endif; ?></td>
                     <td>
                         <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" title="Review all matched domains"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" class="muted" title="Review all matched domains">(<?= (int)$k['match_count'] ?> total)</a><?php endif; ?>
                         <a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>" class="muted" title="View notifications for this keyword" aria-label="View notifications for this keyword"><i class="material-icons tiny">notifications</i></a>

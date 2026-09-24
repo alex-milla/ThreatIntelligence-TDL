@@ -1480,7 +1480,7 @@ def recheck_all_domains(db: sqlite3.Connection, host_url: str, api_key: str,
     all_matches = []
     last_progress_report = 0
     batches_since_stop_check = 0
-    keyword_matcher = matcher.Matcher(keywords)
+    keyword_matcher = matcher.Matcher(keywords, for_recheck=True)
 
     # Keyset pagination: WHERE domain > last ORDER BY domain avoids the O(n^2)
     # cost of deep OFFSET scans on large caches.

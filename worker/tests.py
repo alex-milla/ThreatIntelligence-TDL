@@ -576,6 +576,42 @@ def test_weekly_tracking_schedule() -> None:
     print("[PASS] test_weekly_tracking_schedule")
 
 
+def test_glob_matching() -> None:
+    # glob -> regex + anchor extraction
+    rx, anchor = matcher.glob_to_regex("micro*soft")
+    assert anchor == "micro", anchor
+    assert rx.search("micro-soft") and rx.search("microsoft")
+
+    rx, _ = matcher.glob_to_regex("pay?al")
+    assert rx.search("paypal") and rx.search("payxal") and not rx.search("payal")
+
+    rx, anchor = matcher.glob_to_regex("microsoft[0-9]")
+    assert anchor == "microsoft", anchor
+    assert rx.search("microsoft5") and not rx.search("microsoftx")
+
+    rx, _ = matcher.glob_to_regex("[0-9]{2,4}juegos")
+    assert rx.search("123juegos") and not rx.search("1juegos")
+
+    # Matcher: literals + anchored glob + anchorless glob
+    kws = [
+        {"id": 1, "keyword": "santander", "match_type": "literal"},
+        {"id": 2, "keyword": "micro*soft", "match_type": "glob"},
+        {"id": 3, "keyword": "[0-9]{3}[a-z]{0,2}", "match_type": "glob"},  # no anchor
+    ]
+    m = matcher.Matcher(kws)
+    got = {(x["keyword_id"], x["domain"]) for x in m.match(
+        ["santander-bank.xyz", "micro-soft.com", "123.xyz", "nope.com"])}
+    assert (1, "santander-bank.xyz") in got, got
+    assert (2, "micro-soft.com") in got, got
+    assert (3, "123.xyz") in got, got
+
+    # Recheck (for_recheck) skips anchorless patterns but keeps anchored ones.
+    mr = matcher.Matcher(kws, for_recheck=True)
+    gotr = {x["keyword_id"] for x in mr.match(["santander-bank.xyz", "micro-soft.com", "123.xyz"])}
+    assert 1 in gotr and 2 in gotr and 3 not in gotr, gotr
+    print("[PASS] test_glob_matching")
+
+
 def test_local_db_vt_usage() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
@@ -831,6 +867,7 @@ if __name__ == "__main__":
     test_abusech_feed_lookup()
     test_intel_signals()
     test_weekly_tracking_schedule()
+    test_glob_matching()
     test_local_db_vt_usage()
     test_daily_schedule_resolution()
     test_daily_cycle_due()

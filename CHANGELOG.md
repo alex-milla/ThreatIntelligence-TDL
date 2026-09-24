@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.4] - 2026-09-24
+
+### Added - Glob (pattern) keywords
+
+- **Keywords can now be patterns, not just literal substrings.** Each keyword has a **match type**: `literal` (the previous behaviour) or **`glob`**. Glob supports `*` (any sequence), `?` (one character), `[abc]` / `[0-9]` character classes (`[!...]` negation) and `{n,m}` repetition. Examples: `micro*soft`, `pay?al`, `microsoft[0-9]`, `[0-9]{2,4}juegos`.
+- **Worker** (`worker/matcher.py`): literals keep the Aho-Corasick path; globs are compiled once to a safe, case-insensitive regex and, to keep the full-cache recheck fast, each glob is pre-filtered by its **longest mandatory literal** (a second Aho-Corasick automaton), so the regex only runs on domains that contain the anchor. Patterns **without** a usable anchor (fewer than 3 literal chars, e.g. `[0-9]{3}`) are skipped by the recheck (`for_recheck=True`) but still applied to the new domains of a daily scan. The TLD is still excluded.
+- **Web**: a **Match type** selector (Literal / Glob) in the keyword form, a **GLOB** badge in the keywords list and the match-list header, and the glob charset validation; `api/v1/keywords.php` returns `match_type`; the match highlighter skips glob keywords.
+- **Schema**: `keywords.match_type TEXT DEFAULT 'literal'` (existing keywords stay literal).
+- **Tests**: `test_glob_matching` (glob→regex, anchor extraction, anchored vs anchorless, recheck skipping anchorless).
+
 ## [v1.18.3] - 2026-09-24
 
 ### Fixed - Report groups and already-reported domains

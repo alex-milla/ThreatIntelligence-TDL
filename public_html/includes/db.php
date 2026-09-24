@@ -242,6 +242,7 @@ class Database {
             "ALTER TABLE keywords ADD COLUMN tracking_days INTEGER DEFAULT 90",
             "ALTER TABLE keywords ADD COLUMN tracking_interval_hours INTEGER DEFAULT 168",
             "ALTER TABLE keywords ADD COLUMN tracking_enroll_max_age_days INTEGER DEFAULT 30",
+            "ALTER TABLE keywords ADD COLUMN match_type TEXT DEFAULT 'literal'",
             "ALTER TABLE notifications ADD COLUMN kind TEXT DEFAULT 'match'",
         ] as $alter) {
             try {

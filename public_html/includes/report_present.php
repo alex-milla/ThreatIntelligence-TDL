@@ -478,7 +478,8 @@ function reportAgeClass(?int $days): string {
 
 /** Domain with the matched keyword highlighted (HTML-safe, multibyte-safe). */
 function reportHighlightKeyword(string $domain, string $keyword): string {
-    if ($keyword === '') {
+    if ($keyword === '' || strpbrk($keyword, '*?[]{}') !== false) {
+        // Glob patterns have no single literal span to highlight.
         return htmlspecialchars($domain);
     }
     if (function_exists('mb_stripos')) {

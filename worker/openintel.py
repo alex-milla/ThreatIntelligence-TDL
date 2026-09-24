@@ -624,8 +624,8 @@ def recheck_cached(conn: sqlite3.Connection, tlds: list[str], host_url: str,
         log.error("OpenINTEL recheck: could not fetch keywords: %s", e)
         return stats
 
-    keyword_matcher = matcher.Matcher(keywords) if keywords else None
-    if not keyword_matcher or not keyword_matcher.keyword_list:
+    keyword_matcher = matcher.Matcher(keywords, for_recheck=True) if keywords else None
+    if not keyword_matcher or not keyword_matcher.has_keywords():
         log.warning("OpenINTEL recheck: no active keywords.")
         return stats
 
