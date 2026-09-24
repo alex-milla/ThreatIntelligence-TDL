@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.17.0] - 2026-09-24
+
+### Added - abuse.ch bulk feed (local URLhaus + ThreatFox blacklist)
+
+- **The worker now keeps a local copy of the full URLhaus and ThreatFox datasets** and validates freshly detected domains against it, without spending API quota. It refreshes the dump **after the TLD sync** (same hook as auto-WHOIS) when it is older than `feed_sync_hours` (default 24) and then cross-checks the new, non-historical matches, capped by `auto_abusech_max` (default 200). Disable with `feed_enabled = false`.
+- **Worker**: `worker/abusech.py` gains `parse_urlhaus_csv`, `parse_threatfox_csv`, `parse_threatfox_zip`, `sync_feed`, `feed_lookup` and `feed_age_hours`. Two new worker-DB tables: `abusech_feed` (one row per domain per source) and `abusech_feed_meta`. Each cycle calls the new `auto_abusech_new_matches()` after `send_matches`. Only `malicious`/`suspicious` hits are sent, so a feed "not found" never overwrites a richer on-demand result.
+- **Config**: new `[abusech]` keys `feed_enabled`, `feed_sync_hours`, `auto_abusech_max`, `feed_timeout`, `feed_urlhaus_dump` (default `recent.csv`). The URLhaus CSV dump has no Spamhaus DBL status, so phishing/botnet DBL classifications still come from the on-demand lookup.
+- **Tests**: `test_abusech_feed_parse` (real CSV shapes, incl. the `", "` separator of the ThreatFox export) and `test_abusech_feed_lookup`; the ThreatFox `no_result` case is covered too.
+- No web/UI or schema changes: feed hits reuse `domain_abusech` and `api/v1/abusech_results.php`.
+
 ## [v1.16.0] - 2026-09-24
 
 ### Added - abuse.ch (URLhaus + ThreatFox) domain validation

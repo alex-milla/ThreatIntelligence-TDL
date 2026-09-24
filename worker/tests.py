@@ -422,7 +422,69 @@ def test_abusech_classify() -> None:
     # Not found anywhere -> clean.
     assert abusech.classify({"query_status": "no_results"}, {"query_status": "no_results"})["verdict"] == "clean"
     assert abusech.classify({}, {})["verdict"] == "clean"
+    # ThreatFox returns no_result (singular) with a string data payload.
+    assert abusech.classify({"query_status": "no_results"},
+                            {"query_status": "no_result", "data": "Your search did not yield any results"})["verdict"] == "clean"
     print("[PASS] test_abusech_classify")
+
+
+def test_abusech_feed_parse() -> None:
+    uh_csv = (
+        "################################################################\n"
+        "# id,dateadded,url,url_status,last_online,threat,tags,urlhaus_link,reporter\n"
+        '"1","2026-09-01 10:00:00","http://evil.example/a.exe","online","2026-09-01 10:00:00","malware_download","emotet,exe","https://urlhaus.abuse.ch/url/1/","x"\n'
+        '"2","2026-09-02 10:00:00","http://evil.example/b.exe","offline","","malware_download","None","https://urlhaus.abuse.ch/url/2/","y"\n'
+        '"3","2026-09-03 10:00:00","http://1.2.3.4/payload","online","2026-09-03 10:00:00","malware_download","None","https://urlhaus.abuse.ch/url/3/","z"\n'
+    )
+    uh = abusech.parse_urlhaus_csv(uh_csv)
+    assert "evil.example" in uh and "1.2.3.4" not in uh, uh
+    assert uh["evil.example"]["url_count"] == 2
+    assert uh["evil.example"]["online"] == 1
+    assert "emotet" in uh["evil.example"]["tags"]
+
+    tf_csv = (
+        "########################\n"
+        '"first_seen_utc", "ioc_id", "ioc_value", "ioc_type", "threat_type", "fk_malware", "malware_alias", "malware_printable", "last_seen_utc", "confidence_level", "is_compromised", "reference", "tags", "anonymous", "reporter"\n'
+        '"2026-09-01 00:00:00", "10", "bad.example", "domain", "botnet_cc", "win.dridex", "None", "Dridex", "", "75", "False", "None", "exe", "0", "abuse_ch"\n'
+        '"2026-09-01 00:00:00", "11", "9.9.9.9:443", "ip:port", "botnet_cc", "win.dridex", "None", "Dridex", "", "75", "False", "None", "None", "0", "abuse_ch"\n'
+        '"2026-09-01 00:00:00", "12", "http://url.example/x", "url", "payload", "win.x", "None", "X", "", "50", "False", "None", "None", "0", "abuse_ch"\n'
+    )
+    tf = abusech.parse_threatfox_csv(tf_csv)
+    assert "bad.example" in tf and "url.example" not in tf, tf
+    assert tf["bad.example"]["malware"] == "Dridex"
+    assert tf["bad.example"]["threat_type"] == "botnet_cc"
+    assert tf["bad.example"]["confidence"] == 75
+    print("[PASS] test_abusech_feed_parse")
+
+
+def test_abusech_feed_lookup() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
+        now = "2026-09-24 00:00:00"
+        db.executemany(
+            "INSERT INTO abusech_feed (domain, source, threat_type, malware, confidence, tags, "
+            "first_seen, last_seen, url_count, online, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                ("evil.example", "urlhaus", "malware_download", "", 0, "emotet", "2026-09-01", None, 3, 1, now),
+                ("bad.example", "threatfox", "botnet_cc", "Dridex", 75, "exe", "2026-09-01", None, 0, 0, now),
+                ("offline.example", "urlhaus", "malware_download", "", 0, "", "2026-09-01", None, 2, 0, now),
+            ])
+        db.commit()
+        got = {e["domain"]: e for e in abusech.feed_lookup(
+            db, ["evil.example", "bad.example", "offline.example", "clean.example"])}
+        assert got["evil.example"]["verdict"] == "malicious"
+        assert got["evil.example"]["urlhaus_online"] == 1
+        assert got["bad.example"]["verdict"] == "malicious"
+        assert got["bad.example"]["malware_family"] == "Dridex"
+        assert got["offline.example"]["verdict"] == "suspicious"
+        assert "clean.example" not in got
+        assert abusech.feed_age_hours(db) is None
+        db.execute("INSERT OR REPLACE INTO abusech_feed_meta (key,value) VALUES ('synced_at','2026-09-24 00:00:00')")
+        db.commit()
+        age = abusech.feed_age_hours(db)
+        assert age is not None and age >= 0
+        db.close()
+    print("[PASS] test_abusech_feed_lookup")
 
 
 def test_local_db_vt_usage() -> None:
@@ -676,6 +738,8 @@ if __name__ == "__main__":
     test_search_cached_domains_with_cctld()
     test_virustotal_classify()
     test_abusech_classify()
+    test_abusech_feed_parse()
+    test_abusech_feed_lookup()
     test_local_db_vt_usage()
     test_daily_schedule_resolution()
     test_daily_cycle_due()

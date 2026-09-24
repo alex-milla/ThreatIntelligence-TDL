@@ -235,6 +235,15 @@ The domain detail (Watchlist, Notifications, Dashboard lookup and the reports) s
 
 Results are cached in `domain_vt` and `domain_abusech`, so repeat views are instant. A missing API key makes the command fail with a clear message (the rest of the worker is unaffected).
 
+### abuse.ch bulk feed (local blacklist)
+
+Besides the on-demand lookup, the worker keeps a **local copy of the full URLhaus and ThreatFox datasets** so freshly detected domains can be validated without spending API quota:
+
+- **When**: after the daily TLD sync (the same hook as auto-WHOIS), the worker refreshes the dump when it is older than `feed_sync_hours` (default 24) and then cross-checks the new (non-historical) matches, capped by `auto_abusech_max` (default 200). Disable it with `feed_enabled = false`.
+- **What it stores**: `abusech_feed` (worker DB) holds one row per domain per source — URLhaus host aggregates (URL count / online count / tags) and ThreatFox domain IOCs (threat type, malware family, confidence, tags). The URLhaus CSV dump has no Spamhaus DBL status, so phishing/botnet DBL classifications come only from the on-demand lookup.
+- **What it sends**: only `malicious`/`suspicious` hits, so a feed "not found" never overwrites a richer on-demand result.
+- **Config**: `feed_enabled`, `feed_sync_hours`, `auto_abusech_max`, `feed_timeout`, `feed_urlhaus_dump` (default `recent.csv`).
+
 ## OpenINTEL ccTLD import (optional, weekly)
 
 CZDS only covers gTLDs. For **country-code TLDs** (`.io`, `.es`, `.fr`, ...) the worker can additionally import the **weekly apex-domain lists** published by [OpenINTEL](https://www.openintel.nl/data/domain-lists/cctld-names/), extracted from Certificate Transparency logs.

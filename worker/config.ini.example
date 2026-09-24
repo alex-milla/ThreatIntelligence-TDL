@@ -114,6 +114,20 @@ timeout = 20
 ; Sources queried on demand. Disable one to halve the requests per domain.
 urlhaus_enabled = true
 threatfox_enabled = true
+; --- Bulk feed (local blacklist) ---
+; After each TLD sync, download the full URLhaus + ThreatFox datasets into the
+; local worker DB and match the freshly detected domains against them (no API
+; quota, no per-domain request). The feed is refreshed when older than
+; feed_sync_hours; the on-demand lookup above still covers the fresh domains.
+feed_enabled = true
+; Refresh the local feed when it is older than this many hours (0 = every cycle).
+feed_sync_hours = 24
+; Cap of new domains cross-checked against the feed per cycle.
+auto_abusech_max = 200
+; Seconds to wait for each dataset download.
+feed_timeout = 120
+; URLhaus dump to download: recent.csv (recommended) or another export name.
+feed_urlhaus_dump = recent.csv
 
 [openintel]
 ; Weekly ccTLD apex-domain lists from OpenINTEL (see README).

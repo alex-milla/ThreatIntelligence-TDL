@@ -23,10 +23,19 @@ The caller (scheduler.py) spaces requests and enforces the daily limit. Each
 domain counts as one unit against the limit (it may be two HTTP requests).
 """
 
+import csv
+import io
+import ipaddress
+import zipfile
+from datetime import datetime, timezone
+from urllib.parse import urlsplit
+
 import requests
 
 URLHAUS_URL = "https://urlhaus-api.abuse.ch/v1/host/"
 THREATFOX_URL = "https://threatfox-api.abuse.ch/api/v1/"
+URLHAUS_EXPORT = "https://urlhaus-api.abuse.ch/v2/files/exports/{key}/{name}"
+THREATFOX_EXPORT = "https://threatfox-api.abuse.ch/v2/files/exports/{key}/full.csv.zip"
 USER_AGENT = "ThreatIntelligence-TDL-Worker/1.0"
 
 # Spamhaus DBL classifications returned by URLhaus for a host.
@@ -292,3 +301,296 @@ def lookup_domain(domain: str, api_key: str, timeout: int = 20,
     result.update(classify(u_data, t_data))
     result["status"] = "ok"
     return result
+
+
+# ---------------------------------------------------------------------------
+# Bulk feed (full URLhaus + ThreatFox datasets, matched locally)
+# ---------------------------------------------------------------------------
+
+def _now_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _clean_tag_list(value) -> list:
+    """Split a CSV tags field ("None", "a,b") into a clean list."""
+    if value is None:
+        return []
+    parts = []
+    for raw in str(value).split(","):
+        t = raw.strip()
+        if not t or t.lower() in ("none", "null", "na"):
+            continue
+        parts.append(t)
+    return _unique(parts)
+
+
+def _extract_host(url: str):
+    """Hostname from a URL, or None for IPs / unparseable values."""
+    try:
+        host = (urlsplit(str(url)).hostname or "").strip().lower()
+    except Exception:
+        return None
+    if not host:
+        return None
+    try:
+        ipaddress.ip_address(host)
+        return None  # a raw IP is not a domain we validate
+    except ValueError:
+        return host
+
+
+def _min_date(a, b):
+    if not a:
+        return b
+    if not b:
+        return a
+    return a if a <= b else b
+
+
+def parse_urlhaus_csv(text: str) -> dict:
+    """Aggregate the URLhaus CSV dump by host.
+
+    Columns: id, dateadded, url, url_status, last_online, threat, tags,
+    urlhaus_link, reporter. The dump has no host column and no Spamhaus DBL
+    status, so each host is aggregated (URL count, currently-online count, tags,
+    first/last dates).
+    """
+    by_host: dict = {}
+    reader = csv.reader(io.StringIO(text), skipinitialspace=True)
+    for row in reader:
+        if not row or len(row) < 7:
+            continue
+        if str(row[0]).lstrip().startswith("#"):
+            continue
+        host = _extract_host(row[2])
+        if not host:
+            continue
+        entry = by_host.setdefault(host, {
+            "url_count": 0, "online": 0, "tags": [], "first_seen": None, "last_seen": None,
+        })
+        entry["url_count"] += 1
+        if str(row[3]).strip().lower() == "online":
+            entry["online"] += 1
+        entry["tags"].extend(_clean_tag_list(row[6]))
+        entry["first_seen"] = _min_date(entry["first_seen"], str(row[1]).strip() or None)
+        last_online = str(row[4]).strip()
+        if last_online:
+            entry["last_seen"] = _max_date(entry["last_seen"], last_online)
+    return by_host
+
+
+def parse_threatfox_csv(text: str) -> dict:
+    """Aggregate the ThreatFox CSV dump by domain (ioc_type == "domain").
+
+    Columns: first_seen_utc, ioc_id, ioc_value, ioc_type, threat_type,
+    fk_malware, malware_alias, malware_printable, last_seen_utc,
+    confidence_level, is_compromised, reference, tags, anonymous, reporter.
+    """
+    by_domain: dict = {}
+    reader = csv.reader(io.StringIO(text), skipinitialspace=True)
+    for row in reader:
+        if not row or len(row) < 10:
+            continue
+        if str(row[0]).lstrip().startswith("#"):
+            continue
+        if str(row[3]).strip().lower() != "domain":
+            continue
+        domain = str(row[2]).strip().lower()
+        if not domain or len(domain) > 253:
+            continue
+        family = str(row[7]).strip() if len(row) > 7 else ""
+        if not family or family.lower() in ("none", "null"):
+            family = str(row[5]).strip() if len(row) > 5 and str(row[5]).lower() not in ("none", "null") else ""
+        entry = by_domain.setdefault(domain, {
+            "threat_type": "", "malware": "", "confidence": 0, "tags": [],
+            "first_seen": None, "last_seen": None,
+        })
+        tt = str(row[4]).strip()
+        if tt:
+            entry["threat_type"] = tt
+        if family:
+            entry["malware"] = family
+        entry["confidence"] = max(entry["confidence"], _int(row[9]) if len(row) > 9 else 0)
+        entry["tags"].extend(_clean_tag_list(row[12]) if len(row) > 12 else [])
+        entry["first_seen"] = _min_date(entry["first_seen"], str(row[0]).strip() or None)
+        last_seen = str(row[8]).strip() if len(row) > 8 else ""
+        if last_seen:
+            entry["last_seen"] = _max_date(entry["last_seen"], last_seen)
+    return by_domain
+
+
+def parse_threatfox_zip(content: bytes) -> dict:
+    """Parse the ThreatFox `full.csv.zip` export from its raw bytes."""
+    with zipfile.ZipFile(io.BytesIO(content)) as z:
+        names = [n for n in z.namelist() if n.lower().endswith(".csv")]
+        if not names:
+            return {}
+        with z.open(names[0]) as f:
+            text = f.read().decode("utf-8", "replace")
+    return parse_threatfox_csv(text)
+
+
+def _replace_feed_source(db, source: str, rows: list) -> int:
+    """Swap all rows for one feed source inside the caller's transaction."""
+    db.execute("DELETE FROM abusech_feed WHERE source = ?", (source,))
+    if rows:
+        db.executemany(
+            "INSERT OR REPLACE INTO abusech_feed "
+            "(domain, source, threat_type, malware, confidence, tags, first_seen, last_seen, "
+            " url_count, online, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+    return len(rows)
+
+
+def feed_age_hours(db):
+    """Hours since the last successful feed sync, or None if never synced."""
+    try:
+        row = db.execute("SELECT value FROM abusech_feed_meta WHERE key = 'synced_at'").fetchone()
+    except Exception:
+        return None
+    if not row or not row[0]:
+        return None
+    try:
+        ts = datetime.strptime(str(row[0]), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return (datetime.now(timezone.utc) - ts).total_seconds() / 3600.0
+
+
+def sync_feed(db, cfg, auth_key: str, timeout: int = 120) -> int:
+    """Download the URLhaus + ThreatFox full datasets into the local feed table.
+
+    Best effort: a failing source leaves the previous rows in place. Returns the
+    number of rows stored (0 if both sources failed).
+    """
+    if not auth_key:
+        return 0
+    headers = {"Auth-Key": auth_key, "User-Agent": USER_AGENT}
+    now = _now_utc()
+    stored = 0
+    ok_sources = 0
+
+    dump = "recent.csv"
+    try:
+        dump = cfg.get("abusech", "feed_urlhaus_dump", fallback="recent.csv").strip() or "recent.csv"
+    except Exception:
+        pass
+
+    try:
+        r = requests.get(URLHAUS_EXPORT.format(key=auth_key, name=dump), headers=headers, timeout=timeout)
+        if r.status_code == 200:
+            hosts = parse_urlhaus_csv(r.text)
+            rows = [(
+                host, "urlhaus", "malware_download", "", 0,
+                ",".join(_unique(e["tags"]))[:255],
+                e["first_seen"], e["last_seen"], e["url_count"], e["online"], now,
+            ) for host, e in hosts.items()]
+            stored += _replace_feed_source(db, "urlhaus", rows)
+            ok_sources += 1
+    except requests.RequestException:
+        pass
+
+    try:
+        r = requests.get(THREATFOX_EXPORT.format(key=auth_key), headers=headers, timeout=timeout)
+        if r.status_code == 200:
+            domains = parse_threatfox_zip(r.content)
+            rows = [(
+                domain, "threatfox", e["threat_type"], e["malware"], e["confidence"],
+                ",".join(_unique(e["tags"]))[:255],
+                e["first_seen"], e["last_seen"], 0, 0, now,
+            ) for domain, e in domains.items()]
+            stored += _replace_feed_source(db, "threatfox", rows)
+            ok_sources += 1
+    except (requests.RequestException, zipfile.BadZipFile):
+        pass
+
+    if ok_sources:
+        db.execute("INSERT OR REPLACE INTO abusech_feed_meta (key, value) VALUES ('synced_at', ?)", (now,))
+        db.commit()
+    return stored
+
+
+def _feed_entry(domain: str, u: dict | None, t: dict | None) -> dict:
+    """Build a stored result dict from the two per-domain feed rows."""
+    if u:
+        if u["online"] > 0:
+            url_v = "malicious"
+        elif u["url_count"] > 0:
+            url_v = "suspicious"
+        else:
+            url_v = "clean"
+    else:
+        url_v = "clean"
+
+    if t:
+        tf_v = "malicious"
+    else:
+        tf_v = "clean"
+
+    if "malicious" in (url_v, tf_v):
+        verdict = "malicious"
+    elif "suspicious" in (url_v, tf_v):
+        verdict = "suspicious"
+    else:
+        verdict = "clean"
+
+    tags = []
+    if u:
+        tags += str(u["tags"] or "").split(",")
+    if t:
+        tags += str(t["tags"] or "").split(",")
+    tags = _unique([x.strip() for x in tags if x.strip()])
+
+    return {
+        "domain": domain,
+        "verdict": verdict,
+        "urlhaus_verdict": url_v,
+        "urlhaus_url_count": u["url_count"] if u else 0,
+        "urlhaus_online": u["online"] if u else 0,
+        "urlhaus_dbl": "",  # the CSV dump has no Spamhaus DBL status
+        "threatfox_verdict": tf_v,
+        "threatfox_matches": 1 if t else 0,
+        "threat_type": (t["threat_type"] if t else ""),
+        "malware_family": (t["malware"] if t else ""),
+        "confidence": (t["confidence"] if t else 0),
+        "tags": ",".join(tags)[:255],
+        "last_analysis_date": _max_date(u["first_seen"] if u else None, t["last_seen"] if t else None),
+    }
+
+
+def feed_lookup(db, domains: list, chunk: int = 500) -> list:
+    """Match domains against the local abuse.ch feed; returns result entries."""
+    clean = []
+    seen = set()
+    for d in domains or []:
+        d = str(d).lower().strip()
+        if d and d not in seen:
+            seen.add(d)
+            clean.append(d)
+    if not clean:
+        return []
+
+    found: dict = {}
+    for i in range(0, len(clean), chunk):
+        part = clean[i:i + chunk]
+        placeholders = ",".join("?" * len(part))
+        rows = db.execute(
+            "SELECT domain, source, threat_type, malware, confidence, tags, "
+            "first_seen, last_seen, url_count, online FROM abusech_feed "
+            f"WHERE domain IN ({placeholders})", part,
+        ).fetchall()
+        for r in rows:
+            d = r[0]
+            entry = found.setdefault(d, {"u": None, "t": None})
+            if r[1] == "urlhaus":
+                entry["u"] = {"url_count": r[8] or 0, "online": r[9] or 0,
+                              "tags": r[5] or "", "first_seen": r[6]}
+            elif r[1] == "threatfox":
+                entry["t"] = {"threat_type": r[2] or "", "malware": r[3] or "",
+                              "confidence": r[4] or 0, "tags": r[5] or "",
+                              "last_seen": r[7]}
+
+    return [_feed_entry(d, e["u"], e["t"]) for d, e in found.items()]
+
+

@@ -121,6 +121,27 @@ def init_local_db(db_path: str, cache_mb: int = 2048) -> sqlite3.Connection:
             day TEXT PRIMARY KEY,
             count INTEGER DEFAULT 0
         );
+
+        -- Local abuse.ch blacklist (URLhaus + ThreatFox full dumps), matched
+        -- against freshly detected domains after each TLD sync.
+        CREATE TABLE IF NOT EXISTS abusech_feed (
+            domain TEXT NOT NULL,
+            source TEXT NOT NULL,
+            threat_type TEXT,
+            malware TEXT,
+            confidence INTEGER DEFAULT 0,
+            tags TEXT,
+            first_seen TEXT,
+            last_seen TEXT,
+            url_count INTEGER DEFAULT 0,
+            online INTEGER DEFAULT 0,
+            updated_at TEXT,
+            PRIMARY KEY (domain, source)
+        );
+        CREATE TABLE IF NOT EXISTS abusech_feed_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
     """)
     # Migration: drop the unused tld index on the hash cache (older versions).
     try:
@@ -249,6 +270,63 @@ def auto_whois_new_matches(cfg: configparser.ConfigParser, host_url: str, api_ke
         return len(entries)
     except Exception as e:  # never abort the cycle for an enrichment failure
         log.warning("Auto-WHOIS failed: %s", e)
+        return 0
+
+
+def auto_abusech_new_matches(cfg: configparser.ConfigParser, db: sqlite3.Connection,
+                             host_url: str, api_key: str, matches: list[dict]) -> int:
+    """Validate freshly matched domains against the local abuse.ch feed.
+
+    Runs after the TLD sync: refreshes the local URLhaus/ThreatFox dump when it
+    is older than ``feed_sync_hours`` and then matches the new (non-historical)
+    domains against it, sending only the malicious/suspicious hits (a feed "not
+    found" must never overwrite a richer on-demand result). Best effort: never
+    raises, so a feed problem cannot abort the worker cycle. Returns the number
+    of hits sent.
+    """
+    if not cfg.has_section("abusech") or not cfg.getboolean("abusech", "feed_enabled", fallback=True):
+        return 0
+    auth_key = cfg.get("abusech", "auth_key", fallback="").strip()
+    if not auth_key or auth_key.upper().startswith("TU_"):
+        return 0
+
+    sync_hours = cfg.getfloat("abusech", "feed_sync_hours", fallback=24)
+    try:
+        age = abusech.feed_age_hours(db)
+        if age is None or sync_hours <= 0 or age >= sync_hours:
+            stored = abusech.sync_feed(db, cfg, auth_key,
+                                       timeout=cfg.getint("abusech", "feed_timeout", fallback=120))
+            log.info("abuse.ch feed refreshed: %s row(s)", stored)
+    except Exception as e:  # never abort the cycle for a feed failure
+        log.warning("abuse.ch feed sync failed: %s", e)
+
+    max_lookups = max(0, cfg.getint("abusech", "auto_abusech_max", fallback=200))
+    if not matches or max_lookups == 0:
+        return 0
+
+    domains: list[str] = []
+    seen: set = set()
+    for m in matches:
+        if m.get("is_historical"):
+            continue
+        d = str(m.get("domain", "")).lower().strip()
+        if not d or d in seen:
+            continue
+        seen.add(d)
+        domains.append(d)
+        if len(domains) >= max_lookups:
+            break
+    if not domains:
+        return 0
+
+    try:
+        hits = [e for e in abusech.feed_lookup(db, domains)
+                if e.get("verdict") in ("malicious", "suspicious")]
+        if hits and sync_client.send_abusech_results(host_url, api_key, hits):
+            log.info("abuse.ch feed validation: %s hit(s) out of %s domain(s)", len(hits), len(domains))
+        return len(hits)
+    except Exception as e:  # never abort the cycle
+        log.warning("abuse.ch feed lookup failed: %s", e)
         return 0
 
 
@@ -983,6 +1061,14 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
     # panel and reports already show creation dates without a manual lookup.
     if all_matches:
         stats["whois_looked_up"] = auto_whois_new_matches(cfg, host_url, api_key, all_matches)
+
+    # 6c. Validate the new matches against the local abuse.ch feed (URLhaus +
+    # ThreatFox full dumps), refreshed after the TLD sync when it is stale.
+    try:
+        stats["abusech_validated"] = auto_abusech_new_matches(cfg, db, host_url, api_key, all_matches)
+    except Exception as e:  # never abort the cycle for an enrichment failure
+        log.warning("Auto-abuse.ch validation failed: %s", e)
+        stats["abusech_validated"] = 0
 
     stats["domains_processed"] = domains_processed
     set_last_run(db)
