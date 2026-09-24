@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.2] - 2026-09-24
+
+### Added - Monthly reminder to review excluded domains (Dashboard)
+
+- The **Dashboard** shows a dismissible reminder from the **last day of each month** onwards to review the `excluded` domains (which Intelligence keeps following), with the current count and a link to the **Intelligence** page.
+- It persists until dismissed; the dismissal is stored per user and per review month (`user_reminders` table, key `monthly_excluded:YYYY-MM`), so it returns at the next month end. It is hidden when there are no excluded domains.
+- Computed on page load (Europe/Madrid), no cron needed. New `includes/reminders.php`; the dismiss handler is in `index.php` (CSRF + PRG); small CSS accent.
+- No worker or API changes.
+
 ## [v1.18.1] - 2026-09-24
 
 ### Fixed - "Fetch WHOIS (worker)" now refreshes the selected domains

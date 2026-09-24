@@ -135,6 +135,14 @@ class Database {
             value TEXT
         )");
 
+        // Per-user dismissible reminders (e.g. the monthly excluded-domain review).
+        $db->exec("CREATE TABLE IF NOT EXISTS user_reminders (
+            user_id INTEGER NOT NULL,
+            key TEXT NOT NULL,
+            dismissed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, key)
+        )");
+
         $db->exec("CREATE TABLE IF NOT EXISTS api_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ip_address TEXT NOT NULL,

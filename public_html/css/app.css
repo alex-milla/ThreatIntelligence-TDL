@@ -1011,6 +1011,9 @@ h5 { font-size: 1.15rem; font-weight: 500; }
 .alert-warning { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
 .alert-info    { background: var(--info-bg);    color: var(--info);    border-color: var(--info-border); }
 
+/* Monthly excluded-domain review reminder (Dashboard) */
+.reminder-card { border-left: 4px solid var(--warning); }
+
 .notice {
     padding: 12px 16px;
     border-radius: 8px;

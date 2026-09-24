@@ -1,14 +1,30 @@
 <?php
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/reminders.php';
 requireAuth();
 
 $db = Database::get();
 $userId = (int)$_SESSION['user_id'];
 $isAdmin = !empty($_SESSION['is_admin']);
+
+// Dismiss the monthly excluded-domain review reminder (PRG).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'dismiss_reminder') {
+    validateCsrf();
+    $rkey = (string)($_POST['key'] ?? '');
+    if (reminderKeyValid($rkey)) {
+        reminderDismiss($db, $userId, $rkey);
+    }
+    header('Location: /');
+    exit;
+}
+
 $message = $_SESSION['flash_message'] ?? '';
 unset($_SESSION['flash_message']);
 $activity = getWorkerActivity($db);
+
+// Monthly reminder to review the `excluded` domains (Dashboard only).
+$showReminder = excludedReviewDue($db, $userId, $reminderKey, $excludedCount);
 
 // Hide from the "new" dashboard view (matching the notifications page default):
 // historical (recheck) matches, domains classified good/bad, and domains whose
@@ -61,6 +77,28 @@ require __DIR__ . '/templates/header.php';
 
 <?php if ($message): ?>
 <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= htmlspecialchars($message) ?></div>
+<?php endif; ?>
+
+<?php if ($showReminder): ?>
+<div class="card reminder-card">
+    <div class="card-head">
+        <h2>Monthly review <span class="card-sub">excluded domains</span></h2>
+    </div>
+    <p>
+        You have <strong><?= number_format($excludedCount) ?></strong> excluded domain(s) under keyword monitoring.
+        Take a moment to review them: Intelligence keeps following the recently registered ones and will flag any
+        that becomes active.
+    </p>
+    <div class="section-actions">
+        <a class="btn btn-small waves-effect" href="/intelligence.php"><i class="material-icons left">travel_explore</i>Review in Intelligence</a>
+        <form method="POST" style="display: inline;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="dismiss_reminder">
+            <input type="hidden" name="key" value="<?= htmlspecialchars($reminderKey) ?>">
+            <button type="submit" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">done</i>Dismiss</button>
+        </form>
+    </div>
+</div>
 <?php endif; ?>
 
 <span id="activity-watcher" hidden
