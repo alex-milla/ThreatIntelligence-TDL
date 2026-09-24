@@ -132,17 +132,24 @@ feed_urlhaus_dump = recent.csv
 [tracking]
 ; --- Intelligence: dormant-domain tracking ---
 ; Recently registered keyword matches that are still clean are enrolled (per
-; keyword, from the web UI) and re-validated periodically. F1 signals:
-; reputation (abuse.ch + VirusTotal) and WHOIS/NS changes.
+; keyword, from the web UI) and re-validated on a weekly pass. Signals:
+; reputation (abuse.ch + VirusTotal), WHOIS/NS, DNS, TLS certificate and HTTP.
 enabled = true
 ; Enroll freshly matched domains into tracking (the web applies the per-keyword policy).
 enroll_enabled = true
 ; Seconds between tracked-domain checks.
 rate_delay_seconds = 1.0
-; Maximum tracked domains checked per pass.
+; Maximum tracked domains checked per due-list batch (the pass loops until done).
 batch_max = 200
-; Minimum minutes between tracking passes (independent of the TLD cycle).
-run_interval_minutes = 60
+; Safety cap of domains processed in a single weekly pass.
+weekly_batch_max = 5000
+; Weekly pass: day + time + timezone. Defaults to Sunday 03:00 Europe/Madrid.
+weekly_enabled = true
+weekly_day = sunday
+weekly_run_time = 03:00
+weekly_run_timezone = Europe/Madrid
+; Interval (hours) a keyword's domains wait before being due again. 168 = weekly.
+default_interval_hours = 168
 ; Signal toggles.
 reputation_enabled = true
 whois_enabled = true

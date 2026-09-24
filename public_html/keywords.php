@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             ? 'You have reached your keyword limit. Increase it in Admin → Users.'
             : "You have reached your keyword limit ({$limit}). Contact the administrator.";
     } else {
-        $stmt = $db->prepare("INSERT INTO keywords (user_id, keyword) VALUES (?, ?)");
+        $stmt = $db->prepare("INSERT INTO keywords (user_id, keyword, tracking_interval_hours) VALUES (?, ?, 168)");
         try {
             $stmt->execute([$userId, $keyword]);
             $message = 'Keyword added successfully.';
@@ -55,10 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $keywordId = (int)($_POST['keyword_id'] ?? 0);
     $enabled = isset($_POST['tracking_enabled']) ? 1 : 0;
     $days = max(1, min(3650, (int)($_POST['tracking_days'] ?? 90)));
-    $interval = max(1, min(8760, (int)($_POST['tracking_interval_hours'] ?? 24)));
     $maxAge = max(1, min(3650, (int)($_POST['tracking_enroll_max_age_days'] ?? 30)));
-    $stmt = $db->prepare("UPDATE keywords SET tracking_enabled = ?, tracking_days = ?, tracking_interval_hours = ?, tracking_enroll_max_age_days = ? WHERE id = ? AND user_id = ?");
-    $stmt->execute([$enabled, $days, $interval, $maxAge, $keywordId, $userId]);
+    $stmt = $db->prepare("UPDATE keywords SET tracking_enabled = ?, tracking_days = ?, tracking_enroll_max_age_days = ? WHERE id = ? AND user_id = ?");
+    $stmt->execute([$enabled, $days, $maxAge, $keywordId, $userId]);
     $_SESSION['flash_message'] = 'Tracking settings updated.';
     header('Location: /keywords.php');
     exit;
@@ -304,17 +303,17 @@ require __DIR__ . '/templates/header.php';
                     </td>
                     <td>
                         <details class="kw-tracking">
-                            <summary><?= !empty($k['tracking_enabled']) ? 'On &middot; ' . (int)$k['tracking_days'] . 'd / ' . (int)$k['tracking_interval_hours'] . 'h' : 'Off' ?></summary>
+                            <summary><?= !empty($k['tracking_enabled']) ? 'On &middot; ' . (int)$k['tracking_days'] . 'd window' : 'Off' ?></summary>
                             <form method="POST" class="kw-tracking-form">
                                 <?php csrfField(); ?>
                                 <input type="hidden" name="action" value="update_tracking">
                                 <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
                                 <label class="check-inline"><input type="checkbox" name="tracking_enabled" value="1" <?= !empty($k['tracking_enabled']) ? 'checked' : '' ?>><span></span>Enabled</label>
                                 <label class="muted">Window (days) <input type="number" name="tracking_days" min="1" max="3650" value="<?= (int)$k['tracking_days'] ?>" class="browser-default compact"></label>
-                                <label class="muted">Every (hours) <input type="number" name="tracking_interval_hours" min="1" max="8760" value="<?= (int)$k['tracking_interval_hours'] ?>" class="browser-default compact"></label>
                                 <label class="muted">Enroll if &le; (days old) <input type="number" name="tracking_enroll_max_age_days" min="1" max="3650" value="<?= (int)$k['tracking_enroll_max_age_days'] ?>" class="browser-default compact"></label>
                                 <button type="submit" class="btn btn-small waves-effect">Save</button>
                             </form>
+                            <p class="muted" style="margin:4px 0 0; font-size:.72rem;">Checks run weekly (Sunday night).</p>
                         </details>
                     </td>
                     <td><?= htmlspecialchars(fmt_date($k['created_at'])) ?></td>

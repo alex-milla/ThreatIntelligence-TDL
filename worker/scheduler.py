@@ -337,23 +337,76 @@ def auto_abusech_new_matches(cfg: configparser.ConfigParser, db: sqlite3.Connect
         return 0
 
 
-def tracking_cycle_due(cfg: configparser.ConfigParser, db: sqlite3.Connection) -> bool:
-    """True when a tracking pass should run (own cadence, independent of TLDs)."""
-    if not cfg.has_section("tracking") or not cfg.getboolean("tracking", "enabled", fallback=True):
-        return False
-    interval = max(1, cfg.getint("tracking", "run_interval_minutes", fallback=60))
+_WEEKDAYS = {
+    "monday": 0, "mon": 0, "tuesday": 1, "tue": 1, "wednesday": 2, "wed": 2,
+    "thursday": 3, "thu": 3, "friday": 4, "fri": 4, "saturday": 5, "sat": 5,
+    "sunday": 6, "sun": 6,
+}
+
+
+def resolve_weekly_schedule(cfg: configparser.ConfigParser):
+    """Resolve the weekly Intelligence tracking schedule.
+
+    Returns (enabled, weekday, hour, minute, tzinfo), weekday Monday=0..Sunday=6.
+    Defaults to Sunday 03:00 Europe/Madrid.
+    """
+    enabled = cfg.getboolean("tracking", "weekly_enabled", fallback=True) if cfg.has_section("tracking") else False
+    day_str = (cfg.get("tracking", "weekly_day", fallback="sunday") or "sunday").strip().lower() if cfg.has_section("tracking") else "sunday"
+    weekday = _WEEKDAYS.get(day_str)
+    if weekday is None:
+        try:
+            weekday = int(day_str) % 7
+        except ValueError:
+            weekday = 6
+    time_str = (cfg.get("tracking", "weekly_run_time", fallback="03:00") or "03:00").strip() if cfg.has_section("tracking") else "03:00"
+    tz_name = (cfg.get("tracking", "weekly_run_timezone", fallback="Europe/Madrid") or "Europe/Madrid").strip() if cfg.has_section("tracking") else "Europe/Madrid"
+    tz = timezone.utc
+    if ZoneInfo is not None:
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            log.warning("Unknown weekly_run_timezone '%s'; using UTC.", tz_name)
+    else:
+        log.warning("zoneinfo is not available; using UTC for the weekly schedule.")
     try:
-        row = db.execute("SELECT value FROM tracking_meta WHERE key = 'last_run'").fetchone()
-    except sqlite3.OperationalError:
-        return True
-    if not row or not row[0]:
-        return True
-    try:
-        last = datetime.strptime(str(row[0]), "%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        return True
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    return (now - last).total_seconds() >= interval * 60
+        hour, minute = (int(part) for part in time_str.split(":")[:2])
+        if not (0 <= hour < 24 and 0 <= minute < 60):
+            raise ValueError(time_str)
+    except Exception:
+        log.warning("Invalid weekly_run_time '%s'; using 03:00.", time_str)
+        hour, minute = 3, 0
+    return enabled, weekday, hour, minute, tz
+
+
+def get_weekly_attempt(db: sqlite3.Connection) -> str | None:
+    cursor = db.cursor()
+    cursor.execute("SELECT value FROM config WHERE key = 'last_weekly_attempt'")
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def set_weekly_attempt(db: sqlite3.Connection, week_key: str) -> None:
+    cursor = db.cursor()
+    cursor.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('last_weekly_attempt', ?)", (week_key,))
+    db.commit()
+
+
+def weekly_tracking_due(cfg: configparser.ConfigParser, db: sqlite3.Connection) -> tuple[bool, str, object]:
+    """Decide whether the daemon must run the weekly Intelligence pass now.
+
+    Returns (due, week_key, tzinfo). Due once per ISO week, after the configured
+    weekday/time; if the host was off then it runs on the next poll.
+    """
+    enabled, weekday, hour, minute, tz = resolve_weekly_schedule(cfg)
+    if not enabled:
+        return False, "", tz
+    now = datetime.now(tz)
+    monday = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    target = (monday + timedelta(days=weekday)).replace(hour=hour, minute=minute)
+    if now < target:
+        return False, "", tz
+    week_key = now.strftime("%G-W%V")
+    return get_weekly_attempt(db) != week_key, week_key, tz
 
 
 def enroll_tracking_matches(cfg: configparser.ConfigParser, host_url: str, api_key: str,
@@ -399,11 +452,11 @@ def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
     resolution and a TLS certificate issued after enrollment. Best effort per
     domain; never raises. Returns stats.
     """
-    stats = {"due": 0, "checked": 0, "activated": 0, "sent": False}
+    stats = {"due": 0, "checked": 0, "activated": 0, "sent": False, "batches": 0}
     if not cfg.has_section("tracking") or not cfg.getboolean("tracking", "enabled", fallback=True):
         return stats
 
-    # Stamp the run up front so the cadence guard does not busy-loop.
+    # Informational last-run stamp (the weekly cadence uses the config marker).
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     try:
         db.execute("INSERT OR REPLACE INTO tracking_meta (key, value) VALUES ('last_run', ?)", (now,))
@@ -411,15 +464,8 @@ def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
     except sqlite3.OperationalError:
         pass
 
-    limit = max(1, cfg.getint("tracking", "batch_max", fallback=200))
-    try:
-        due = sync_client.get_tracking_due(host_url, api_key, limit=limit, domains=domains)
-    except Exception as e:
-        log.warning("Tracking: could not fetch due list: %s", e)
-        return stats
-    if not due:
-        return stats
-    stats["due"] = len(due)
+    batch = max(1, cfg.getint("tracking", "batch_max", fallback=200))
+    max_total = max(1, cfg.getint("tracking", "weekly_batch_max", fallback=5000))
 
     reputation_on = cfg.getboolean("tracking", "reputation_enabled", fallback=True)
     whois_on = cfg.getboolean("tracking", "whois_enabled", fallback=True)
@@ -446,111 +492,136 @@ def run_tracking_check(cfg: configparser.ConfigParser, db: sqlite3.Connection,
         vt_key = cfg.get("virustotal", "api_key", fallback="").strip()
     vt_on = reputation_on and bool(vt_key) and not vt_key.upper().startswith("TU_")
 
-    # Deduplicate by domain (a domain may be tracked under several keywords);
-    # keep every keyword so the HTTP brand match can use them.
-    unique: dict = {}
-    for e in due:
-        d = str(e.get("domain", "")).lower().strip()
-        if not d:
-            continue
-        if d not in unique:
-            unique[d] = {"entry": e, "keywords": set()}
-        kw = str(e.get("keyword") or "").strip()
-        if kw:
-            unique[d]["keywords"].add(kw)
+    def process_batch(due_entries):
+        # Deduplicate by domain (a domain may be tracked under several keywords);
+        # keep every keyword so the HTTP brand match can use them.
+        unique: dict = {}
+        for e in due_entries:
+            d = str(e.get("domain", "")).lower().strip()
+            if not d:
+                continue
+            if d not in unique:
+                unique[d] = {"entry": e, "keywords": set()}
+            kw = str(e.get("keyword") or "").strip()
+            if kw:
+                unique[d]["keywords"].add(kw)
 
-    results = []
-    for d, info in unique.items():
-        e = info["entry"]
-        keywords = info["keywords"]
-        baseline = e.get("baseline") or {}
-        if not isinstance(baseline, dict):
-            baseline = {}
-        baseline_dns = baseline.get("dns")
+        out = []
+        for d, info in unique.items():
+            e = info["entry"]
+            keywords = info["keywords"]
+            baseline = e.get("baseline") or {}
+            if not isinstance(baseline, dict):
+                baseline = {}
+            baseline_dns = baseline.get("dns")
 
-        abuse_res = vt_res = whois_now = None
-        if abuse_on:
+            abuse_res = vt_res = whois_now = None
+            if abuse_on:
+                try:
+                    abuse_res = abusech.lookup_domain(d, abuse_key, timeout=abuse_timeout)
+                except Exception:
+                    abuse_res = None
+            if vt_on:
+                try:
+                    vt_res = virustotal.lookup_domain(d, vt_key)
+                except Exception:
+                    vt_res = None
+            if whois_on:
+                try:
+                    entries = whois_lookup_entries(cfg, data_dir, [d])
+                    if entries:
+                        whois_now = entries[0]
+                except Exception:
+                    whois_now = None
+
+            dns_now = None
+            if dns_on:
+                dns_now = intel.dns_resolves(d, timeout=dns_timeout)
+            dns_started = (dns_now is True and baseline_dns is False)
+
+            cert_new = False
+            if cert_on:
+                enrolled_at = str(e.get("enrolled_at") or "")
+                cert_new = intel.crt_sh_has_new_cert(d, enrolled_at, timeout=cert_timeout) is True
+
+            # HTTP content (F3): brand keyword, login form, plain 200 and hash change.
+            http_brand = http_login = False
+            http_200 = None
+            http_changed = False
+            http_hash = None
+            if http_on:
+                probe = intel.http_probe(d, timeout=http_timeout, max_bytes=http_max_bytes)
+                if probe.get("status") is not None:
+                    http_200 = (probe["status"] == 200)
+                    http_hash = probe.get("body_hash") or None
+                    http_login = bool(probe.get("has_login"))
+                    http_brand = intel.contains_keyword(probe.get("title"), probe.get("body"), keywords)
+                    baseline_hash = baseline.get("http_hash")
+                    http_changed = bool(baseline_hash and http_hash and baseline_hash != http_hash)
+
+            # Refresh the local caches so the UI shows the fresh data.
             try:
-                abuse_res = abusech.lookup_domain(d, abuse_key, timeout=abuse_timeout)
+                if abuse_res and abuse_res.get("status") == "ok":
+                    sync_client.send_abusech_results(host_url, api_key, [abuse_res])
+                if vt_res and vt_res.get("status") in ("ok", "not_found"):
+                    sync_client.send_vt_results(host_url, api_key, [vt_res])
+                if whois_now and whois_now.get("status") == "ok":
+                    sync_client.send_whois_results(host_url, api_key, [whois_now])
             except Exception:
-                abuse_res = None
-        if vt_on:
-            try:
-                vt_res = virustotal.lookup_domain(d, vt_key)
-            except Exception:
-                vt_res = None
-        if whois_on:
-            try:
-                entries = whois_lookup_entries(cfg, data_dir, [d])
-                if entries:
-                    whois_now = entries[0]
-            except Exception:
-                whois_now = None
+                pass
 
-        dns_now = None
-        if dns_on:
-            dns_now = intel.dns_resolves(d, timeout=dns_timeout)
-        dns_started = (dns_now is True and baseline_dns is False)
+            changed, detail = intel.compare_whois(baseline, whois_now)
+            ev = intel.evaluate(abuse_res, vt_res, changed, detail,
+                                dns_started=dns_started, dns_now=dns_now, cert_new=cert_new,
+                                http_brand=http_brand, http_login=http_login, http_200=http_200,
+                                http_changed=http_changed, http_activate_any_200=http_activate_any)
+            ev["domain"] = d
+            # The first reading of a signal establishes its baseline.
+            baseline_update = {}
+            if dns_on and baseline_dns is None and dns_now is not None:
+                baseline_update["dns"] = bool(dns_now)
+            if http_on and baseline.get("http_hash") is None and http_hash:
+                baseline_update["http_hash"] = http_hash
+            if baseline_update:
+                ev["baseline_update"] = baseline_update
+            out.append(ev)
+            stats["checked"] += 1
+            if ev["activated"]:
+                stats["activated"] += 1
+            if rate > 0:
+                time.sleep(rate)
+        return out
 
-        cert_new = False
-        if cert_on:
-            enrolled_at = str(e.get("enrolled_at") or "")
-            cert_new = intel.crt_sh_has_new_cert(d, enrolled_at, timeout=cert_timeout) is True
-
-        # HTTP content (F3): brand keyword, login form, plain 200 and hash change.
-        http_brand = http_login = False
-        http_200 = None
-        http_changed = False
-        http_hash = None
-        if http_on:
-            probe = intel.http_probe(d, timeout=http_timeout, max_bytes=http_max_bytes)
-            if probe.get("status") is not None:
-                http_200 = (probe["status"] == 200)
-                http_hash = probe.get("body_hash") or None
-                http_login = bool(probe.get("has_login"))
-                http_brand = intel.contains_keyword(probe.get("title"), probe.get("body"), keywords)
-                baseline_hash = baseline.get("http_hash")
-                http_changed = bool(baseline_hash and http_hash and baseline_hash != http_hash)
-
-        # Refresh the local caches so the UI shows the fresh data.
+    # The weekly pass loops over the due domains in batches (each batch is
+    # rescheduled by the results, so it is not fetched again); a manual check
+    # processes exactly the requested domains.
+    manual = domains is not None
+    processed = 0
+    while True:
         try:
-            if abuse_res and abuse_res.get("status") == "ok":
-                sync_client.send_abusech_results(host_url, api_key, [abuse_res])
-            if vt_res and vt_res.get("status") in ("ok", "not_found"):
-                sync_client.send_vt_results(host_url, api_key, [vt_res])
-            if whois_now and whois_now.get("status") == "ok":
-                sync_client.send_whois_results(host_url, api_key, [whois_now])
-        except Exception:
-            pass
-
-        changed, detail = intel.compare_whois(baseline, whois_now)
-        ev = intel.evaluate(abuse_res, vt_res, changed, detail,
-                            dns_started=dns_started, dns_now=dns_now, cert_new=cert_new,
-                            http_brand=http_brand, http_login=http_login, http_200=http_200,
-                            http_changed=http_changed, http_activate_any_200=http_activate_any)
-        ev["domain"] = d
-        # The first reading of a signal establishes its baseline.
-        baseline_update = {}
-        if dns_on and baseline_dns is None and dns_now is not None:
-            baseline_update["dns"] = bool(dns_now)
-        if http_on and baseline.get("http_hash") is None and http_hash:
-            baseline_update["http_hash"] = http_hash
-        if baseline_update:
-            ev["baseline_update"] = baseline_update
-        results.append(ev)
-        stats["checked"] += 1
-        if ev["activated"]:
-            stats["activated"] += 1
-        if rate > 0:
-            time.sleep(rate)
-
-    if results:
+            due = sync_client.get_tracking_due(host_url, api_key, limit=batch, domains=domains)
+        except Exception as e:
+            log.warning("Tracking: could not fetch due list: %s", e)
+            break
+        if not due:
+            break
+        stats["due"] += len(due)
+        results = process_batch(due)
+        if not results:
+            break
         try:
-            stats["sent"] = sync_client.send_tracking_results(host_url, api_key, results)
+            ok = sync_client.send_tracking_results(host_url, api_key, results)
         except Exception as e:
             log.warning("Tracking: could not send results: %s", e)
-    log.info("Intelligence tracking: %s checked, %s activated (sent=%s)",
-             stats["checked"], stats["activated"], stats["sent"])
+            break
+        stats["sent"] = stats["sent"] or bool(ok)
+        stats["batches"] += 1
+        processed += len(results)
+        if manual or processed >= max_total:
+            break
+
+    log.info("Intelligence tracking: %s checked, %s activated (sent=%s, batches=%s)",
+             stats["checked"], stats["activated"], stats["sent"], stats["batches"])
     return stats
 
 
@@ -2381,10 +2452,12 @@ def main() -> int:
                                          f"Scheduled daily cycle done: {worker_stats['tlds_processed']} TLDs, "
                                          f"{worker_stats['matches_found']} matches"})
 
-                    # Intelligence tracking pass (its own cadence, independent
-                    # of the heavy daily TLD cycle).
+                    # Intelligence weekly pass (Sunday night by default,
+                    # independent of the heavy daily TLD cycle).
                     try:
-                        if tracking_cycle_due(cfg, db):
+                        due_w, week_key, _wtz = weekly_tracking_due(cfg, db)
+                        if due_w:
+                            set_weekly_attempt(db, week_key)
                             tstats = run_tracking_check(cfg, db, host_url, api_key)
                             if tstats["checked"]:
                                 logs.append({"level": "info", "message":
@@ -2432,9 +2505,11 @@ def main() -> int:
                                             force=args.force, refresh=args.refresh)
             logs.append({"level": "info", "message": f"Worker cycle completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
 
-        # Intelligence tracking pass (own cadence).
+        # Intelligence weekly pass (Sunday night by default).
         try:
-            if tracking_cycle_due(cfg, db):
+            due_w, week_key, _wtz = weekly_tracking_due(cfg, db)
+            if due_w:
+                set_weekly_attempt(db, week_key)
                 run_tracking_check(cfg, db, host_url, api_key)
         except Exception as e:
             log.error(f"Tracking pass error: {e}")

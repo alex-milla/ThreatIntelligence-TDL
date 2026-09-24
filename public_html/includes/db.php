@@ -232,7 +232,7 @@ class Database {
         foreach ([
             "ALTER TABLE keywords ADD COLUMN tracking_enabled INTEGER DEFAULT 0",
             "ALTER TABLE keywords ADD COLUMN tracking_days INTEGER DEFAULT 90",
-            "ALTER TABLE keywords ADD COLUMN tracking_interval_hours INTEGER DEFAULT 24",
+            "ALTER TABLE keywords ADD COLUMN tracking_interval_hours INTEGER DEFAULT 168",
             "ALTER TABLE keywords ADD COLUMN tracking_enroll_max_age_days INTEGER DEFAULT 30",
             "ALTER TABLE notifications ADD COLUMN kind TEXT DEFAULT 'match'",
         ] as $alter) {
@@ -241,6 +241,14 @@ class Database {
             } catch (PDOException $e) {
                 // Column already exists.
             }
+        }
+
+        // One-time: the tracking cadence is now weekly (168 h) and no longer
+        // exposed in the UI. Raise keywords still on the old 24 h default.
+        $tiMigrated = $db->query("SELECT value FROM settings WHERE key = 'tracking_interval_default_168' LIMIT 1")->fetchColumn();
+        if ($tiMigrated === false) {
+            $db->exec("UPDATE keywords SET tracking_interval_hours = 168 WHERE tracking_interval_hours IS NULL OR tracking_interval_hours = 24");
+            $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('tracking_interval_default_168', '1')");
         }
 
         $db->exec("CREATE TABLE IF NOT EXISTS watchlist (

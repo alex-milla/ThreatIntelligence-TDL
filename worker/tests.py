@@ -537,6 +537,45 @@ def test_intel_signals() -> None:
     print("[PASS] test_intel_signals")
 
 
+def test_weekly_tracking_schedule() -> None:
+    cfg = configparser.ConfigParser()
+    cfg["tracking"] = {"weekly_enabled": "true", "weekly_day": "sunday",
+                       "weekly_run_time": "03:00", "weekly_run_timezone": "UTC"}
+    enabled, weekday, hour, minute, _tz = scheduler.resolve_weekly_schedule(cfg)
+    assert enabled and weekday == 6 and hour == 3 and minute == 0, (enabled, weekday, hour, minute)
+
+    bad = configparser.ConfigParser()
+    bad["tracking"] = {"weekly_enabled": "true", "weekly_day": "nope", "weekly_run_time": "99:99"}
+    enabled, weekday, hour, minute, _tz = scheduler.resolve_weekly_schedule(bad)
+    assert weekday == 6 and hour == 3 and minute == 0, (weekday, hour, minute)
+
+    disabled = configparser.ConfigParser()
+    disabled["tracking"] = {"weekly_enabled": "false"}
+    assert scheduler.resolve_weekly_schedule(disabled)[0] is False
+
+    import datetime as _dt
+
+    class _FakeDateTime(_dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return _dt.datetime(2026, 9, 27, 3, 30, tzinfo=tz)
+
+    expected_key = _dt.datetime(2026, 9, 27).strftime("%G-W%V")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
+        orig = scheduler.datetime
+        scheduler.datetime = _FakeDateTime
+        try:
+            due, week_key, _tz = scheduler.weekly_tracking_due(cfg, db)
+            assert due and week_key == expected_key, (due, week_key, expected_key)
+            scheduler.set_weekly_attempt(db, week_key)
+            assert scheduler.weekly_tracking_due(cfg, db)[0] is False
+        finally:
+            scheduler.datetime = orig
+        db.close()
+    print("[PASS] test_weekly_tracking_schedule")
+
+
 def test_local_db_vt_usage() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
@@ -791,6 +830,7 @@ if __name__ == "__main__":
     test_abusech_feed_parse()
     test_abusech_feed_lookup()
     test_intel_signals()
+    test_weekly_tracking_schedule()
     test_local_db_vt_usage()
     test_daily_schedule_resolution()
     test_daily_cycle_due()

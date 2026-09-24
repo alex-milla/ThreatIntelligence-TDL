@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.17.5] - 2026-09-24
+
+### Changed - Intelligence runs one weekly pass (Sunday night)
+
+- **Weekly schedule instead of the hourly poll.** The Intelligence validation runs **once a week** on the configured day/time (`[tracking] weekly_day` / `weekly_run_time` / `weekly_run_timezone`, default **Sunday 03:00 Europe/Madrid**). If the host was off then, it runs on the next poll. New helpers `resolve_weekly_schedule()` / `weekly_tracking_due()` (mirroring the daily guard, weekly marker `last_weekly_attempt`).
+- **The pass covers all due domains in batches**: `run_tracking_check()` loops the due list in `batch_max` chunks (safety cap `weekly_batch_max = 5000`) and sends results per batch, so a week's worth of domains is processed in one run. The per-keyword interval stays at **168 h** (weekly) so every tracked domain is due once a week.
+- **No UI cadence field**: the "Every (hours)" input was removed from **Keywords → Tracking**; the per-keyword interval is preserved and defaults to 168 h (a guarded migration raises old 24 h values). New keywords are created with 168 h.
+- **Manual "Check now"** still works and bypasses the weekly guard.
+- Enrollment (new matches + the excluded sweep) is unchanged: it still runs in the daily TLD cycle, after the sync.
+- Config: replaced `run_interval_minutes` with `weekly_enabled`, `weekly_day`, `weekly_run_time`, `weekly_run_timezone`, `default_interval_hours`, `weekly_batch_max`.
+- **Tests**: `test_weekly_tracking_schedule` (schedule parsing, fallbacks and the once-per-week guard).
+
 ## [v1.17.4] - 2026-09-24
 
 ### Changed - Intelligence keeps tracking excluded (benign) domains and reactivates them
