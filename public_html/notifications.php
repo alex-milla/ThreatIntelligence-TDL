@@ -290,6 +290,18 @@ if (!empty($notifications)) {
     }
 }
 
+// Load cached Cloudflare Radar (URL Scanner + DNS) for the visible rows.
+$domainCfscan = [];
+if (!empty($notifications)) {
+    $domainsOnPage = array_column($notifications, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domainsOnPage), '?'));
+    $cfStmt = $db->prepare("SELECT * FROM domain_cfscan WHERE domain IN ($placeholders)");
+    $cfStmt->execute($domainsOnPage);
+    foreach ($cfStmt->fetchAll() as $c) {
+        $domainCfscan[$c['domain']] = $c;
+    }
+}
+
 // Report-queue status for the visible rows.
 $domainQueue = [];
 if (!empty($notifications)) {
@@ -451,6 +463,7 @@ require __DIR__ . '/templates/header.php';
                     <th><?= notifSortLink('domain', 'Domain', $sort, $dir, $notifSortDefaults) ?></th>
                     <th>VT</th>
                     <th>Abuse.ch</th>
+                    <th>CF</th>
                     <th><?= notifSortLink('tld', 'TLD', $sort, $dir, $notifSortDefaults) ?></th>
                     <th><?= notifSortLink('keyword', 'Keyword', $sort, $dir, $notifSortDefaults) ?></th>
                     <th><?= notifSortLink('first_seen', 'First Seen', $sort, $dir, $notifSortDefaults) ?></th>
@@ -490,6 +503,8 @@ require __DIR__ . '/templates/header.php';
                         : '<span class="muted">&mdash;</span>';
                     $abuseRow = $domainAbusech[$n['domain']] ?? null;
                     $abuseCell = abusechBadge($abuseRow);
+                    $cfRow = $domainCfscan[$n['domain']] ?? null;
+                    $cfCell = cfscanBadge($cfRow);
                     $qRow = $domainQueue[$n['domain']] ?? null;
                     $queueBadge = ($qRow !== null && $qRow['reported_at'] === null)
                         ? ' <span class="tag-chip report" title="Queued for the next report">QUEUED</span>'
@@ -522,7 +537,8 @@ require __DIR__ . '/templates/header.php';
                         'vt_checked_at'      => $vtRow['checked_at'] ?? null,
                         '_ns'                => $ns,
                         '_is_new'            => $isNew,
-                    ] + abusechPresentKeys($abuseRow);
+                    ] + abusechPresentKeys($abuseRow)
+                      + cfscanPresentKeys($cfRow);
                     $detailDomainArg = htmlspecialchars(addslashes($n['domain']));
                 ?>
                 <tr class="<?= $n['is_read'] ? '' : 'unread' ?>" data-domain="<?= htmlspecialchars($n['domain']) ?>">
@@ -531,6 +547,7 @@ require __DIR__ . '/templates/header.php';
                     <td><a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><?= htmlspecialchars($n['domain']) ?></a><?= $intelBadge ?><?= $tagBadge ?><?= $queueBadge ?></td>
                     <td><?= $vtCell ?></td>
                     <td><?= $abuseCell ?></td>
+                    <td><?= $cfCell ?></td>
                     <td><?= htmlspecialchars($n['tld']) ?></td>
                     <td><?= htmlspecialchars($n['keyword']) ?></td>
                     <td><?= htmlspecialchars(fmt_date($n['first_seen'])) ?></td>
@@ -564,7 +581,7 @@ require __DIR__ . '/templates/header.php';
                     </td>
                 </tr>
                 <tr class="domain-detail-row" data-domain="<?= htmlspecialchars($n['domain']) ?>" style="display:none;">
-                    <td colspan="11"><?= renderDomainDetail($present, [$n['keyword']], $rules) ?></td>
+                    <td colspan="12"><?= renderDomainDetail($present, [$n['keyword']], $rules) ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>

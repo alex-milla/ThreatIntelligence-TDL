@@ -204,6 +204,18 @@ if (!empty($rows)) {
     }
 }
 
+// Cached Cloudflare Radar (URL Scanner + DNS) for the visible rows.
+$domainCfscan = [];
+if (!empty($rows)) {
+    $domains = array_column($rows, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domains), '?'));
+    $cfStmt = $db->prepare("SELECT * FROM domain_cfscan WHERE domain IN ($placeholders)");
+    $cfStmt->execute($domains);
+    foreach ($cfStmt->fetchAll() as $c) {
+        $domainCfscan[$c['domain']] = $c;
+    }
+}
+
 // Report-queue status for the visible rows (Report column + detail panel).
 $domainQueue = [];
 if (!empty($rows)) {
@@ -326,6 +338,7 @@ require __DIR__ . '/templates/header.php';
                     <th><?= kwmSortLink('tld', 'TLD', $sort, $dir, $sortDefaults) ?></th>
                     <th>VT</th>
                     <th>Abuse.ch</th>
+                    <th>CF</th>
                     <th>Tag</th>
                     <th>Report</th>
                     <th>Watchlist</th>
@@ -366,6 +379,8 @@ require __DIR__ . '/templates/header.php';
                         : '<span class="muted">&mdash;</span>';
                     $abuseRow = $domainAbusech[$r['domain']] ?? null;
                     $abuseCell = abusechBadge($abuseRow);
+                    $cfRow = $domainCfscan[$r['domain']] ?? null;
+                    $cfCell = cfscanBadge($cfRow);
 
                     $queueRow = $domainQueue[$r['domain']] ?? null;
                     $isQueued = $queueRow !== null && $queueRow['reported_at'] === null;
@@ -403,7 +418,8 @@ require __DIR__ . '/templates/header.php';
                         'vt_checked_at'      => $vtRow['checked_at'] ?? null,
                         '_ns'                => $ns,
                         '_is_new'            => $isNew,
-                    ] + abusechPresentKeys($abuseRow);
+                    ] + abusechPresentKeys($abuseRow)
+                      + cfscanPresentKeys($cfRow);
                     $age = reportDomainAge($present['creation_date'], gmdate('Y-m-d H:i:s'));
                     $status = reportDomainStatus($present, $rules);
                     $rep = reportReputationContextual(reportReputation($present), $age);
@@ -413,6 +429,27 @@ require __DIR__ . '/templates/header.php';
                     $ttdH = reportTimeToDetectHours($present);
                     $timeline = reportTimeline($present, '');
                     $rawJson = htmlspecialchars(json_encode($present, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+                    $cfState = 'not_checked';
+                    if (!empty($present['cf_status'])) {
+                        if ($present['cf_status'] === 'error') {
+                            $cfState = 'unproven';
+                        } elseif (($present['cf_verdict'] ?? '') === 'malicious') {
+                            $cfState = 'malicious';
+                        } elseif (($present['cf_verdict'] ?? '') === 'suspicious') {
+                            $cfState = 'suspicious';
+                        } elseif (($present['cf_verdict'] ?? '') === 'clean') {
+                            $cfState = 'clean';
+                        }
+                    }
+                    $cfLabels = ['malicious' => 'Malicious', 'suspicious' => 'Suspicious', 'clean' => 'Clean',
+                                 'not_checked' => 'Not checked', 'unproven' => 'Error'];
+                    $cfLabel = $cfLabels[$cfState] ?? 'Not checked';
+                    $cfDnsList = (array)($present['_cf_dns'] ?? []);
+                    $cfDetail = trim(implode(' · ', array_filter([
+                        (string)($present['cf_categories'] ?? ''),
+                        ($present['cf_phishing'] ?? '') !== '' ? 'phishing: ' . $present['cf_phishing'] : '',
+                    ])));
                 ?>
                 <tr data-domain="<?= htmlspecialchars($r['domain']) ?>"<?= $isExcluded ? ' data-excluded="1"' : '' ?>>
                     <td><label><input type="checkbox" class="row-check"><span></span></label></td>
@@ -422,6 +459,7 @@ require __DIR__ . '/templates/header.php';
                     <td><?= htmlspecialchars($r['tld']) ?></td>
                     <td><?= $vtCell ?></td>
                     <td><?= $abuseCell ?></td>
+                    <td><?= $cfCell ?></td>
                     <td><?= $tagCell ?></td>
                     <td><?= $reportCell ?></td>
                     <td><?= !empty($r['in_watchlist']) ? '<i class="material-icons tiny" title="In watchlist">star</i>' : '<span class="muted">&mdash;</span>' ?></td>
@@ -439,7 +477,7 @@ require __DIR__ . '/templates/header.php';
                     <td><?= !empty($r['is_historical']) ? '<span class="status-badge status-cancelled">Yes</span>' : '<span class="muted">No</span>' ?></td>
                 </tr>
                 <tr class="domain-detail-row" style="display:none;">
-                    <td colspan="14">
+                    <td colspan="15">
                         <div class="domain-detail">
                             <div class="dd-grid">
                                 <div class="dd-block">
@@ -483,6 +521,32 @@ require __DIR__ . '/templates/header.php';
                                     </dl>
                                 </div>
                                 <div class="dd-block">
+                                    <h4>Cloudflare Radar</h4>
+                                    <dl class="dd-list">
+                                        <div><dt>Verdict</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($cfState) ?>"><?= htmlspecialchars($repSymbol[$cfState] ?? '') ?> <?= htmlspecialchars($cfLabel) ?></span><?php if ($cfState === 'unproven' && !empty($present['cf_error'])): ?> <span class="muted"><?= htmlspecialchars((string)$present['cf_error']) ?></span><?php elseif ($cfDetail !== ''): ?> <span class="muted"><?= htmlspecialchars($cfDetail) ?></span><?php endif; ?></dd></div>
+                                        <div><dt>Radar rank</dt><dd><?= !empty($present['cf_radar_rank']) ? htmlspecialchars((string)$present['cf_radar_rank']) : '<span class="muted">&mdash;</span>' ?></dd></div>
+                                        <div><dt>Technologies</dt><dd><?= !empty($present['cf_technologies']) ? htmlspecialchars((string)$present['cf_technologies']) : '<span class="muted">&mdash;</span>' ?></dd></div>
+                                        <div><dt>Hosting</dt><dd><?php
+                                            $hostBits = array_filter([(string)($present['cf_asn'] ?? ''), (string)($present['cf_country'] ?? '')]);
+                                            echo $hostBits ? htmlspecialchars(implode(' · ', $hostBits)) : '<span class="muted">&mdash;</span>';
+                                        ?></dd></div>
+                                        <div><dt>Checked</dt><dd><?= !empty($present['cf_checked_at']) ? htmlspecialchars(fmt_date((string)$present['cf_checked_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
+                                    </dl>
+                                    <?php if (!empty($cfDnsList)): ?>
+                                    <div><span class="muted">DNS queries by country (7d)</span>
+                                        <ul class="dd-findings">
+                                            <?php foreach ($cfDnsList as $loc):
+                                                if (!is_array($loc)) continue;
+                                                $locName = (string)($loc['name'] ?? $loc['code'] ?? '');
+                                                $locVal = is_numeric($loc['value'] ?? null) ? round((float)$loc['value'], 1) : (string)($loc['value'] ?? '');
+                                            ?>
+                                            <li><strong><?= htmlspecialchars($locName) ?></strong> <span class="muted"><?= htmlspecialchars((string)$locVal) ?>%</span></li>
+                                            <?php endforeach; ?>
+                                        </ul>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="dd-block">
                                     <h4>Detection</h4>
                                     <dl class="dd-list">
                                         <div><dt>Keyword</dt><dd><?= htmlspecialchars((string)$keyword['keyword']) ?></dd></div>
@@ -502,9 +566,14 @@ require __DIR__ . '/templates/header.php';
                                     </ul>
                                 </div>
                             </div>
-                            <?php if (($present['verdict'] ?? null) !== null): ?>
+                            <?php if (($present['verdict'] ?? null) !== null || !empty($present['cf_report_url'])): ?>
                             <div class="dd-vt">
+                                <?php if (($present['verdict'] ?? null) !== null): ?>
                                 <a class="btn btn-small btn-info waves-effect" href="https://www.virustotal.com/gui/domain/<?= rawurlencode((string)$r['domain']) ?>" target="_blank" rel="noopener"><i class="material-icons left">shield</i>Open in VirusTotal</a>
+                                <?php endif; ?>
+                                <?php if (!empty($present['cf_report_url'])): ?>
+                                <a class="btn btn-small btn-info waves-effect" href="<?= htmlspecialchars((string)$present['cf_report_url']) ?>" target="_blank" rel="noopener"><i class="material-icons left">radar</i>Open in URL Scanner</a>
+                                <?php endif; ?>
                             </div>
                             <?php endif; ?>
                             <details class="dd-raw">

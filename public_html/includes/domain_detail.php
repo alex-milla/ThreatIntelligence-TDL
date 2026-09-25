@@ -50,7 +50,6 @@ function domainDetailPresent(PDO $db, int $userId, string $domain): ?array {
         FROM domain_cfscan WHERE domain = ? LIMIT 1");
     $cStmt->execute([$domain]);
     $cfRow = $cStmt->fetch() ?: null;
-    $cfDns = ($cfRow && !empty($cfRow['dns_countries'])) ? (json_decode((string)$cfRow['dns_countries'], true) ?: []) : [];
 
     $tStmt = $db->prepare("SELECT tag, note FROM domain_tags WHERE domain = ? LIMIT 1");
     $tStmt->execute([$domain]);
@@ -127,22 +126,9 @@ function domainDetailPresent(PDO $db, int $userId, string $domain): ?array {
         'abusech_tags'       => $abuseRow['tags'] ?? null,
         'abusech_last_analysis_date' => $abuseRow['last_analysis_date'] ?? null,
         'abusech_checked_at' => $abuseRow['checked_at'] ?? null,
-        'cf_verdict'         => $cfRow['verdict'] ?? null,
-        'cf_status'          => $cfRow['status'] ?? null,
-        'cf_error'           => $cfRow['error'] ?? null,
-        'cf_categories'      => $cfRow['categories'] ?? null,
-        'cf_phishing'        => $cfRow['phishing'] ?? null,
-        'cf_radar_rank'      => $cfRow['radar_rank'] ?? null,
-        'cf_technologies'    => $cfRow['technologies'] ?? null,
-        'cf_asn'             => $cfRow['asn'] ?? null,
-        'cf_country'         => $cfRow['country'] ?? null,
-        'cf_cert_issuer'     => $cfRow['cert_issuer'] ?? null,
-        'cf_report_url'      => $cfRow['report_url'] ?? null,
-        'cf_checked_at'      => $cfRow['checked_at'] ?? null,
-        '_cf_dns'            => $cfDns,
         '_ns'                => $ns,
         '_is_new'            => $isNew,
-    ];
+    ] + cfscanPresentKeys($cfRow);
 
     return ['present' => $present, 'keywords' => $keywords];
 }
@@ -304,10 +290,11 @@ function renderDomainDetail(array $present, array $keywords, array $rules): stri
         <button type="button" class="btn btn-small waves-effect" onclick="ddCheckVt('<?= $domainArg ?>')"><i class="material-icons left">verified_user</i>Check VirusTotal</button>
         <button type="button" class="btn btn-small waves-effect" onclick="ddCheckAbusech('<?= $domainArg ?>')"><i class="material-icons left">gpp_maybe</i>Check Abuse.ch</button>
         <button type="button" class="btn btn-small waves-effect" onclick="ddCheckCf('<?= $domainArg ?>')"><i class="material-icons left">cloud</i>Scan with Cloudflare</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="ddCheckCfdns('<?= $domainArg ?>')"><i class="material-icons left">public</i>Cloudflare DNS</button>
         <a class="btn btn-small btn-info waves-effect" href="https://www.virustotal.com/gui/domain/<?= rawurlencode($domain) ?>" target="_blank" rel="noopener"><i class="material-icons left">shield</i>Open in VirusTotal</a>
         <a class="btn btn-small btn-info waves-effect" href="https://urlhaus.abuse.ch/host/<?= rawurlencode($domain) ?>/" target="_blank" rel="noopener"><i class="material-icons left">bug_report</i>Open in URLhaus</a>
         <?php if (!empty($present['cf_report_url'])): ?>
-        <a class="btn btn-small btn-info waves-effect" href="<?= htmlspecialchars((string)$present['cf_report_url']) ?>" target="_blank" rel="noopener"><i class="material-icons left">radar</i>Open in Radar</a>
+        <a class="btn btn-small btn-info waves-effect" href="<?= htmlspecialchars((string)$present['cf_report_url']) ?>" target="_blank" rel="noopener"><i class="material-icons left">radar</i>Open in URL Scanner</a>
         <?php endif; ?>
     </div>
     <details class="dd-raw">

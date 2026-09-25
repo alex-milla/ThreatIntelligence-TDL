@@ -197,6 +197,7 @@ poll_max_wait = 180
 ; DNS top locations (Radar). Disable to skip that lookup.
 dns_locations_enabled = true
 dns_locations_limit = 10
+dns_rate_delay_seconds = 1
 ; Scan newly matched domains automatically after each TLD sync (best effort).
 auto_scan = false
 auto_scan_max = 50

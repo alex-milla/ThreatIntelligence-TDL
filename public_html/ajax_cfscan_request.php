@@ -19,9 +19,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 validateCsrf();
 
-define('CFSCAN_BATCH_MAX', 20);
-
 $input = json_decode(file_get_contents('php://input'), true) ?: [];
+$mode = strtolower((string)($input['mode'] ?? 'scan'));
+if (!in_array($mode, ['scan', 'dns'], true)) {
+    $mode = 'scan';
+}
+// The URL Scanner is rate limited (1 per 10 s on Free), so its batch is small;
+// the DNS lookup is a single cheap Radar request per domain.
+$batchMax = $mode === 'dns' ? 200 : 20;
+$command = $mode === 'dns' ? 'cf_dns_lookup' : 'cf_scan_lookup';
+
 $domains = $input['domains'] ?? null;
 if (!$domains && !empty($input['domain'])) {
     $domains = [$input['domain']];
@@ -61,10 +68,12 @@ if ($excluded) {
     }
 }
 
-// Domains already queued in a pending/running cf_scan_lookup command.
+// Domains already queued in a pending/running command of the same mode.
 $pendingCommandId = null;
 $pendingDomains = [];
-foreach ($db->query("SELECT id, payload FROM commands WHERE command = 'cf_scan_lookup' AND status IN ('pending','running') ORDER BY id ASC")->fetchAll() as $c) {
+$pendStmt = $db->prepare("SELECT id, payload FROM commands WHERE command = ? AND status IN ('pending','running') ORDER BY id ASC");
+$pendStmt->execute([$command]);
+foreach ($pendStmt->fetchAll() as $c) {
     $payload = json_decode($c['payload'] ?? '{}', true) ?: [];
     foreach (($payload['domains'] ?? []) as $pd) {
         $pendingDomains[strtolower((string)$pd)] = true;
@@ -74,11 +83,16 @@ foreach ($db->query("SELECT id, payload FROM commands WHERE command = 'cf_scan_l
     }
 }
 
-// Skip domains already cached unless a refresh was requested.
+// Skip domains already cached unless a refresh was requested. For a scan any
+// row counts; for DNS only rows that already carry a distribution.
 $cached = [];
 if (!$force) {
     $placeholders = implode(',', array_fill(0, count($clean), '?'));
-    $stmt = $db->prepare("SELECT domain FROM domain_cfscan WHERE domain IN ($placeholders)");
+    if ($mode === 'dns') {
+        $stmt = $db->prepare("SELECT domain FROM domain_cfscan WHERE dns_countries IS NOT NULL AND domain IN ($placeholders)");
+    } else {
+        $stmt = $db->prepare("SELECT domain FROM domain_cfscan WHERE domain IN ($placeholders)");
+    }
     $stmt->execute($clean);
     foreach ($stmt->fetchAll() as $r) {
         $cached[strtolower($r['domain'])] = true;
@@ -94,7 +108,7 @@ foreach ($clean as $d) {
         continue;
     }
     $toFetch[] = $d;
-    if (count($toFetch) >= CFSCAN_BATCH_MAX) {
+    if (count($toFetch) >= $batchMax) {
         break;
     }
 }
@@ -112,12 +126,13 @@ if (empty($toFetch)) {
 }
 
 $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")
-   ->execute(['cf_scan_lookup', json_encode(['domains' => $toFetch])]);
+   ->execute([$command, json_encode(['domains' => $toFetch])]);
 $commandId = (int)$db->lastInsertId();
 
 echo json_encode([
     'success' => true,
     'command_id' => $commandId,
+    'mode' => $mode,
     'queued' => count($toFetch),
     'message' => 'Queued for the worker.',
 ]);

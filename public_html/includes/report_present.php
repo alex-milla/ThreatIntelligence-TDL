@@ -251,6 +251,62 @@ function abusechBadge(?array $row): string {
 }
 
 /**
+ * Map a `domain_cfscan` row to the cf_* keys used by the presentation helpers
+ * (renderDomainDetail). Missing rows yield nulls, rendered as "Not checked".
+ */
+function cfscanPresentKeys(?array $row): array {
+    $dns = [];
+    if ($row && !empty($row['dns_countries'])) {
+        $decoded = json_decode((string)$row['dns_countries'], true);
+        if (is_array($decoded)) {
+            $dns = $decoded;
+        }
+    }
+    return [
+        'cf_verdict'      => $row['verdict'] ?? null,
+        'cf_status'       => $row['status'] ?? null,
+        'cf_error'        => $row['error'] ?? null,
+        'cf_categories'   => $row['categories'] ?? null,
+        'cf_phishing'     => $row['phishing'] ?? null,
+        'cf_radar_rank'   => $row['radar_rank'] ?? null,
+        'cf_technologies' => $row['technologies'] ?? null,
+        'cf_asn'          => $row['asn'] ?? null,
+        'cf_country'      => $row['country'] ?? null,
+        'cf_cert_issuer'  => $row['cert_issuer'] ?? null,
+        'cf_report_url'   => $row['report_url'] ?? null,
+        'cf_checked_at'   => $row['checked_at'] ?? null,
+        '_cf_dns'         => $dns,
+    ];
+}
+
+/** Compact badge cell for the Cloudflare Radar column of the lists. */
+function cfscanBadge(?array $row): string {
+    if (!$row) {
+        return '<span class="muted">&mdash;</span>';
+    }
+    if (strtolower((string)($row['status'] ?? '')) === 'error') {
+        $err = trim((string)($row['error'] ?? ''));
+        return '<span class="vt-badge vt-error" title="' . htmlspecialchars($err !== '' ? $err : 'Cloudflare scan failed') . '">CF ERROR</span>';
+    }
+    $v = (string)($row['verdict'] ?? '');
+    $labels = ['malicious' => 'MALICIOUS', 'suspicious' => 'SUSPICIOUS', 'clean' => 'CLEAN'];
+    if (!isset($labels[$v])) {
+        return '<span class="muted">&mdash;</span>';
+    }
+    $title = [];
+    if (!empty($row['categories'])) {
+        $title[] = 'Categories: ' . $row['categories'];
+    }
+    if (!empty($row['radar_rank'])) {
+        $title[] = 'Radar rank: ' . $row['radar_rank'];
+    }
+    if (!empty($row['technologies'])) {
+        $title[] = 'Technologies: ' . $row['technologies'];
+    }
+    return '<span class="vt-badge vt-' . htmlspecialchars($v) . '" title="' . htmlspecialchars(implode(' · ', $title)) . '">CF ' . $labels[$v] . '</span>';
+}
+
+/**
  * Data availability per source (WHOIS + VirusTotal + abuse.ch).
  */
 function reportAvailability(array $row): array {

@@ -145,7 +145,7 @@
         fetch('/ajax_cfscan_request.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
-            body: JSON.stringify({ domain: domain, force: true })
+            body: JSON.stringify({ domain: domain, mode: 'scan', force: true })
         })
         .then(function (r) { return r.json(); })
         .then(function (res) {
@@ -157,7 +157,7 @@
     };
 
     function ddPollCf(domain, tries) {
-        // Scans can take a couple of minutes (submit + poll + DNS), so be patient.
+        // The scanner is asynchronous (~1 scan / 10 s), so be patient.
         if (tries > 60) { alert('Timed out waiting for the worker.'); return; }
         fetch('/ajax_cfscan_cache.php?domain=' + encodeURIComponent(domain))
             .then(function (r) { return r.json(); })
@@ -166,5 +166,33 @@
                 setTimeout(function () { ddPollCf(domain, tries + 1); }, 10000);
             })
             .catch(function () { setTimeout(function () { ddPollCf(domain, tries + 1); }, 12000); });
+    }
+
+    // Queue the (cheap) Cloudflare Radar DNS top-locations lookup.
+    window.ddCheckCfdns = function (domain) {
+        fetch('/ajax_cfscan_request.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+            body: JSON.stringify({ domain: domain, mode: 'dns', force: true })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+            if (!res.success) throw new Error(res.error || 'request failed');
+            if (!res.queued) { window.ddAfterAction(domain); return; }
+            ddPollCfdns(domain, 0);
+        })
+        .catch(function (e) { alert('Cloudflare DNS request failed: ' + e.message); });
+    };
+
+    function ddPollCfdns(domain, tries) {
+        if (tries > 40) { alert('Timed out waiting for the worker.'); return; }
+        fetch('/ajax_cfscan_cache.php?domain=' + encodeURIComponent(domain))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var c = (data && data.success) ? data.cfscan : null;
+                if (c && c.dns_countries && c.dns_countries.length) { window.ddAfterAction(domain); return; }
+                setTimeout(function () { ddPollCfdns(domain, tries + 1); }, 5000);
+            })
+            .catch(function () { setTimeout(function () { ddPollCfdns(domain, tries + 1); }, 6000); });
     }
 })();

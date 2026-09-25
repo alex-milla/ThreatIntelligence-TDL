@@ -248,27 +248,29 @@ Besides the on-demand lookup, the worker keeps a **local copy of the full URLhau
 
 ## Cloudflare Radar (URL Scanner + DNS)
 
-The domain detail also shows **Cloudflare Radar** enrichment, cached in `domain_cfscan` and refreshed **on demand** through the worker command queue (`cf_scan_lookup`), like VirusTotal/abuse.ch:
+The domain detail shows **Cloudflare Radar** enrichment, cached in `domain_cfscan` and refreshed **on demand** through the worker command queue, like VirusTotal/abuse.ch. The two services are independent (separate commands and buttons):
 
-- **URL Scanner** — scans the domain's page and returns a **verdict** (`malicious` / `suspicious` / `clean`), the Cloudflare **domain categories**, the **Radar rank**, the detected **technologies**, the phishing type, the hosting ASN/country and the TLS certificate issuer, plus a public **report** link ("Open in Radar"). Buttons: **Scan with Cloudflare** (per-domain and batch).
-- **DNS top locations** — the geographic distribution (top countries, 7 days) of DNS queries to the domain via the 1.1.1.1 resolver, shown as a compact country list.
+- **URL Scanner** (`cf_scan_lookup`, button **Scan with Cloudflare**) — scans the domain's page and returns a **verdict** (`malicious` / `suspicious` / `clean`), the Cloudflare **domain categories**, the **Radar rank**, the detected **technologies**, the phishing type, the hosting ASN/country and the TLS certificate issuer, plus a public **report** link (**Open in URL Scanner**). Also available as a batch action in the lists (CF column).
+- **DNS top locations** (`cf_dns_lookup`, button **Cloudflare DNS**) — the geographic distribution (top countries, 7 days) of DNS queries to the domain via the 1.1.1.1 resolver, shown as a compact country list. Cheap and with no scan quota.
 
 Enable it in `config.ini` with a Cloudflare **Custom Token** (`Account > Radar` read and/or `Account > URL Scanner` write) and your account id:
 
 ```ini
 [cloudflare]
 radar_enabled = true
-api_token = ...            # Account > Radar (Read)  -> DNS top locations
-urlscanner_token = ...     # Account > URL Scanner (Write)
-account_id = ...
-visibility = public        # Free/Radar plan: only public scans (unlisted needs Self-serve)
-rate_delay_seconds = 10    # Free plan allows 1 scan / 10 s
+api_token = YOUR_TOKEN
+urlscanner_token = YOUR_TOKEN
+account_id = YOUR_ACCOUNT_ID
+visibility = public
+rate_delay_seconds = 10
 daily_limit = 150
-monthly_limit = 5000       # Free plan: 5,000 scans/month
-auto_scan = false          # scan new matches automatically after each sync
+monthly_limit = 5000
+dns_rate_delay_seconds = 1
+auto_scan = false
 auto_scan_max = 50
 ```
 
+- A **single token** with both permissions can be put in `api_token` only (the worker reuses it).
 - The scans are **asynchronous** (the worker polls the report) and **rate limited** (~1/10 s on the free plan), so batches are capped and the UI updates as each result arrives.
 - The Radar API is free; its data is **CC BY-NC 4.0 (non-commercial, attribution)**. On the Free/Radar plan the URL Scanner only produces **public** scans (they appear in Radar's recent scans). No token → the feature stays off and the worker keeps running.
 

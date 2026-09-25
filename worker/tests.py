@@ -1078,6 +1078,41 @@ def test_cloudflare_radar_errors() -> None:
     print("[PASS] test_cloudflare_radar_errors")
 
 
+def test_cloudflare_dns_batch() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
+        cfg = configparser.ConfigParser()
+        cfg.add_section("cloudflare")
+        cfg.set("cloudflare", "radar_enabled", "true")
+        cfg.set("cloudflare", "api_token", "tok")
+        cfg.set("cloudflare", "rate_delay_seconds", "10 ; inline comment")
+        cfg.set("cloudflare", "urlscanner_token", "; empty")
+        cfg.set("cloudflare", "dns_rate_delay_seconds", "0")
+
+        # The hardened reader strips inline comments and falls back to api_token.
+        cf = scheduler._cf_config(cfg)
+        assert cf["rate_delay"] == 10.0, cf
+        assert cf["urlscanner_token"] == "tok", cf
+
+        captured = []
+        orig_dns = scheduler.cloudflare_radar.dns_top_locations
+        orig_send = scheduler.sync_client.send_cfscan_results
+        scheduler.cloudflare_radar.dns_top_locations = (
+            lambda d, tok, timeout=30, limit=10: [{"code": "ES", "name": "Spain", "value": "80.0"}])
+        scheduler.sync_client.send_cfscan_results = lambda h, k, e: captured.extend(e) or True
+        try:
+            stats = scheduler.run_cfdns_batch(cfg, db, "http://h", "k", ["a.example", "b.example"])
+        finally:
+            scheduler.cloudflare_radar.dns_top_locations = orig_dns
+            scheduler.sync_client.send_cfscan_results = orig_send
+
+        assert stats["checked"] == 2, stats
+        assert len(captured) == 2 and all(e.get("dns_only") for e in captured), captured
+        assert captured[0]["dns_countries"][0]["code"] == "ES", captured
+        db.close()
+    print("[PASS] test_cloudflare_dns_batch")
+
+
 if __name__ == "__main__":
     test_parser_basic()
     test_parser_origin_relative()
@@ -1122,4 +1157,5 @@ if __name__ == "__main__":
     test_glob_search_cached_domains()
     test_cloudflare_radar_classify()
     test_cloudflare_radar_errors()
+    test_cloudflare_dns_batch()
     print("\nAll tests passed.")

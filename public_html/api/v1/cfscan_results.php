@@ -35,6 +35,11 @@ $allowedVerdicts = ['malicious', 'suspicious', 'clean', ''];
 // include one (the DNS call is optional / may fail independently).
 $existingDnsStmt = $db->prepare("SELECT dns_countries FROM domain_cfscan WHERE domain = ? LIMIT 1");
 
+// DNS-only reports merge into the existing row without touching the scan verdict.
+$dnsHasStmt = $db->prepare("SELECT COUNT(*) FROM domain_cfscan WHERE domain = ?");
+$dnsUpdStmt = $db->prepare("UPDATE domain_cfscan SET dns_countries = ?, checked_at = datetime('now') WHERE domain = ?");
+$dnsInsStmt = $db->prepare("INSERT INTO domain_cfscan (domain, dns_countries, checked_at) VALUES (?, ?, datetime('now'))");
+
 $stmt = $db->prepare(
     "INSERT OR REPLACE INTO domain_cfscan "
     . "(domain, verdict, status, error, categories, phishing, radar_rank, technologies, asn, country, "
@@ -53,6 +58,21 @@ try {
         if ($domain === '' || strlen($domain) > 253 || !preg_match('/^[a-z0-9\p{L}\-\.]+$/u', $domain)) {
             continue;
         }
+        if (!empty($entry['dns_only'])) {
+            $loc = null;
+            if (isset($entry['dns_countries']) && is_array($entry['dns_countries'])) {
+                $loc = json_encode(array_slice($entry['dns_countries'], 0, 50), JSON_UNESCAPED_UNICODE);
+            }
+            $dnsHasStmt->execute([$domain]);
+            if ((int)$dnsHasStmt->fetchColumn() > 0) {
+                $dnsUpdStmt->execute([$loc, $domain]);
+            } else {
+                $dnsInsStmt->execute([$domain, $loc]);
+            }
+            $stored++;
+            continue;
+        }
+
         $status = strtolower((string)($entry['status'] ?? ''));
         if (!in_array($status, ['ok', 'error'], true)) {
             $status = '';

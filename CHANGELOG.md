@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.11] - 2026-09-25
+
+### Fixed - Cloudflare Radar results were not shown in the lists; config crash
+
+- **The Cloudflare Radar data now appears in the domain detail everywhere.** The detail block is rendered by `notifications.php`, `watchlist.php`, `keyword_matches.php` and the Dashboard lookup, but only the Dashboard loaded `domain_cfscan`; the three list pages built their `$present` by hand and only merged abuse.ch. A new `cfscanPresentKeys()` helper maps a `domain_cfscan` row to the `cf_*` presentation keys, the three pages now load `domain_cfscan` in batch and merge it, and `keyword_matches.php` (which renders its own inline detail) gained the **Cloudflare Radar** block (verdict, categories, rank, technologies, hosting and DNS country list).
+- **A new CF column** (like the VT/abuse.ch columns) shows the Cloudflare verdict (`CF MALICIOUS/SUSPICIOUS/CLEAN/ERROR`) in the Notifications and per-keyword lists, plus an **Open in URL Scanner** link in the detail.
+- **`[cloudflare]` config parsing no longer crashes the command.** A value with an inline comment (e.g. `rate_delay_seconds = 10 ; note`) made `getfloat()` raise `could not convert string to float` and failed `cf_scan_lookup`. `_cf_config` now strips inline comments (`;`/`#`) and parses numbers/booleans with a safe fallback.
+
+### Changed - Cloudflare URL Scanner and DNS are separate actions
+
+- **Independent commands/buttons**: **Scan with Cloudflare** (`cf_scan_lookup`, URL Scanner only) and **Cloudflare DNS** (`cf_dns_lookup`, DNS top locations only; cheap, no scan quota). The DNS results are merged into the existing `domain_cfscan` row without touching the scan verdict (`dns_only` handling in `api/v1/cfscan_results.php`). `ajax_cfscan_request.php` accepts `mode=scan|dns`.
+- **Tests**: `test_cloudflare_dns_batch` (DNS batch + hardened config reader).
+
 ## [v1.18.10] - 2026-09-25
 
 ### Added - Cloudflare Radar enrichment (URL Scanner + DNS top locations)

@@ -345,32 +345,61 @@ def auto_abusech_new_matches(cfg: configparser.ConfigParser, db: sqlite3.Connect
         return 0
 
 
+def _cf_raw(cfg: configparser.ConfigParser, key: str, default: str = "") -> str:
+    """Read a [cloudflare] value, ignoring anything after an inline comment."""
+    value = cfg.get("cloudflare", key, fallback=default)
+    for sep in (";", "#"):
+        if sep in value:
+            value = value.split(sep, 1)[0]
+    return value.strip()
+
+
+def _cf_int(cfg: configparser.ConfigParser, key: str, default: int) -> int:
+    try:
+        return int(float(_cf_raw(cfg, key, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _cf_float(cfg: configparser.ConfigParser, key: str, default: float) -> float:
+    try:
+        return float(_cf_raw(cfg, key, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _cf_bool(cfg: configparser.ConfigParser, key: str, default: bool) -> bool:
+    raw = _cf_raw(cfg, key, "1" if default else "0").lower()
+    return raw in ("1", "true", "yes", "on")
+
+
 def _cf_config(cfg: configparser.ConfigParser) -> dict:
     """Read the optional [cloudflare] Radar/URL Scanner settings."""
     if not cfg.has_section("cloudflare"):
         return {}
-    api_token = cfg.get("cloudflare", "api_token", fallback="").strip()
-    scanner_token = cfg.get("cloudflare", "urlscanner_token", fallback="").strip()
+    api_token = _cf_raw(cfg, "api_token")
+    scanner_token = _cf_raw(cfg, "urlscanner_token")
     # A single token with both permissions is valid: fall back to the other one.
     scanner_token = scanner_token or api_token
     api_token = api_token or scanner_token
     return {
-        "enabled": cfg.getboolean("cloudflare", "radar_enabled", fallback=True),
+        "enabled": _cf_bool(cfg, "radar_enabled", True),
         "api_token": api_token,
         "urlscanner_token": scanner_token,
-        "account_id": cfg.get("cloudflare", "account_id", fallback="").strip(),
-        "visibility": cfg.get("cloudflare", "visibility", fallback="public").strip(),
-        "rate_delay": cfg.getfloat("cloudflare", "rate_delay_seconds", fallback=10.0),
-        "daily_limit": cfg.getint("cloudflare", "daily_limit", fallback=150),
-        "monthly_limit": cfg.getint("cloudflare", "monthly_limit", fallback=5000),
-        "timeout": cfg.getint("cloudflare", "timeout", fallback=30),
-        "poll_interval": cfg.getint("cloudflare", "poll_interval", fallback=15),
-        "poll_max_wait": cfg.getint("cloudflare", "poll_max_wait", fallback=180),
-        "dns_locations": cfg.getboolean("cloudflare", "dns_locations_enabled", fallback=True),
-        "dns_limit": cfg.getint("cloudflare", "dns_locations_limit", fallback=10),
-        "cache_days": cfg.getint("cloudflare", "cache_days", fallback=7),
-        "auto_scan": cfg.getboolean("cloudflare", "auto_scan", fallback=False),
-        "auto_scan_max": cfg.getint("cloudflare", "auto_scan_max", fallback=50),
+        "account_id": _cf_raw(cfg, "account_id"),
+        "visibility": _cf_raw(cfg, "visibility", "public"),
+        "rate_delay": _cf_float(cfg, "rate_delay_seconds", 10.0),
+        "daily_limit": _cf_int(cfg, "daily_limit", 150),
+        "monthly_limit": _cf_int(cfg, "monthly_limit", 5000),
+        "timeout": _cf_int(cfg, "timeout", 30),
+        "poll_interval": _cf_int(cfg, "poll_interval", 15),
+        "poll_max_wait": _cf_int(cfg, "poll_max_wait", 180),
+        "dns_locations": _cf_bool(cfg, "dns_locations_enabled", True),
+        "dns_limit": _cf_int(cfg, "dns_locations_limit", 10),
+        "dns_rate_delay": _cf_float(cfg, "dns_rate_delay_seconds", 1.0),
+        "cache_days": _cf_int(cfg, "cache_days", 7),
+        "auto_scan": _cf_bool(cfg, "auto_scan", False),
+        "auto_scan_max": _cf_int(cfg, "auto_scan_max", 50),
     }
 
 
@@ -413,12 +442,6 @@ def run_cfscan_batch(cfg: configparser.ConfigParser, db: sqlite3.Connection,
                 timeout=cf["timeout"], poll_interval=cf["poll_interval"],
                 max_wait=cf["poll_max_wait"])
             entry = cloudflare_radar.classify(report, domain, scan.get("report_url", ""))
-            if cf["dns_locations"] and cf["api_token"]:
-                try:
-                    entry["dns_countries"] = cloudflare_radar.dns_top_locations(
-                        domain, cf["api_token"], timeout=cf["timeout"], limit=cf["dns_limit"])
-                except Exception as e:
-                    log.debug("Cloudflare DNS locations failed for %s: %s", domain, e)
             sync_client.send_cfscan_results(host_url, api_key, [entry])
             cloudflare_radar.usage_add(db, day_key)
             cloudflare_radar.usage_add(db, month_key)
@@ -440,6 +463,40 @@ def run_cfscan_batch(cfg: configparser.ConfigParser, db: sqlite3.Connection,
             log.warning("Cloudflare scan failed for %s: %s", domain, e)
         if cf["rate_delay"] > 0:
             time.sleep(cf["rate_delay"])
+    return stats
+
+
+def run_cfdns_batch(cfg: configparser.ConfigParser, db: sqlite3.Connection,
+                    host_url: str, api_key: str, domains: list[str]) -> dict:
+    """Fetch the Radar DNS top-locations distribution for ``domains``.
+
+    Cheap (one Radar API request per domain, no scan quota); used by the separate
+    "Cloudflare DNS" action. The results are merged into the existing
+    ``domain_cfscan`` row without touching the URL Scanner verdict.
+    """
+    stats = {"requested": len(domains), "checked": 0, "errors": 0, "error": None}
+    cf = _cf_config(cfg)
+    if not cf.get("enabled") or not cf.get("api_token"):
+        stats["error"] = "Cloudflare Radar not configured ([cloudflare] api_token)."
+        return stats
+
+    for domain in domains:
+        try:
+            locations = cloudflare_radar.dns_top_locations(
+                domain, cf["api_token"], timeout=cf["timeout"], limit=cf["dns_limit"])
+            sync_client.send_cfscan_results(host_url, api_key, [{
+                "domain": domain, "dns_only": True, "dns_countries": locations,
+            }])
+            stats["checked"] += 1
+        except cloudflare_radar.AuthError as e:
+            stats["error"] = str(e)
+            stats["errors"] += 1
+            break
+        except Exception as e:  # never abort the caller for one domain
+            stats["errors"] += 1
+            log.warning("Cloudflare DNS locations failed for %s: %s", domain, e)
+        if cf["dns_rate_delay"] > 0:
+            time.sleep(cf["dns_rate_delay"])
     return stats
 
 
@@ -2466,6 +2523,37 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                     else:
                         logs.append({"level": "info", "message":
                                      f"Cloudflare scan: {stats['scanned']} domain(s), "
+                                     f"{stats['errors']} error(s)"})
+
+            elif command == "cf_dns_lookup":
+                opts = {}
+                if payload:
+                    try:
+                        opts = json.loads(payload) if isinstance(payload, str) else {}
+                    except (ValueError, TypeError):
+                        opts = {}
+                domains = opts.get("domains")
+                if not domains and opts.get("domain"):
+                    domains = [opts["domain"]]
+                if not isinstance(domains, list):
+                    domains = []
+                domains = [str(d).lower().strip() for d in domains if d][:200]
+
+                cf = _cf_config(cfg)
+                if not cf.get("enabled") or not cf.get("api_token"):
+                    result = "Cloudflare Radar not configured ([cloudflare] api_token)."
+                    status = "failed"
+                    logs.append({"level": "error", "message": result})
+                else:
+                    stats = run_cfdns_batch(cfg, db, host_url, api_key, domains)
+                    result = json.dumps(stats)
+                    if stats.get("error"):
+                        status = "failed"
+                        logs.append({"level": "error", "message":
+                                     f"Cloudflare DNS: {stats['error']}"})
+                    else:
+                        logs.append({"level": "info", "message":
+                                     f"Cloudflare DNS: {stats['checked']} domain(s), "
                                      f"{stats['errors']} error(s)"})
 
             elif command == "tracking_check":

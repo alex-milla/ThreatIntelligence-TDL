@@ -115,7 +115,7 @@
         fetch('/ajax_cfscan_request.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
-            body: JSON.stringify({ domains: domains })
+            body: JSON.stringify({ domains: domains, mode: 'scan' })
         })
             .then(function (r) { return r.json(); })
             .then(function (data) {

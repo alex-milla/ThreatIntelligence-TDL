@@ -147,6 +147,18 @@ if (!empty($items)) {
     }
 }
 
+// Cached Cloudflare Radar (URL Scanner + DNS) for the visible rows (detail block).
+$domainCfscan = [];
+if (!empty($items)) {
+    $domains = array_column($items, 'domain');
+    $placeholders = implode(',', array_fill(0, count($domains), '?'));
+    $cfStmt = $db->prepare("SELECT * FROM domain_cfscan WHERE domain IN ($placeholders)");
+    $cfStmt->execute($domains);
+    foreach ($cfStmt->fetchAll() as $c) {
+        $domainCfscan[$c['domain']] = $c;
+    }
+}
+
 // Load domain tags
 $domainTags = [];
 if (!empty($items)) {
@@ -309,7 +321,8 @@ require __DIR__ . '/templates/header.php';
                         'vt_checked_at'      => $vtRow['checked_at'] ?? null,
                         '_ns'                => $ns,
                         '_is_new'            => $isNew,
-                    ] + abusechPresentKeys($domainAbusech[$item['domain']] ?? null);
+                    ] + abusechPresentKeys($domainAbusech[$item['domain']] ?? null)
+                      + cfscanPresentKeys($domainCfscan[$item['domain']] ?? null);
                     $domainArg = htmlspecialchars(addslashes($item['domain']));
                 ?>
                 <tr data-domain="<?= htmlspecialchars($item['domain']) ?>">
