@@ -1050,6 +1050,24 @@ def test_cloudflare_radar_classify() -> None:
     assert "WordPress" in got["technologies"] and "PHP" in got["technologies"], got
     assert got["phishing"] == "", got
 
+    # Malformed (stringified dict / bare "data") processor values are dropped.
+    malformed = {
+        "task": {"success": True},
+        "verdicts": {"overall": {}},
+        "meta": {"processors": {
+            "domainCategories": ["{'data': [{'name': 'Phishing'}]}"],
+            "phishing": ["data"],
+            "radarRank": "{'data': [{'hostname': 'x', 'rank': 1}]}",
+            "wappa": [{"app": "data"}],
+        }},
+    }
+    bad = cf.classify(malformed, "x.example")
+    assert bad["categories"] == "", bad
+    assert bad["phishing"] == "", bad
+    assert bad["radar_rank"] == "", bad
+    assert bad["technologies"] == "", bad
+    assert bad["verdict"] == "clean", bad
+
     # A clean page (no malicious verdict, benign category) -> clean.
     clean = cf.classify({"task": {"success": True}, "verdicts": {"overall": {}},
                          "meta": {"processors": {"domainCategories": ["Technology"]}}}, "ok.example")

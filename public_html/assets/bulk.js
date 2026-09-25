@@ -147,6 +147,28 @@
             .catch(function () { alert('Failed to queue Cloudflare DNS'); });
     };
 
+    // Admin: delete the cached enrichment (WHOIS/VT/abuse.ch/Cloudflare) of the
+    // selected/visible domains so the checks can be run again. Analyst data
+    // (tags, watchlist, reports, Intelligence) is kept.
+    window.deleteVisibleCache = function () {
+        var domains = selectedDomains();
+        if (!domains.length) { alert('No domains selected.'); return; }
+        if (!confirm('Delete the cached data for ' + domains.length + ' domain(s)?\n\nOnly the cached WHOIS / VirusTotal / abuse.ch / Cloudflare results are removed; tags, watchlist, reports and Intelligence are kept.')) {
+            return;
+        }
+        fetch('/ajax_domain_detail_delete.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+            body: JSON.stringify({ domains: domains })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.success) { location.reload(); }
+                else { alert(data.error || 'Delete failed'); }
+            })
+            .catch(function () { alert('Delete failed'); });
+    };
+
     // Bulk exclude / unexclude for the per-keyword match list. An empty tag
     // clears the classification (restore). Excluded rows are included so they
     // can be restored.

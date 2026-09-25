@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.15] - 2026-09-25
+
+### Added - Delete the cached "ficha" (re-run the checks) + parse validation
+
+- **Admins can now clear a domain's cached enrichment** so the checks can be run again, from the domain detail (**Delete cache**) and in bulk from the Notifications and per-keyword toolbars (**Delete cache**, on the selected/visible domains). New endpoint `ajax_domain_detail_delete.php` (admin + CSRF) deletes **only** `domain_whois`, `domain_vt`, `domain_abusech` and `domain_cfscan`. It never touches analyst data (`domain_tags`), the watchlist, the report queue, matches/notifications, saved reports (`report_history`), Intelligence tracking (`domain_tracking`), nor the worker's domain cache. Removing the `domain_cfscan` row also means the bulk **Check Cloudflare** (which does not force) will re-scan it.
+- **New reports never store garbage.** `worker/cloudflare_radar.py` (`classify`) now drops malformed processor values (a stringified dict like `{'data': ...` or the bare `data`), and `api/v1/cfscan_results.php` keeps the previously stored value when an incoming field is malformed (or when the scan failed), instead of overwriting it.
+- **Tests**: `test_cloudflare_radar_classify` extended with malformed processor inputs.
+- **Operational note**: the URL Scanner parsing fix lives in the worker; the worker must be on **>= v1.18.12**, and existing bad rows are best cleared with **Delete cache** and re-scanned.
+
 ## [v1.18.14] - 2026-09-25
 
 ### Changed - One shared domain-detail block everywhere (consistent Cloudflare actions)

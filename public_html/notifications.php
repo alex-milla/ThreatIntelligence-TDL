@@ -440,6 +440,9 @@ require __DIR__ . '/templates/header.php';
                 <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleAbusech()"><i class="material-icons left">gpp_maybe</i>Check Abuse.ch</button>
                 <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleCfscan()"><i class="material-icons left">cloud</i>Check Cloudflare</button>
                 <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleCfdns()"><i class="material-icons left">public</i>Cloudflare DNS</button>
+                <?php if (!empty($_SESSION['is_admin'])): ?>
+                <button type="button" class="btn btn-small btn-danger waves-effect" onclick="deleteVisibleCache()" title="Delete the cached WHOIS/VT/abuse.ch/Cloudflare data for the selected domains (keeps tags, watchlist, reports and Intelligence)."><i class="material-icons left">delete_sweep</i>Delete cache</button>
+                <?php endif; ?>
                 <button type="button" class="btn btn-small waves-effect" onclick="sendSelectedToReport()"><i class="material-icons left">playlist_add</i>Send to report</button>
                 <button type="button" class="btn btn-small btn-outline waves-effect" onclick="removeSelectedFromReport()"><i class="material-icons left">playlist_remove</i>Remove from report</button>
                 <button type="button" class="btn btn-small btn-outline waves-effect" onclick="location.reload()" title="Reload this list with the current filters"><i class="material-icons left">refresh</i>Refresh</button>

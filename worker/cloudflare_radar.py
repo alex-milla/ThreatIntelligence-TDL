@@ -70,6 +70,23 @@ def _item_label(item, *keys) -> str:
     return str(item).strip()
 
 
+_MALFORMED_MARKERS = ("{'", "[{'", '"data"', "'data'")
+
+
+def _malformed(text: str) -> bool:
+    """Whether a processor value is a stringified dict (a bad parse).
+
+    Guards against storing garbage like "{'data': [{'hostname': ..." or the bare
+    key "data" that an older parser produced for nested processors.
+    """
+    value = (text or "").strip()
+    if not value:
+        return False
+    if value.lower() == "data":
+        return True
+    return any(marker in value for marker in _MALFORMED_MARKERS)
+
+
 def _raise_http_error(response, service: str) -> None:
     """Turn a failed response into AuthError (bad token) or QuotaError."""
     if response.status_code in (401, 403):
@@ -187,6 +204,13 @@ def classify(report: dict, domain: str, report_url: str = "") -> dict:
     certificates = ((report.get("lists") or {}).get("certificates"))
     if isinstance(certificates, list) and certificates and isinstance(certificates[0], dict):
         cert_issuer = str(certificates[0].get("issuer") or "")
+
+    # Never keep a malformed (stringified) processor value.
+    categories = [c for c in categories if not _malformed(c)]
+    phishing = [p for p in phishing if not _malformed(p)]
+    technologies = [t for t in technologies if not _malformed(t)]
+    if _malformed(rank_label):
+        rank_label = ""
 
     failed = task.get("success") is False or str(task.get("status") or "").lower() in ("failed", "error")
     bad_category = any(c.strip().lower() in _BAD_CATEGORIES for c in categories)

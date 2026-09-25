@@ -296,6 +296,9 @@ function renderDomainDetail(array $present, array $keywords, array $rules): stri
         <?php if (!empty($present['cf_report_url'])): ?>
         <a class="btn btn-small btn-info waves-effect" href="<?= htmlspecialchars((string)$present['cf_report_url']) ?>" target="_blank" rel="noopener"><i class="material-icons left">radar</i>Open in URL Scanner</a>
         <?php endif; ?>
+        <?php if (!empty($_SESSION['is_admin'])): ?>
+        <button type="button" class="btn btn-small btn-danger waves-effect" onclick="ddDeleteFicha('<?= $domainArg ?>')" title="Delete the cached WHOIS/VirusTotal/abuse.ch/Cloudflare data for this domain. Tags, watchlist, reports and Intelligence are kept."><i class="material-icons left">delete_sweep</i>Delete cache</button>
+        <?php endif; ?>
     </div>
     <details class="dd-raw">
         <summary>Raw data</summary>

@@ -195,4 +195,23 @@
             })
             .catch(function () { setTimeout(function () { ddPollCfdns(domain, tries + 1); }, 6000); });
     }
+
+    // Delete the cached enrichment of this domain (WHOIS/VT/abuse.ch/Cloudflare)
+    // so the checks can be run again. Admin action; analyst data is kept.
+    window.ddDeleteFicha = function (domain) {
+        if (!confirm('Delete the cached data for ' + domain + '?\n\nThis only clears the cached WHOIS / VirusTotal / abuse.ch / Cloudflare results so you can run the checks again. Tags, watchlist, reports and Intelligence are kept.')) {
+            return;
+        }
+        fetch('/ajax_domain_detail_delete.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+            body: JSON.stringify({ domain: domain })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (d.success) { window.ddAfterAction(domain); }
+            else { alert(d.error || 'Delete failed'); }
+        })
+        .catch(function () { alert('Delete failed'); });
+    };
 })();
