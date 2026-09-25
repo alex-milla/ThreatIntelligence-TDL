@@ -40,26 +40,34 @@ class QuotaError(Exception):
     """Rate/quota limit reached (the batch should stop)."""
 
 
-def _as_list(value) -> list[str]:
-    """Normalise a str/list/dict (or None) into a list of non-empty strings."""
-    if value is None:
-        return []
-    if isinstance(value, str):
-        value = [value]
-    out: list[str] = []
+def _processor_items(value) -> list:
+    """Return the item list of a Cloudflare processor (``{"data": [...]}``).
+
+    Cloudflare ``meta.processors.*`` values are objects like
+    ``{"data": [{...}]}``; this unwraps them and tolerates a bare list or a
+    scalar (older/simple payloads).
+    """
+    if isinstance(value, dict):
+        data = value.get("data")
+        if isinstance(data, list):
+            return data
+        return [value]
     if isinstance(value, list):
-        for item in value:
-            if isinstance(item, dict):
-                # Wappalyzer entries look like {"name": "WordPress", ...}.
-                item = item.get("name") or item.get("value") or item.get("label")
-            if item is None:
-                continue
-            text = str(item).strip()
-            if text:
-                out.append(text)
-    elif isinstance(value, dict):
-        out = [str(k).strip() for k in value.keys() if str(k).strip()]
-    return out
+        return value
+    if value in (None, ""):
+        return []
+    return [value]
+
+
+def _item_label(item, *keys) -> str:
+    """Extract the first non-empty label from a processor item."""
+    if isinstance(item, dict):
+        for key in keys:
+            val = item.get(key)
+            if val not in (None, ""):
+                return str(val).strip()
+        return ""
+    return str(item).strip()
 
 
 def _raise_http_error(response, service: str) -> None:
@@ -135,10 +143,45 @@ def classify(report: dict, domain: str, report_url: str = "") -> dict:
     task = report.get("task") or {}
 
     malicious = bool(overall.get("malicious"))
-    categories = _as_list(meta.get("domainCategories"))
-    phishing = _as_list(meta.get("phishing"))
-    rank = meta.get("radarRank")
-    technologies = _as_list(meta.get("wappa"))
+
+    # domainCategories: {"data": [{"name", "isPrimary", "inherited"}]}
+    cat_pairs = []
+    for item in _processor_items(meta.get("domainCategories")):
+        label = _item_label(item, "name")
+        if label:
+            is_primary = isinstance(item, dict) and bool(item.get("isPrimary"))
+            cat_pairs.append((0 if is_primary else 1, label))
+    categories = [label for _, label in sorted(cat_pairs, key=lambda p: p[0])]
+
+    # phishing: {"data": ["Credential Harvester", ...]}
+    phishing = [p for p in (_item_label(it) for it in _processor_items(meta.get("phishing"))) if p]
+
+    # radarRank: {"data": [{"bucket", "hostname", "rank"}]}
+    raw_rank = meta.get("radarRank")
+    rank_label = ""
+    if isinstance(raw_rank, (int, float)) or (isinstance(raw_rank, str) and raw_rank.strip()):
+        rank_label = str(raw_rank).strip()
+    else:
+        rank_items = [it for it in _processor_items(raw_rank) if isinstance(it, dict)]
+        chosen = None
+        for it in rank_items:
+            host = str(it.get("hostname") or "")
+            if host and (host == domain or host.endswith("." + domain) or domain.endswith(host)):
+                chosen = it
+                break
+        if chosen is None and rank_items:
+            chosen = rank_items[0]
+        if chosen:
+            if chosen.get("rank") not in (None, ""):
+                rank_label = str(chosen["rank"])
+            elif chosen.get("bucket"):
+                rank_label = "bucket " + str(chosen["bucket"])
+
+    # wappa (Wappalyzer): {"data": [{"app", "categories", ...}]}
+    technologies = [
+        label for label in (_item_label(it, "app", "name") for it in _processor_items(meta.get("wappa")))
+        if label
+    ]
 
     cert_issuer = ""
     certificates = ((report.get("lists") or {}).get("certificates"))
@@ -166,7 +209,7 @@ def classify(report: dict, domain: str, report_url: str = "") -> dict:
         "verdict": verdict,
         "categories": ", ".join(categories),
         "phishing": ", ".join(phishing),
-        "radar_rank": "" if rank in (None, "") else str(rank),
+        "radar_rank": rank_label,
         "technologies": ", ".join(technologies),
         "asn": str(page.get("asn") or ""),
         "country": str(page.get("country") or ""),

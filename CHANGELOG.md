@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.12] - 2026-09-25
+
+### Fixed - Cloudflare Radar rank/technologies/categories were shown as raw JSON
+
+- **The URL Scanner `meta.processors.*` values are objects like `{"data": [...]}`, not scalars.** The classifier turned them into a string, so the detail showed e.g. `Radar rank {'data': [{'hostname': ...` and `Technologies data`. `classify()` now unwraps `data` and extracts the right field:
+  - **Radar rank**: the `rank` of the scanned hostname (or the first entry), falling back to `bucket`.
+  - **Technologies**: the `app` of each Wappalyzer entry.
+  - **Categories**: each `name` (primary categories first).
+  - **Phishing**: the string list.
+- Scalar/bare-list payloads keep working (backward compatible).
+- **Tests**: `test_cloudflare_radar_classify` extended with the real `{"data": [...]}` shapes.
+- **Note**: previously stored rows keep the bad strings until the domain is rescanned (**Scan with Cloudflare** forces a refresh).
+
 ## [v1.18.11] - 2026-09-25
 
 ### Fixed - Cloudflare Radar results were not shown in the lists; config crash

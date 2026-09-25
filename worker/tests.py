@@ -1023,6 +1023,33 @@ def test_cloudflare_radar_classify() -> None:
     assert out["cert_issuer"] == "Let's Encrypt", out
     assert out["report_url"].endswith("/scan/x"), out
 
+    # Real Cloudflare shape: every processor is {"data": [...]}.
+    nested = {
+        "task": {"success": True, "status": "Finished"},
+        "verdicts": {"overall": {}},
+        "page": {"asn": "AS123", "country": "Spain"},
+        "meta": {"processors": {
+            "domainCategories": {"data": [
+                {"name": "Newly Seen Domains", "isPrimary": False, "inherited": False},
+                {"name": "Financial Services", "isPrimary": True, "inherited": False},
+            ]},
+            "phishing": {"data": []},
+            "radarRank": {"data": [
+                {"hostname": "cdn.example", "rank": 900, "bucket": "top_1000"},
+                {"hostname": "mediolanum.website", "rank": 42517, "bucket": "top_50000"},
+            ]},
+            "wappa": {"data": [
+                {"app": "WordPress"},
+                {"app": "PHP", "categories": [{"name": "Programming languages", "priority": 1}]},
+            ]},
+        }},
+    }
+    got = cf.classify(nested, "mediolanum.website")
+    assert got["radar_rank"] == "42517", got
+    assert got["categories"] == "Financial Services, Newly Seen Domains", got
+    assert "WordPress" in got["technologies"] and "PHP" in got["technologies"], got
+    assert got["phishing"] == "", got
+
     # A clean page (no malicious verdict, benign category) -> clean.
     clean = cf.classify({"task": {"success": True}, "verdicts": {"overall": {}},
                          "meta": {"processors": {"domainCategories": ["Technology"]}}}, "ok.example")
