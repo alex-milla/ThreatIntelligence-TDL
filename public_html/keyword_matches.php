@@ -12,6 +12,7 @@ require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/report_present.php';
 require_once __DIR__ . '/includes/report_queue.php';
+require_once __DIR__ . '/includes/domain_detail.php';
 requireAuth();
 
 $db = Database::get();
@@ -310,6 +311,7 @@ require __DIR__ . '/templates/header.php';
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleAbusech()"><i class="material-icons left">gpp_maybe</i>Check Abuse.ch</button>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleCfscan()"><i class="material-icons left">cloud</i>Check Cloudflare</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleCfdns()"><i class="material-icons left">public</i>Cloudflare DNS</button>
         <label class="check-inline" title="Report group the selected domains will be sent to">
             <span class="muted">Report group:</span>
             <select id="report-group" class="browser-default compact">
@@ -478,109 +480,7 @@ require __DIR__ . '/templates/header.php';
                 </tr>
                 <tr class="domain-detail-row" style="display:none;">
                     <td colspan="15">
-                        <div class="domain-detail">
-                            <div class="dd-grid">
-                                <div class="dd-block">
-                                    <h4>Assessment</h4>
-                                    <dl class="dd-list">
-                                        <div><dt>Risk</dt><dd><span class="risk-pill risk-<?= htmlspecialchars($risk['risk']) ?>"><?= htmlspecialchars(ucfirst($risk['risk'])) ?></span></dd></div>
-                                        <div><dt>Confidence</dt><dd><?= htmlspecialchars(ucfirst($risk['confidence'])) ?></dd></div>
-                                    </dl>
-                                    <ul class="dd-findings">
-                                        <?php foreach ($risk['reasons'] as $reason): ?>
-                                            <li class="<?= strpos($reason, 'registration period') !== false ? 'reason-warn' : '' ?>"><?= htmlspecialchars($reason) ?></li>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                </div>
-                                <div class="dd-block">
-                                    <h4>Timeline</h4>
-                                    <ul class="report-timeline">
-                                        <?php foreach ($timeline as $ev): ?>
-                                            <li><span class="tl-dot"></span><span class="tl-date"><?= htmlspecialchars(fmt_date((string)$ev['at'])) ?></span><span class="tl-label"><?= htmlspecialchars($ev['label']) ?></span><span class="tl-source muted"><?= htmlspecialchars($ev['source']) ?></span></li>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                </div>
-                                <div class="dd-block">
-                                    <h4>Registration</h4>
-                                    <dl class="dd-list">
-                                        <div><dt>Registrar</dt><dd><?= !empty($present['registrar']) ? htmlspecialchars((string)$present['registrar']) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                        <div><dt>Name servers</dt><dd><?= !empty($ns) ? htmlspecialchars(implode(', ', $ns)) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                        <div><dt>WHOIS</dt><dd><span class="avail avail-<?= htmlspecialchars($whois['state']) ?>"><?= htmlspecialchars($whois['label']) ?></span></dd></div>
-                                        <div><dt>Source</dt><dd><?= !empty($present['whois_source']) ? htmlspecialchars((string)$present['whois_source']) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                        <div><dt>Updated</dt><dd><?= !empty($present['whois_updated_at']) ? htmlspecialchars(fmt_date((string)$present['whois_updated_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                    </dl>
-                                </div>
-                                <div class="dd-block">
-                                    <h4>Reputation</h4>
-                                    <dl class="dd-list">
-                                        <div><dt>VirusTotal</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($rep['state']) ?>"><?= htmlspecialchars($repSymbol[$rep['state']] ?? '') ?> <?= htmlspecialchars($rep['label']) ?></span><?php if ($rep['detail'] !== ''): ?> <span class="muted"><?= htmlspecialchars($rep['detail']) ?></span><?php endif; ?></dd></div>
-                                        <div><dt>Last analysis</dt><dd><?= htmlspecialchars(reportFormatDate($present['last_analysis_date'] ?? null)) ?></dd></div>
-                                        <div><dt>Checked</dt><dd><?= !empty($present['vt_checked_at']) ? htmlspecialchars(fmt_date((string)$present['vt_checked_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                        <div><dt>Tag</dt><dd><?= $tagCell ?></dd></div>
-                                        <div><dt>Watchlist</dt><dd><?= !empty($r['in_watchlist']) ? 'Yes' : '<span class="muted">No</span>' ?></dd></div>
-                                    </dl>
-                                </div>
-                                <div class="dd-block">
-                                    <h4>Cloudflare Radar</h4>
-                                    <dl class="dd-list">
-                                        <div><dt>Verdict</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($cfState) ?>"><?= htmlspecialchars($repSymbol[$cfState] ?? '') ?> <?= htmlspecialchars($cfLabel) ?></span><?php if ($cfState === 'unproven' && !empty($present['cf_error'])): ?> <span class="muted"><?= htmlspecialchars((string)$present['cf_error']) ?></span><?php elseif ($cfDetail !== ''): ?> <span class="muted"><?= htmlspecialchars($cfDetail) ?></span><?php endif; ?></dd></div>
-                                        <div><dt>Radar rank</dt><dd><?= !empty($present['cf_radar_rank']) ? htmlspecialchars((string)$present['cf_radar_rank']) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                        <div><dt>Technologies</dt><dd><?= !empty($present['cf_technologies']) ? htmlspecialchars((string)$present['cf_technologies']) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                        <div><dt>Hosting</dt><dd><?php
-                                            $hostBits = array_filter([(string)($present['cf_asn'] ?? ''), (string)($present['cf_country'] ?? '')]);
-                                            echo $hostBits ? htmlspecialchars(implode(' · ', $hostBits)) : '<span class="muted">&mdash;</span>';
-                                        ?></dd></div>
-                                        <div><dt>Checked</dt><dd><?= !empty($present['cf_checked_at']) ? htmlspecialchars(fmt_date((string)$present['cf_checked_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                    </dl>
-                                    <?php if (!empty($cfDnsList)): ?>
-                                    <div><span class="muted">DNS queries by country (7d)</span>
-                                        <ul class="dd-findings">
-                                            <?php foreach ($cfDnsList as $loc):
-                                                if (!is_array($loc)) continue;
-                                                $locName = (string)($loc['name'] ?? $loc['code'] ?? '');
-                                                $locVal = is_numeric($loc['value'] ?? null) ? round((float)$loc['value'], 1) : (string)($loc['value'] ?? '');
-                                            ?>
-                                            <li><strong><?= htmlspecialchars($locName) ?></strong> <span class="muted"><?= htmlspecialchars((string)$locVal) ?>%</span></li>
-                                            <?php endforeach; ?>
-                                        </ul>
-                                    </div>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="dd-block">
-                                    <h4>Detection</h4>
-                                    <dl class="dd-list">
-                                        <div><dt>Keyword</dt><dd><?= htmlspecialchars((string)$keyword['keyword']) ?></dd></div>
-                                        <div><dt>Source</dt><dd><?= htmlspecialchars($sourceLabel) ?></dd></div>
-                                        <div><dt>Historical</dt><dd><?= !empty($r['is_historical']) ? 'Yes' : '<span class="muted">No</span>' ?></dd></div>
-                                        <?php if ($ttdH !== null): ?>
-                                            <div><dt>Time-to-detect</dt><dd><?= (int)$ttdH ?> h from registration to first observation</dd></div>
-                                        <?php endif; ?>
-                                        <?php if (!empty($present['tag_note'])): ?>
-                                            <div><dt>Analyst note</dt><dd><?= htmlspecialchars((string)$present['tag_note']) ?></dd></div>
-                                        <?php endif; ?>
-                                    </dl>
-                                    <ul class="dd-findings">
-                                        <?php foreach (reportFindings($present, (string)$keyword['keyword'], $age) as $f): ?>
-                                            <li class="finding-<?= htmlspecialchars($f['severity']) ?>"><strong><?= htmlspecialchars($f['label']) ?></strong><?= $f['value'] !== '' ? ': <span class="muted">' . htmlspecialchars((string)$f['value']) . '</span>' : '' ?></li>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                </div>
-                            </div>
-                            <?php if (($present['verdict'] ?? null) !== null || !empty($present['cf_report_url'])): ?>
-                            <div class="dd-vt">
-                                <?php if (($present['verdict'] ?? null) !== null): ?>
-                                <a class="btn btn-small btn-info waves-effect" href="https://www.virustotal.com/gui/domain/<?= rawurlencode((string)$r['domain']) ?>" target="_blank" rel="noopener"><i class="material-icons left">shield</i>Open in VirusTotal</a>
-                                <?php endif; ?>
-                                <?php if (!empty($present['cf_report_url'])): ?>
-                                <a class="btn btn-small btn-info waves-effect" href="<?= htmlspecialchars((string)$present['cf_report_url']) ?>" target="_blank" rel="noopener"><i class="material-icons left">radar</i>Open in URL Scanner</a>
-                                <?php endif; ?>
-                            </div>
-                            <?php endif; ?>
-                            <details class="dd-raw">
-                                <summary>Raw data</summary>
-                                <pre><?= $rawJson ?></pre>
-                            </details>
-                        </div>
+                        <?= renderDomainDetail($present, [(string)$keyword['keyword']], $rules) ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>

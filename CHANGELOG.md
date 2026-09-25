@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.14] - 2026-09-25
+
+### Changed - One shared domain-detail block everywhere (consistent Cloudflare actions)
+
+- **All domain details now use the same renderer** (`includes/domain_detail.php` → `renderDomainDetail()`). The per-keyword list (`keyword_matches.php`) and the saved report view (`report_view.php`) had their own inline copies, which is why Cloudflare showed 2 buttons in some panels, 1 link in others and none in the report. Both now call the shared renderer, so every detail shows the **Cloudflare Radar block** and the **two separate actions** (**Scan with Cloudflare** and **Cloudflare DNS**) plus the rest of the actions, consistently. Removes ~200 lines of duplicated markup.
+- **The bulk toolbar is split everywhere**: **Check Cloudflare** (URL Scanner, `fetchVisibleCfscan`) and **Cloudflare DNS** (`fetchVisibleCfdns`) in the Notifications and per-keyword lists, matching the per-domain buttons.
+- Buttons are hidden when printing (the existing `@media print` rule already hides `.btn`), so the printed report is unaffected.
+
 ## [v1.18.13] - 2026-09-25
 
 ### Changed - Single-column domain detail (more readable)

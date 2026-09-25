@@ -17,10 +17,12 @@
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/report_present.php';
+require_once __DIR__ . '/includes/domain_detail.php';
 requireAuth();
 
 $db = Database::get();
 $userId = (int)$_SESSION['user_id'];
+$rules = reportReviewRules($db);
 
 $id = (int)($_GET['id'] ?? 0);
 if ($id <= 0) {
@@ -446,79 +448,7 @@ require __DIR__ . '/templates/header.php';
                     </tr>
                     <tr class="domain-detail-row" style="display:none;">
                         <td colspan="8">
-                            <div class="domain-detail">
-                                <div class="dd-grid">
-                                    <div class="dd-block">
-                                        <h4>Assessment</h4>
-                                        <dl class="dd-list">
-                                            <div><dt>Risk</dt><dd><span class="risk-pill risk-<?= htmlspecialchars($risk['risk']) ?>"><?= htmlspecialchars(ucfirst($risk['risk'])) ?></span></dd></div>
-                                            <div><dt>Confidence</dt><dd><?= htmlspecialchars(ucfirst($risk['confidence'])) ?></dd></div>
-                                        </dl>
-                                        <ul class="dd-findings">
-                                            <?php foreach ($risk['reasons'] as $reason): ?>
-                                                <li class="<?= strpos($reason, 'registration period') !== false ? 'reason-warn' : '' ?>"><?= htmlspecialchars($reason) ?></li>
-                                            <?php endforeach; ?>
-                                        </ul>
-                                    </div>
-                                    <div class="dd-block">
-                                        <h4>Timeline</h4>
-                                        <ul class="report-timeline">
-                                            <?php foreach ($er['timeline'] as $ev): ?>
-                                                <li><span class="tl-dot"></span><span class="tl-date"><?= htmlspecialchars(fmt_date((string)$ev['at'])) ?></span><span class="tl-label"><?= htmlspecialchars($ev['label']) ?></span><span class="tl-source muted"><?= htmlspecialchars($ev['source']) ?></span></li>
-                                            <?php endforeach; ?>
-                                        </ul>
-                                    </div>
-                                    <div class="dd-block">
-                                        <h4>Registration</h4>
-                                        <dl class="dd-list">
-                                            <div><dt>Registrar</dt><dd><?= !empty($r['registrar']) ? htmlspecialchars((string)$r['registrar']) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                            <div><dt>Name servers</dt><dd><?= !empty($ns) ? htmlspecialchars(implode(', ', $ns)) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                            <div><dt>WHOIS</dt><dd><span class="avail avail-<?= htmlspecialchars($whois['state']) ?>"><?= htmlspecialchars($whois['label']) ?></span></dd></div>
-                                            <div><dt>Source</dt><dd><?= !empty($r['whois_source']) ? htmlspecialchars((string)$r['whois_source']) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                            <div><dt>Updated</dt><dd><?= !empty($r['whois_updated_at']) ? htmlspecialchars(fmt_date((string)$r['whois_updated_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                        </dl>
-                                    </div>
-                                    <div class="dd-block">
-                                        <h4>Reputation</h4>
-                                        <dl class="dd-list">
-                                            <div><dt>VirusTotal</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($rep['state']) ?>"><?= htmlspecialchars($rep['label']) ?></span><?php if ($rep['detail'] !== ''): ?> <span class="muted"><?= htmlspecialchars($rep['detail']) ?></span><?php endif; ?></dd></div>
-                                            <div><dt>Abuse.ch</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($abuse['state']) ?>"><?= htmlspecialchars($repSymbol[$abuse['state']] ?? '') ?> <?= htmlspecialchars($abuse['label']) ?></span><?php if ($abuse['detail'] !== ''): ?> <span class="muted"><?= htmlspecialchars($abuse['detail']) ?></span><?php endif; ?></dd></div>
-                                            <div><dt>Last analysis</dt><dd><?= htmlspecialchars(reportFormatDate($r['last_analysis_date'] ?? null)) ?></dd></div>
-                                            <div><dt>Checked</dt><dd><?= !empty($r['vt_checked_at']) ? htmlspecialchars(fmt_date((string)$r['vt_checked_at'])) : '<span class="muted">&mdash;</span>' ?></dd></div>
-                                            <div><dt>Tag</dt><dd><?= $tagCell ?></dd></div>
-                                            <div><dt>Watchlist</dt><dd><?= !empty($r['in_watchlist']) ? 'Yes' : '<span class="muted">No</span>' ?></dd></div>
-                                        </dl>
-                                    </div>
-                                    <div class="dd-block">
-                                        <h4>Detection</h4>
-                                        <dl class="dd-list">
-                                            <div><dt>Keyword</dt><dd><?= htmlspecialchars($sec['keyword']) ?></dd></div>
-                                            <div><dt>Source</dt><dd><?= htmlspecialchars($sourceLabel) ?></dd></div>
-                                            <div><dt>Historical</dt><dd><?= !empty($r['is_historical']) ? 'Yes' : '<span class="muted">No</span>' ?></dd></div>
-                                            <?php if ($er['ttdH'] !== null): ?>
-                                                <div><dt>Time-to-detect</dt><dd><?= (int)$er['ttdH'] ?> h from registration to first observation</dd></div>
-                                            <?php endif; ?>
-                                            <?php if (!empty($r['tag_note'])): ?>
-                                                <div><dt>Analyst note</dt><dd><?= htmlspecialchars((string)$r['tag_note']) ?></dd></div>
-                                            <?php endif; ?>
-                                        </dl>
-                                        <ul class="dd-findings">
-                                            <?php foreach (reportFindings($r, $sec['keyword'], $er['age']) as $f): ?>
-                                                <li class="finding-<?= htmlspecialchars($f['severity']) ?>"><strong><?= htmlspecialchars($f['label']) ?></strong><?= $f['value'] !== '' ? ': <span class="muted">' . htmlspecialchars((string)$f['value']) . '</span>' : '' ?></li>
-                                            <?php endforeach; ?>
-                                        </ul>
-                                    </div>
-                                </div>
-                                <?php if (($r['verdict'] ?? null) !== null): ?>
-                                <div class="dd-vt">
-                                    <a class="btn btn-small btn-info waves-effect" href="https://www.virustotal.com/gui/domain/<?= rawurlencode((string)($r['domain'] ?? '')) ?>" target="_blank" rel="noopener"><i class="material-icons left">shield</i>Open in VirusTotal</a>
-                                </div>
-                                <?php endif; ?>
-                                <details class="dd-raw">
-                                    <summary>Raw data</summary>
-                                    <pre><?= $rawJson ?></pre>
-                                </details>
-                            </div>
+                            <?= renderDomainDetail($r, [(string)$sec['keyword']], $rules) ?>
                         </td>
                     </tr>
                     <?php endforeach; ?>

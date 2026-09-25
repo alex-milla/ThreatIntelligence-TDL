@@ -128,6 +128,25 @@
             .catch(function () { alert('Failed to queue Cloudflare scan'); });
     };
 
+    window.fetchVisibleCfdns = function () {
+        var domains = selectedDomains();
+        if (!domains.length) { alert('No domains to check.'); return; }
+        fetch('/ajax_cfscan_request.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+            body: JSON.stringify({ domains: domains, mode: 'dns' })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.success) {
+                    alert('Queued ' + (data.queued || 0) + ' domain(s) for Cloudflare DNS. Reload in a moment to see the country distribution.');
+                } else {
+                    alert(data.error || 'Failed to queue Cloudflare DNS');
+                }
+            })
+            .catch(function () { alert('Failed to queue Cloudflare DNS'); });
+    };
+
     // Bulk exclude / unexclude for the per-keyword match list. An empty tag
     // clears the classification (restore). Excluded rows are included so they
     // can be restored.
