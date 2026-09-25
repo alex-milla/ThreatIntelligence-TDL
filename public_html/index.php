@@ -230,12 +230,24 @@ $sparkNonZero = count(array_filter($sparkDays));
             <input id="glob-q" type="text" placeholder=" " autocomplete="off" spellcheck="false" autocapitalize="off">
             <label for="glob-q">Glob pattern (e.g. banco*santander or *-santander[0-9])</label>
         </div>
+        <div class="section-actions" style="margin:2px 0 12px; align-items:center;">
+            <label class="nowrap">From <input id="glob-after" type="date" class="browser-default compact num-input"
+                   value="<?= htmlspecialchars(gmdate('Y-m-d', time() - 7 * 86400)) ?>"></label>
+            <label class="nowrap">To <input id="glob-before" type="date" class="browser-default compact num-input"
+                   value="<?= htmlspecialchars(gmdate('Y-m-d')) ?>"></label>
+            <span class="nowrap">
+                <button type="button" class="btn btn-small btn-outline waves-effect" onclick="globPreset(7)">7d</button>
+                <button type="button" class="btn btn-small btn-outline waves-effect" onclick="globPreset(30)">30d</button>
+                <button type="button" class="btn btn-small btn-outline waves-effect" onclick="globPreset(90)">90d</button>
+            </span>
+        </div>
         <button type="submit" class="btn waves-effect"><i class="material-icons left">search</i>Search</button>
     </form>
     <p class="muted" style="font-size:.82rem; margin-top:-4px;">
         Same syntax as keywords: <code>*</code> (any sequence), <code>?</code> (one character),
         <code>[abc]</code> / <code>[a-z]</code> classes (<code>[!...]</code> negation) and
         <code>{n,m}</code> repetition. Needs at least 3 literal characters (a bare <code>*</code> is rejected).
+        Filtered by <strong>discovery date</strong> (UTC): last 7 days by default, <strong>maximum 90 days</strong>.
         Covers cached domains that keep their text (CZDS gTLDs and OpenINTEL ccTLDs); huge hash-cached
         TLDs like <code>.com</code> are not searchable by pattern.
     </p>
@@ -361,6 +373,15 @@ function renderLookupResults(data) {
     results.innerHTML = '<table class="striped highlight responsive-table"><thead><tr>'
         + '<th>Domain</th><th>TLD</th><th>First seen</th></tr></thead><tbody>' + rows + '</tbody></table>';
 }
+function globPreset(days) {
+    var beforeEl = document.getElementById('glob-before');
+    var afterEl = document.getElementById('glob-after');
+    var before = (beforeEl && beforeEl.value) ? beforeEl.value : new Date().toISOString().slice(0, 10);
+    var d = new Date(before + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() - days);
+    if (afterEl) afterEl.value = d.toISOString().slice(0, 10);
+    if (beforeEl) beforeEl.value = before;
+}
 function runGlobLookup() {
     var qEl = document.getElementById('glob-q');
     // No URL/host normalisation here: '?' is a glob metacharacter.
@@ -368,14 +389,25 @@ function runGlobLookup() {
     if (qEl && q) { qEl.value = q; }
     var status = document.getElementById('glob-status');
     var results = document.getElementById('glob-results');
+    var afterEl = document.getElementById('glob-after');
+    var beforeEl = document.getElementById('glob-before');
+    var after = afterEl ? afterEl.value : '';
+    var before = beforeEl ? beforeEl.value : '';
     if (!q) return;
+    // Validate the discovery-date window client-side too (server re-checks).
+    if (!after || !before) { if (status) { status.style.display = 'block'; status.textContent = 'Choose a start and end date.'; } return; }
+    var today = new Date().toISOString().slice(0, 10);
+    if (after > before) { if (status) { status.style.display = 'block'; status.textContent = 'The start date must be on or before the end date.'; } return; }
+    if (after > today || before > today) { if (status) { status.style.display = 'block'; status.textContent = 'Dates cannot be in the future.'; } return; }
+    var span = Math.round((Date.parse(before + 'T00:00:00Z') - Date.parse(after + 'T00:00:00Z')) / 86400000);
+    if (span > 90) { if (status) { status.style.display = 'block'; status.textContent = 'The maximum search period is 90 days.'; } return; }
     closeDomainDetail();
     if (results) results.innerHTML = '';
     if (status) { status.style.display = 'block'; status.textContent = 'Searching the worker cache\u2026 (the worker polls every ~20 s)'; }
     fetch('/ajax_domain_search.php', {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRF-Token': lookupCsrf()},
-        body: JSON.stringify({q: q, mode: 'glob'})
+        body: JSON.stringify({q: q, mode: 'glob', after: after, before: before})
     })
     .then(function (r) { return r.json(); })
     .then(function (d) {

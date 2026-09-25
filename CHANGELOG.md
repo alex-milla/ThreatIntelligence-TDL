@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.9] - 2026-09-25
+
+### Added - Discovery-date filter in the Dashboard glob search
+
+- **The glob lookup can be limited to a discovery-date window.** The Dashboard's **Domain glob search** card now has **From / To** date pickers and **7 / 30 / 90-day** presets, filtering the cached domains by their discovery date (`first_seen`, UTC). Defaults to the **last 7 days** and the period is **capped at 90 days** (a longer range is rejected with a clear message) so a broad pattern cannot return an unbounded amount of history.
+  - **Worker** (`worker/scheduler.py`): `search_cached_domains` accepts `after`/`before` (inclusive `YYYY-MM-DD`) for `mode="glob"` and applies them to both caches (`domains_cache`, `cctld_seen`) on the SQLite `GLOB` fast path and on the `{n,m}` regex fallback. The date is matched on `substr(first_seen,1,10)`, consistent across both caches.
+  - **Web** (`public_html/ajax_domain_search.php`, `public_html/index.php`): the API validates the dates (`checkdate`, no future dates, `after <= before`, span ≤ 90 days) and resolves the last-7-days default server-side in UTC; the UI validates the same before sending. The period is part of the queued command, so identical searches still deduplicate.
+- **Tests**: `test_glob_search_cached_domains` extended with date-window assertions on both the GLOB and the regex paths.
+
 ## [v1.18.8] - 2026-09-25
 
 ### Added - Dashboard glob search over the cached domains

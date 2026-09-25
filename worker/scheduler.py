@@ -1763,14 +1763,28 @@ HASH_SEARCH_NOTE = ("Prefix/contains/glob search only covers text-cached TLDs; h
 
 
 def _search_glob_cache(conn: sqlite3.Connection, table: str, sqlite_glob: str | None,
-                       regex, limit: int, timeout: float) -> tuple[list[tuple], bool]:
+                       regex, limit: int, timeout: float,
+                       after: str | None = None, before: str | None = None) -> tuple[list[tuple], bool]:
     """Search a (domain, tld, first_seen) table with a glob. Returns (rows, partial).
 
     Uses SQLite's native GLOB (C-level) when the pattern has no ``{n,m}``; a
     repetition falls back to a Python regex scan for full parity with the keyword
     matcher. Both paths are bounded by a deadline so a broad pattern cannot hang
     the worker. `table` is a fixed internal literal (never user input).
+
+    `after`/`before` are inclusive ``YYYY-MM-DD`` dates compared against the
+    discovery date; every text cache stores ``first_seen`` as ISO8601 text, so
+    its first 10 characters are the date.
     """
+    date_sql = ""
+    date_params: list = []
+    if after:
+        date_sql += " AND substr(first_seen,1,10) >= ?"
+        date_params.append(after)
+    if before:
+        date_sql += " AND substr(first_seen,1,10) <= ?"
+        date_params.append(before)
+
     deadline = time.perf_counter() + max(1.0, float(timeout))
 
     if sqlite_glob is not None:
@@ -1782,8 +1796,8 @@ def _search_glob_cache(conn: sqlite3.Connection, table: str, sqlite_glob: str | 
             # GLOB matches the whole string, so wrap the pattern to emulate the
             # unanchored substring semantics of the keyword matcher.
             rows = conn.execute(
-                f"SELECT domain, tld, first_seen FROM {table} WHERE domain GLOB ? LIMIT ?",
-                ("*" + sqlite_glob + "*", limit),
+                f"SELECT domain, tld, first_seen FROM {table} WHERE domain GLOB ?{date_sql} LIMIT ?",
+                ("*" + sqlite_glob + "*", *date_params, limit),
             ).fetchall()
         except sqlite3.OperationalError:
             return [], True
@@ -1800,9 +1814,9 @@ def _search_glob_cache(conn: sqlite3.Connection, table: str, sqlite_glob: str | 
             return rows, True
         try:
             chunk = conn.execute(
-                f"SELECT domain, tld, first_seen FROM {table} WHERE domain > ? "
+                f"SELECT domain, tld, first_seen FROM {table} WHERE domain > ?{date_sql} "
                 f"ORDER BY domain LIMIT ?",
-                (last, batch),
+                (last, *date_params, batch),
             ).fetchall()
         except sqlite3.OperationalError:
             return rows, True
@@ -1859,13 +1873,17 @@ def _search_text_cache(conn: sqlite3.Connection, table: str, query: str, mode: s
 
 def search_cached_domains(db: sqlite3.Connection, query: str, mode: str = "exact",
                           limit: int = 100, timeout: float = 5.0,
-                          openintel_db_path: str | None = None) -> dict:
+                          openintel_db_path: str | None = None,
+                          after: str | None = None, before: str | None = None) -> dict:
     """Search the worker's caches and return a unified result list.
 
     Aggregates the CZDS gTLD cache (domains_cache + compact hash cache) and, when
     `openintel_db_path` is given, the OpenINTEL ccTLD cache (cctld_seen). Results
     carry a `source` of "zone" (CZDS) or "ct" (OpenINTEL). `contains` is bounded
     by a timeout per cache so a full scan can never hang the worker.
+
+    For the `glob` mode, `after`/`before` (inclusive ``YYYY-MM-DD``) filter by the
+    discovery date (`first_seen`).
     """
     query = (query or "").strip().lower()
     limit = max(1, min(int(limit or 100), 200))
@@ -1900,7 +1918,8 @@ def search_cached_domains(db: sqlite3.Connection, query: str, mode: str = "exact
                              "(e.g. banco*santander); a bare '*' is too broad.")}
         sqlite_glob = matcher.glob_to_sqlite(query)
 
-        rows, p = _search_glob_cache(db, "domains_cache", sqlite_glob, glob_rx, limit, timeout)
+        rows, p = _search_glob_cache(db, "domains_cache", sqlite_glob, glob_rx,
+                                     limit, timeout, after=after, before=before)
         partial = partial or p
         for d, t, fs in rows:
             _add(d, t, fs, "zone")
@@ -1909,7 +1928,8 @@ def search_cached_domains(db: sqlite3.Connection, query: str, mode: str = "exact
             try:
                 oi = sqlite3.connect(f"file:{openintel_db_path}?mode=ro", uri=True, timeout=10)
                 try:
-                    orows, p = _search_glob_cache(oi, "cctld_seen", sqlite_glob, glob_rx, limit, timeout)
+                    orows, p = _search_glob_cache(oi, "cctld_seen", sqlite_glob, glob_rx,
+                                                  limit, timeout, after=after, before=before)
                 finally:
                     oi.close()
                 partial = partial or p
@@ -2307,12 +2327,14 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                         opts = {}
                 q = str(opts.get("q", "")).strip().lower()
                 mode = str(opts.get("mode", "exact"))
+                after = str(opts.get("after", "")).strip() or None
+                before = str(opts.get("before", "")).strip() or None
                 try:
                     limit = int(opts.get("limit", 100) or 100)
                 except (TypeError, ValueError):
                     limit = 100
                 search_result = search_cached_domains(
-                    db, q, mode=mode, limit=limit,
+                    db, q, mode=mode, limit=limit, after=after, before=before,
                     openintel_db_path=get_openintel_db_path(cfg))
                 result = json.dumps(search_result)
                 logs.append({"level": "info", "message":
