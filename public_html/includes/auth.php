@@ -149,6 +149,43 @@ function setSetting(PDO $db, string $key, string $value): void {
     $stmt->execute([$key, $value]);
 }
 
+/**
+ * Record a TLD sync report in sync_logs so the Admin -> Sync tab shows the
+ * per-source activity (and any error), not just matches ingestion.
+ *
+ * A full worker cycle reports in batches (per TLD on small selections, or every
+ * 25 TLDs otherwise), so consecutive rows for the same source with the same
+ * error state within a short window are coalesced into a single accumulating
+ * row instead of flooding the log.
+ */
+function record_sync_log(PDO $db, string $source, int $records_received, int $records_inserted, ?string $error = null): void {
+    try {
+        $error = ($error === null || $error === '') ? null : substr($error, 0, 500);
+        $stmt = $db->prepare(
+            "SELECT id FROM sync_logs WHERE source = ? "
+            . "AND COALESCE(error, '') = COALESCE(?, '') "
+            . "AND created_at >= datetime('now', '-120 seconds') "
+            . "ORDER BY id DESC LIMIT 1"
+        );
+        $stmt->execute([$source, $error]);
+        $id = $stmt->fetchColumn();
+        if ($id !== false) {
+            $upd = $db->prepare(
+                "UPDATE sync_logs SET records_received = records_received + ?, "
+                . "records_inserted = records_inserted + ?, created_at = CURRENT_TIMESTAMP WHERE id = ?"
+            );
+            $upd->execute([$records_received, $records_inserted, (int)$id]);
+        } else {
+            $ins = $db->prepare(
+                "INSERT INTO sync_logs (source, records_received, records_inserted, error) VALUES (?, ?, ?, ?)"
+            );
+            $ins->execute([$source, $records_received, $records_inserted, $error]);
+        }
+    } catch (Throwable $e) {
+        // Logging must never break the sync response.
+    }
+}
+
 function isRegistrationOpen(PDO $db): bool {
     return getSetting($db, 'registration_open', '1') === '1';
 }

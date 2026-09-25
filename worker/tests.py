@@ -855,6 +855,81 @@ def test_openintel_parquet_read() -> None:
     print("[PASS] test_openintel_parquet_read")
 
 
+def test_icann_auth_error_reporting() -> None:
+    import downloader
+
+    class FakeResp:
+        def __init__(self, status_code, text="", data=None):
+            self.status_code = status_code
+            self.text = text
+            self._data = data or {}
+
+        def json(self):
+            return self._data
+
+    orig_post = downloader.requests.post
+    orig_get = downloader.requests.get
+    try:
+        downloader.requests.post = lambda *a, **k: FakeResp(401, '{"error":"invalid_grant"}')
+        token, err = downloader.get_token("u", "p")
+        assert token is None and err is not None, (token, err)
+        assert "401" in err and "invalid_grant" in err, err
+
+        downloader.requests.post = lambda *a, **k: FakeResp(200, "", {"accessToken": "tok"})
+        token, err = downloader.get_token("u", "p")
+        assert token == "tok" and err is None, (token, err)
+
+        downloader.requests.get = lambda *a, **k: FakeResp(500, "server error")
+        tlds, gerr = downloader.get_approved_tlds("tok")
+        assert tlds == [] and gerr is not None and "500" in gerr, (tlds, gerr)
+    finally:
+        downloader.requests.post = orig_post
+        downloader.requests.get = orig_get
+    print("[PASS] test_icann_auth_error_reporting")
+
+
+def test_icann_failure_report() -> None:
+    captured = {}
+
+    orig_get_active = scheduler.sync_client.get_active_tlds
+    orig_report = scheduler.sync_client.report_tld_sync
+    orig_logs = scheduler.sync_client.send_logs
+
+    def fake_get_active(host, key):
+        return ["com", "net"]
+
+    def fake_report(host, key, entries):
+        captured["entries"] = entries
+        return True
+
+    def fake_logs(host, key, logs):
+        captured["logs"] = logs
+        return True
+
+    scheduler.sync_client.get_active_tlds = fake_get_active
+    scheduler.sync_client.report_tld_sync = fake_report
+    scheduler.sync_client.send_logs = fake_logs
+    try:
+        entries = scheduler.report_icann_failure("http://h", "k", "auth", "HTTP 401")
+    finally:
+        scheduler.sync_client.get_active_tlds = orig_get_active
+        scheduler.sync_client.report_tld_sync = orig_report
+        scheduler.sync_client.send_logs = orig_logs
+
+    assert captured["logs"][0]["level"] == "error"
+    assert "auth" in captured["logs"][0]["message"]
+    assert {e["tld"] for e in entries} == {"com", "net"}
+    assert all(e["status"] == "failed" for e in entries)
+    assert all("ICANN cycle aborted" in e["error"] for e in entries)
+
+    summary = scheduler._cycle_summary_log({"error": "HTTP 401", "stage": "auth"}, "Worker cycle")
+    assert summary["level"] == "error" and "auth" in summary["message"]
+    ok_summary = scheduler._cycle_summary_log(
+        {"tlds_processed": 3, "matches_found": 5}, "Worker cycle")
+    assert ok_summary["level"] == "info" and "3 TLDs" in ok_summary["message"]
+    print("[PASS] test_icann_failure_report")
+
+
 if __name__ == "__main__":
     test_parser_basic()
     test_parser_origin_relative()
@@ -894,4 +969,6 @@ if __name__ == "__main__":
     test_whois_cfg_parsing()
     test_auto_whois_helpers()
     test_openintel_parquet_read()
+    test_icann_auth_error_reporting()
+    test_icann_failure_report()
     print("\nAll tests passed.")

@@ -37,6 +37,9 @@ $allowedStatus = ['baselined', 'updated', 'unchanged', 'failed', 'no_data', 'pen
 $okStatuses = ['baselined', 'updated', 'unchanged'];
 $now = gmdate('c');
 $updated = 0;
+$received = 0;
+$failed = 0;
+$firstError = null;
 
 $insert = $db->prepare("INSERT OR IGNORE INTO tlds (name, source, is_active) VALUES (?, 'openintel', 0)");
 $stmt = $db->prepare(
@@ -62,6 +65,13 @@ try {
         }
         $error = isset($entry['error']) && $entry['error'] !== '' ? substr((string)$entry['error'], 0, 500) : null;
         $isOk = in_array($status, $okStatuses, true);
+        $received++;
+        if ($status === 'failed') {
+            $failed++;
+        }
+        if ($error !== null && $firstError === null) {
+            $firstError = $error;
+        }
 
         $insert->execute([$tld]);
         $stmt->execute([
@@ -80,5 +90,12 @@ try {
     $db->rollBack();
     jsonResponse(['success' => false, 'error' => 'Failed to store ccTLD sync report'], 500);
 }
+
+$logError = $firstError;
+if ($failed > 0) {
+    $prefix = $failed . ' ccTLD(s) failed';
+    $logError = $firstError !== null ? ($prefix . ': ' . $firstError) : $prefix;
+}
+record_sync_log($db, 'openintel-sync', $received, $updated, $logError);
 
 jsonResponse(['success' => true, 'updated' => $updated]);

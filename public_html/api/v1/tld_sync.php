@@ -36,6 +36,9 @@ $allowedStatus = [
 $okStatuses = ['downloaded', 'not_modified', 'baselined'];
 $now = gmdate('c');
 $updated = 0;
+$received = 0;
+$failed = 0;
+$firstError = null;
 
 $stmt = $db->prepare(
     "UPDATE tlds SET last_sync = ?, "
@@ -63,6 +66,13 @@ try {
         $nextRetry = isset($entry['next_retry']) && $entry['next_retry'] !== '' ? (string)$entry['next_retry'] : null;
 
         $isOk = in_array($status, $okStatuses, true);
+        $received++;
+        if (in_array($status, ['failed', 'parse_error', 'incomplete', 'no_space', 'skipped_large'], true)) {
+            $failed++;
+        }
+        if ($error !== null && $firstError === null) {
+            $firstError = $error;
+        }
 
         $stmt->execute([
             $now,
@@ -84,5 +94,12 @@ try {
     $db->rollBack();
     jsonResponse(['success' => false, 'error' => 'Failed to store TLD sync report'], 500);
 }
+
+$logError = $firstError;
+if ($failed > 0) {
+    $prefix = $failed . ' TLD(s) with problems';
+    $logError = $firstError !== null ? ($prefix . ': ' . $firstError) : $prefix;
+}
+record_sync_log($db, 'czds-sync', $received, $updated, $logError);
 
 jsonResponse(['success' => true, 'updated' => $updated]);

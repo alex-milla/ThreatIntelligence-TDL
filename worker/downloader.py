@@ -16,29 +16,66 @@ BASE_API = "https://czds-api.icann.org"
 CHUNK_SIZE = 1024 * 1024
 
 
-def get_token(username: str, password: str) -> str | None:
-    """Authenticate and return a Bearer token."""
+def _http_error_detail(response, limit: int = 200) -> str:
+    """Return a short, safe detail string for a failed HTTP response."""
+    try:
+        body = (response.text or "").strip()
+    except Exception:
+        body = ""
+    if not body:
+        return ""
+    body = " ".join(body.split())
+    return f" - {body[:limit]}"
+
+
+def get_token(username: str, password: str) -> tuple[str | None, str | None]:
+    """Authenticate and return ``(token, error)``.
+
+    ``error`` is a human-readable reason when authentication fails, so the
+    caller can surface it to the web panel instead of only printing it locally.
+    """
     print("[*] Authenticating at account-api.icann.org ...", flush=True)
-    r = requests.post(AUTH_URL, json={"username": username, "password": password}, timeout=30)
+    try:
+        r = requests.post(AUTH_URL, json={"username": username, "password": password}, timeout=30)
+    except requests.RequestException as e:
+        msg = f"ICANN authentication request failed: {e}"
+        print(f"[-] {msg}", flush=True)
+        return None, msg
     if r.status_code != 200:
-        print(f"[-] Authentication failed: HTTP {r.status_code} - {r.text}", flush=True)
-        return None
-    token = r.json().get("accessToken")
+        msg = f"ICANN authentication failed: HTTP {r.status_code}{_http_error_detail(r)}"
+        print(f"[-] {msg}", flush=True)
+        return None, msg
+    try:
+        token = r.json().get("accessToken")
+    except ValueError:
+        token = None
     if not token:
-        print("[-] No accessToken in response.", flush=True)
-        return None
+        msg = "ICANN authentication returned no accessToken"
+        print(f"[-] {msg}", flush=True)
+        return None, msg
     print("[+] Token obtained.", flush=True)
-    return token
+    return token, None
 
 
-def get_approved_tlds(token: str) -> list[str]:
-    """Return a list of approved TLD names by querying CZDS links."""
+def get_approved_tlds(token: str) -> tuple[list[str], str | None]:
+    """Return ``(tlds, error)`` for the CZDS links of the authenticated account."""
     headers = {"Authorization": f"Bearer {token}"}
-    r = requests.get(LINKS_URL, headers=headers, timeout=30)
+    try:
+        r = requests.get(LINKS_URL, headers=headers, timeout=30)
+    except requests.RequestException as e:
+        msg = f"Failed to list approved TLDs: {e}"
+        print(f"[-] {msg}", flush=True)
+        return [], msg
     if r.status_code != 200:
-        print(f"[-] Failed to list TLDs: HTTP {r.status_code} - {r.text}", flush=True)
-        return []
-    data = r.json()
+        msg = f"Failed to list approved TLDs: HTTP {r.status_code}{_http_error_detail(r)}"
+        print(f"[-] {msg}", flush=True)
+        return [], msg
+    try:
+        data = r.json()
+    except ValueError:
+        msg = "Failed to list approved TLDs: invalid JSON response"
+        print(f"[-] {msg}", flush=True)
+        return [], msg
     tlds = []
     for item in data:
         if isinstance(item, str):
@@ -53,7 +90,7 @@ def get_approved_tlds(token: str) -> list[str]:
             if tld:
                 tlds.append(tld.lower())
     print(f"[+] Approved TLDs found: {len(tlds)}", flush=True)
-    return tlds
+    return tlds, None
 
 
 def head_zone(tld: str, token: str) -> tuple[int | None, str | None, str | None]:

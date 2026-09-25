@@ -158,6 +158,8 @@ The worker is designed to query CZDS as little as possible:
 
 The worker reports the result of every TLD back to the web UI (`api/v1/tld_sync.php`). The **TLDs** admin page (`/admin/tlds.php`) shows, per TLD: last sync time, a status badge (`Downloaded`, `Unchanged`, `Skipped today`, `Failed`), number of domains, new domains, zone file size and the last error. The table refreshes automatically while the worker is running.
 
+If the ICANN cycle cannot start at all — bad CZDS credentials, no approved TLDs, no active selection or no active keywords — the failure is reported instead of silently finishing with 0 TLDs: the active CZDS TLDs are marked **Failed** with the reason, a worker-log entry is stored, and `/admin/` (**Overview → Sync health**) shows the last `run_worker` cycle with its status, stage and error. The **Admin → Sync** tab records one row per sync source (`czds-sync`, `openintel-sync`) with the records received/inserted and any error, alongside the match ingests (`czds`, `ct`).
+
 From that page you can also trigger a run without leaving the browser:
 
 - **Refresh Selected** — skips the daily guard but keeps the `ETag`/`Last-Modified` validators, so the zone is downloaded only if it changed on ICANN's side.

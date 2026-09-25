@@ -190,6 +190,37 @@ $recheckCzdsTlds = $db->query("SELECT name, records_total FROM tlds WHERE source
 $recheckCcTlds = $db->query("SELECT name, records_total FROM tlds WHERE source = 'openintel' AND is_active = 1 ORDER BY name")->fetchAll();
 $recheckKeywords = $db->query("SELECT k.id, k.keyword, u.username FROM keywords k JOIN users u ON u.id = k.user_id WHERE k.is_active = 1 ORDER BY k.keyword ASC, u.username ASC")->fetchAll();
 
+// Sync health: the last ICANN (CZDS) worker cycle and the last sync report per
+// source. A cycle aborted at authentication/selection surfaces here even though
+// it produced no per-TLD rows.
+$lastRunWorker = $db->query("SELECT id, status, result, created_at, executed_at, finished_at FROM commands WHERE command = 'run_worker' ORDER BY id DESC LIMIT 1")->fetch();
+$lastRunStats = null;
+$lastRunError = null;
+if ($lastRunWorker && isset($lastRunWorker['result']) && $lastRunWorker['result'] !== '') {
+    $decoded = json_decode((string)$lastRunWorker['result'], true);
+    if (is_array($decoded)) {
+        $lastRunStats = $decoded;
+        $lastRunError = $decoded['error'] ?? null;
+    }
+}
+$syncSources = ['czds-sync' => 'ICANN (CZDS)', 'openintel-sync' => 'ccTLD (OpenINTEL)'];
+$lastSyncBySource = [];
+$tldStatusBySource = [];
+foreach ($syncSources as $src => $srcLabel) {
+    $s = $db->prepare("SELECT * FROM sync_logs WHERE source = ? ORDER BY id DESC LIMIT 1");
+    $s->execute([$src]);
+    $lastSyncBySource[$src] = $s->fetch() ?: null;
+    $c = $db->prepare(
+        "SELECT COUNT(*) AS total, "
+        . "SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active, "
+        . "SUM(CASE WHEN is_active = 1 AND status IN ('downloaded','baselined','updated','not_modified','unchanged') THEN 1 ELSE 0 END) AS ok, "
+        . "SUM(CASE WHEN is_active = 1 AND status IN ('failed','parse_error','incomplete','no_space','skipped_large') THEN 1 ELSE 0 END) AS failed "
+        . "FROM tlds WHERE source = ?"
+    );
+    $c->execute([$src]);
+    $tldStatusBySource[$src] = $c->fetch() ?: ['total' => 0, 'active' => 0, 'ok' => 0, 'failed' => 0];
+}
+
 $pageTitle = 'Admin Panel';
 require __DIR__ . '/../templates/header.php';
 ?>
@@ -255,6 +286,57 @@ require __DIR__ . '/../templates/header.php';
 </nav>
 
 <div class="card admin-pane active" data-tab="overview">
+    <div class="card-head">
+        <h2>Sync health</h2>
+        <span class="muted">Last report received per source. Per-TLD detail on <a href="/admin/tlds.php">TLDs</a>.</span>
+    </div>
+    <table class="striped highlight responsive-table">
+        <thead>
+            <tr><th>Source</th><th>Active</th><th>OK</th><th>Failed</th><th>Last report</th><th>Records / inserted</th><th>Error</th></tr>
+        </thead>
+        <tbody>
+            <?php foreach ($syncSources as $src => $srcLabel): $log = $lastSyncBySource[$src]; $st = $tldStatusBySource[$src]; ?>
+            <tr>
+                <td><?= htmlspecialchars($srcLabel) ?></td>
+                <td><?= (int)($st['active'] ?? 0) ?> / <?= (int)($st['total'] ?? 0) ?></td>
+                <td class="text-success"><?= (int)($st['ok'] ?? 0) ?></td>
+                <td class="<?= (int)($st['failed'] ?? 0) > 0 ? 'text-danger' : 'muted' ?>"><?= (int)($st['failed'] ?? 0) ?></td>
+                <td><?= $log ? htmlspecialchars(fmt_date($log['created_at'])) : '<span class="muted">No report yet</span>' ?></td>
+                <td><?= $log ? number_format((int)$log['records_received']) . ' / ' . number_format((int)$log['records_inserted']) : '<span class="muted">&mdash;</span>' ?></td>
+                <td class="mono-sm"><?= $log && !empty($log['error']) ? '<span class="text-danger">' . htmlspecialchars(mb_substr((string)$log['error'], 0, 160)) . '</span>' : '<span class="muted">&mdash;</span>' ?></td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+
+    <div class="divider"></div>
+
+    <h5>Last ICANN (CZDS) cycle</h5>
+    <?php if ($lastRunWorker): ?>
+        <p>
+            <?= commandStatusBadge((string)$lastRunWorker['status']) ?>
+            queued <?= htmlspecialchars(fmt_date($lastRunWorker['created_at'])) ?>
+            &middot; duration <?= humanDuration($lastRunWorker['executed_at'], $lastRunWorker['finished_at']) ?>
+            <?php if ($lastRunStats): ?>
+                &middot; <strong><?= (int)($lastRunStats['tlds_processed'] ?? 0) ?></strong> TLDs
+                &middot; <strong><?= (int)($lastRunStats['matches_found'] ?? 0) ?></strong> match(es)
+            <?php endif; ?>
+        </p>
+        <?php if ($lastRunError): ?>
+        <div class="notice notice-error">
+            <i class="material-icons">error</i>
+            <div>
+                <strong>Aborted at <?= htmlspecialchars((string)($lastRunStats['stage'] ?? 'unknown')) ?>:</strong>
+                <?= htmlspecialchars((string)$lastRunError) ?>
+            </div>
+        </div>
+        <?php endif; ?>
+    <?php else: ?>
+        <p class="muted">No <code>run_worker</code> command has run yet.</p>
+    <?php endif; ?>
+
+    <div class="divider"></div>
+
     <div class="card-head"><h2>Quick actions</h2></div>
     <p class="muted">Queue a command for the worker. It runs on the next poll (every ~20 s).</p>
     <div class="section-actions">

@@ -1136,6 +1136,53 @@ def queue_matches(db: sqlite3.Connection, matches: list[dict]) -> None:
     print(f"[!] Queued {len(matches)} matches for retry.")
 
 
+def report_icann_failure(host_url: str, api_key: str, stage: str, error: str,
+                         active_tlds: list[str] | None = None) -> list[dict]:
+    """Surface a fatal ICANN (CZDS) cycle failure to the web panel.
+
+    The ICANN cycle aborts early (bad credentials, no approved TLDs, no active
+    selection, no keywords) and previously returned without reporting anything,
+    so the TLDs page kept showing the previous status and `run_worker` looked
+    'completed' with 0 TLDs. This records an error log and flags the active
+    CZDS TLDs as failed (with the reason) so the failure is visible.
+
+    Returns the per-TLD report entries that were sent (for tests/introspection).
+    """
+    message = f"ICANN cycle aborted ({stage}): {error}"
+    try:
+        sync_client.send_logs(host_url, api_key, [{"level": "error", "message": message}])
+    except Exception as e:
+        log.warning("Could not send ICANN failure log: %s", e)
+
+    entries: list[dict] = []
+    try:
+        tlds = active_tlds
+        if tlds is None:
+            # The hosting API does not need the ICANN token, so the active CZDS
+            # TLD list can still be fetched to flag them as failed.
+            tlds = sync_client.get_active_tlds(host_url, api_key)
+        entries = [_tld_report(t, "failed", error=message) for t in (tlds or [])]
+        if entries:
+            sync_client.report_tld_sync(host_url, api_key, entries)
+    except Exception as e:
+        log.warning("Could not report ICANN failure to hosting: %s", e)
+    return entries
+
+
+def _cycle_summary_log(worker_stats: dict, label: str) -> dict:
+    """Build the worker_log entry for a finished cycle (success or fatal error)."""
+    if worker_stats.get("error"):
+        return {
+            "level": "error",
+            "message": f"{label} aborted at {worker_stats.get('stage', 'unknown')}: {worker_stats['error']}",
+        }
+    return {
+        "level": "info",
+        "message": (f"{label} completed: {worker_stats['tlds_processed']} TLDs, "
+                    f"{worker_stats['matches_found']} matches"),
+    }
+
+
 def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_url: str, api_key: str, version: str, force: bool = False, refresh: bool = False, command_label: str | None = None, command_id: int | None = None) -> dict:
     """Run one full worker cycle. Returns stats dict."""
     download_dir = cfg.get("worker", "download_dir", fallback="./zones")
@@ -1169,14 +1216,20 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
     retry_sync_queue(db, host_url, api_key, max_retries)
 
     # 2. Get ICANN token
-    token = downloader.get_token(icann_user, icann_pass)
+    token, token_error = downloader.get_token(icann_user, icann_pass)
     if not token:
+        stats["error"] = token_error or "ICANN authentication failed"
+        stats["stage"] = "auth"
+        report_icann_failure(host_url, api_key, "auth", stats["error"])
         return stats
 
     # 3. Get approved TLDs
-    tlds = downloader.get_approved_tlds(token)
+    tlds, tlds_error = downloader.get_approved_tlds(token)
     if not tlds:
+        stats["error"] = tlds_error or "No approved TLDs returned by ICANN CZDS"
+        stats["stage"] = "approved_tlds"
         print("[-] No TLDs to process.")
+        report_icann_failure(host_url, api_key, "approved_tlds", stats["error"])
         return stats
 
     # 3b. Send TLD list to hosting and get active ones
@@ -1198,9 +1251,15 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
                 tlds = [t for t in tlds if t in whitelist]
                 log.info(f"Fallback whitelist applied: {len(tlds)} TLDs to process.")
             else:
-                log.warning("No active TLDs selected in web panel and no whitelist configured. "
-                            "Go to /admin/tlds.php and mark at least one TLD, or set a whitelist in config.ini. "
-                            "Skipping worker cycle to avoid downloading all zones.")
+                stats["error"] = ("No active TLDs selected in the web panel and no whitelist configured. "
+                                  "Mark at least one TLD in /admin/tlds.php or set a whitelist in config.ini.")
+                stats["stage"] = "no_active_tlds"
+                log.warning(stats["error"])
+                print(f"[-] {stats['error']}", flush=True)
+                try:
+                    sync_client.send_logs(host_url, api_key, [{"level": "warning", "message": stats["error"]}])
+                except Exception:
+                    pass
                 return stats
     except Exception as e:
         log.error(f"Failed to sync TLDs with hosting: {e}")
@@ -1211,7 +1270,14 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
             tlds = [t for t in tlds if t in whitelist]
 
     if not tlds:
-        log.warning("No TLDs to process.")
+        stats["error"] = "No TLDs to process (none active and none matching the whitelist)."
+        stats["stage"] = "no_tlds"
+        log.warning(stats["error"])
+        print(f"[-] {stats['error']}", flush=True)
+        try:
+            sync_client.send_logs(host_url, api_key, [{"level": "warning", "message": stats["error"]}])
+        except Exception:
+            pass
         return stats
 
     # 3c. Include TLDs whose retry is due, even if they are no longer active
@@ -1229,11 +1295,20 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         keywords = sync_client.get_keywords(host_url, api_key)
         log.info(f"Keywords loaded: {len(keywords)}")
     except Exception as e:
-        log.error(f"Failed to fetch keywords: {e}")
+        stats["error"] = f"Failed to fetch keywords from hosting: {e}"
+        stats["stage"] = "keywords_fetch"
+        log.error(stats["error"])
+        report_icann_failure(host_url, api_key, "keywords_fetch", stats["error"])
         return stats
 
     if not keywords:
-        print("[!] No active keywords on hosting. Nothing to match.")
+        stats["error"] = "No active keywords configured on the hosting. Nothing to match."
+        stats["stage"] = "no_keywords"
+        print(f"[!] {stats['error']}")
+        try:
+            sync_client.send_logs(host_url, api_key, [{"level": "warning", "message": stats["error"]}])
+        except Exception:
+            pass
         return stats
 
     total_tlds = len(tlds)
@@ -1872,7 +1947,9 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                                                 command_label=f"run_worker ({mode})",
                                                 command_id=cmd_id)
                 result = json.dumps(worker_stats)
-                logs.append({"level": "info", "message": f"Worker cycle ({mode}) completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
+                if worker_stats.get("error"):
+                    status = "failed"
+                logs.append(_cycle_summary_log(worker_stats, f"Worker cycle ({mode})"))
 
             elif command == "recheck_keywords":
                 opts = {}
@@ -2461,9 +2538,7 @@ def main() -> int:
                             worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version,
                                                             force=args.force, refresh=args.refresh,
                                                             command_label="auto-daily")
-                            logs.append({"level": "info", "message":
-                                         f"Scheduled daily cycle done: {worker_stats['tlds_processed']} TLDs, "
-                                         f"{worker_stats['matches_found']} matches"})
+                            logs.append(_cycle_summary_log(worker_stats, "Scheduled daily cycle"))
 
                     # Intelligence weekly pass (Sunday night by default,
                     # independent of the heavy daily TLD cycle).
@@ -2516,7 +2591,7 @@ def main() -> int:
             # No commands pending → legacy cron behavior: run full cycle
             worker_stats = run_worker_cycle(db, cfg, host_url, api_key, version,
                                             force=args.force, refresh=args.refresh)
-            logs.append({"level": "info", "message": f"Worker cycle completed: {worker_stats['tlds_processed']} TLDs, {worker_stats['matches_found']} matches"})
+            logs.append(_cycle_summary_log(worker_stats, "Worker cycle"))
 
         # Intelligence weekly pass (Sunday night by default).
         try:

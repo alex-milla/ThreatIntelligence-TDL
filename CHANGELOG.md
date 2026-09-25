@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.7] - 2026-09-25
+
+### Added - ICANN sync failures are now visible in the panel
+
+- **An aborted ICANN (CZDS) cycle no longer finishes silently.** When the worker could not start the CZDS part — authentication failure, no approved TLDs, no active TLD selection or no active keywords — it used to `return` without reporting anything, so `/admin/tlds.php` kept showing the **previous** status and the `run_worker` command looked **Completed** with 0 TLDs. Now:
+  - **Worker** (`worker/downloader.py`): `get_token()` / `get_approved_tlds()` return a human-readable error (HTTP status + body) instead of only printing it locally; `run_worker_cycle()` reports the failure (worker log + `run_worker` result carrying `stage`/`error`) and marks the active CZDS TLDs as **Failed** with the reason (`report_icann_failure`). The `run_worker` command is marked **Failed** instead of Completed.
+  - **Web**: `/admin/` gains a **Sync health** card on the Overview with the last ICANN cycle (status, stage, error), the per-source active/OK/failed TLD counts and the last report per source. `sync_logs` now records one coalesced row per sync source (`czds-sync`, `openintel-sync`) with records received/inserted and any error, so the **Sync** tab is no longer matches-only.
+- **Tests**: `test_icann_auth_error_reporting`, `test_icann_failure_report`.
+
 ## [v1.18.6] - 2026-09-25
 
 ### Fixed - abuse.ch errors no longer look like "Not found"
