@@ -98,11 +98,12 @@ body.rp-body {
 
 .rp-kw { break-inside: avoid; }
 .rp-domain { border: .5pt solid #ddd; border-radius: 2mm; padding: 3mm; margin: 0 0 4mm; }
-.rp-dd { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm 8mm; break-inside: avoid; }
+.rp-dd { display: grid; grid-template-columns: 1fr; gap: 2mm; break-inside: avoid; }
+.rp-dd-block + .rp-dd-block { border-top: .5pt solid #e2e2e2; padding-top: 2mm; }
 .rp-dd-block dl { margin: 0; }
 .rp-dd-block dl > div { display: flex; gap: 8px; }
-.rp-dd-block dt { min-width: 32mm; color: #666; font-weight: 600; font-size: 9pt; }
-.rp-dd-block dd { margin: 0; word-break: break-word; font-size: 9pt; }
+.rp-dd-block dt { min-width: 32mm; color: #666; font-weight: 600; font-size: 9.5pt; }
+.rp-dd-block dd { margin: 0; word-break: break-word; font-size: 9.5pt; }
 .rp-timeline { list-style: none; margin: 2px 0 0; padding: 0; }
 .rp-timeline li { margin: 0; font-size: 11px; break-inside: avoid; }
 .rp-tl-date { font-weight: 600; }

@@ -2168,21 +2168,27 @@ td select.browser-default,
 
 /* Domain detail panel */
 .domain-detail {
-    padding: 12px 14px;
+    padding: 14px 16px;
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: 6px;
+    font-size: 0.95rem;
 }
 
 .dd-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 14px;
+    grid-template-columns: 1fr;
+    gap: 16px;
+}
+
+.dd-block + .dd-block {
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
 }
 
 .dd-block h4 {
-    margin: 0 0 6px;
-    font-size: 0.78rem;
+    margin: 0 0 8px;
+    font-size: 0.82rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
@@ -2194,12 +2200,12 @@ td select.browser-default,
 
 .dd-list > div {
     display: flex;
-    gap: 8px;
-    padding: 2px 0;
+    gap: 10px;
+    padding: 4px 0;
 }
 
 .dd-list dt {
-    min-width: 100px;
+    min-width: 120px;
     color: var(--text-muted);
     font-weight: 600;
 }

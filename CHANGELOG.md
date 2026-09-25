@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.13] - 2026-09-25
+
+### Changed - Single-column domain detail (more readable)
+
+- **The domain detail block is now a single column** instead of an auto-fit grid that produced up to five squeezed columns. The blocks (Assessment, Timeline, Registration, Reputation, Cloudflare Radar, Detection) are stacked full-width with a divider between them, and the text is slightly larger with more breathing room.
+- **CSS only** (`public_html/css/app.css`), so it applies everywhere the same block is rendered: the lists (Notifications, per-keyword matches, Watchlist) and the Dashboard lookup. The **report output** (`public_html/css/print.css`, `.rp-dd`) is also single-column now, so the saved/printed report matches.
+- No PHP/behaviour change.
+
 ## [v1.18.12] - 2026-09-25
 
 ### Fixed - Cloudflare Radar rank/technologies/categories were shown as raw JSON
