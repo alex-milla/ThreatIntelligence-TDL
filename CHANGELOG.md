@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.8] - 2026-09-25
+
+### Added - Dashboard glob search over the cached domains
+
+- **A second lookup box on the Dashboard searches the worker's cached domains by glob**, alongside the existing exact lookup (which is unchanged). Same pattern syntax as keywords: `*` (any sequence), `?` (one character), `[abc]` / `[a-z]` classes (`[!...]` negation) and `{n,m}` repetition, matched anywhere in the domain.
+  - **Worker** (`worker/scheduler.py`, `worker/matcher.py`): `search_cached_domains` gains a `glob` mode. Simple patterns use SQLite's native `GLOB` (C-level) with a deadline via a progress handler; patterns with `{n,m}` fall back to a bounded regex scan for **full parity** with the keyword matcher. To avoid pathological scans, a pattern must contain an **anchor of at least 3 literal characters** (a bare `*` is rejected with a clear note). Only text-cached TLDs are searched (CZDS gTLDs + OpenINTEL ccTLDs); huge hash-cached TLDs like `.com` are excluded, as with prefix/contains.
+  - **Web** (`public_html/index.php`, `public_html/ajax_domain_search.php`): a dedicated **Domain glob search** card and its own result table; the API accepts `mode=glob` and validates the pattern charset without stripping the glob metacharacters.
+- **Tests**: `test_glob_search_cached_domains` (SQLite GLOB fast path, `[!...]`→`[^...]`, `{n,m}` fallback, anchor guard, `glob_to_sqlite` translation).
+
 ## [v1.18.7] - 2026-09-25
 
 ### Added - ICANN sync failures are now visible in the panel

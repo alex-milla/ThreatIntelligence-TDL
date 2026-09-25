@@ -220,6 +220,29 @@ $sparkNonZero = count(array_filter($sparkDays));
     <div id="lookup-panel" style="display:none;"></div>
 </div>
 
+<div class="card" id="domain-glob-lookup">
+    <div class="card-head">
+        <h2>Domain glob search <span class="card-sub">cached domains by pattern</span></h2>
+    </div>
+    <form id="glob-form" class="filter-form" onsubmit="runGlobLookup(); return false;">
+        <div class="input-field">
+            <i class="material-icons prefix">filter_alt</i>
+            <input id="glob-q" type="text" placeholder=" " autocomplete="off" spellcheck="false" autocapitalize="off">
+            <label for="glob-q">Glob pattern (e.g. banco*santander or *-santander[0-9])</label>
+        </div>
+        <button type="submit" class="btn waves-effect"><i class="material-icons left">search</i>Search</button>
+    </form>
+    <p class="muted" style="font-size:.82rem; margin-top:-4px;">
+        Same syntax as keywords: <code>*</code> (any sequence), <code>?</code> (one character),
+        <code>[abc]</code> / <code>[a-z]</code> classes (<code>[!...]</code> negation) and
+        <code>{n,m}</code> repetition. Needs at least 3 literal characters (a bare <code>*</code> is rejected).
+        Covers cached domains that keep their text (CZDS gTLDs and OpenINTEL ccTLDs); huge hash-cached
+        TLDs like <code>.com</code> are not searchable by pattern.
+    </p>
+    <div id="glob-status" class="muted" style="display:none; padding:6px 0;"></div>
+    <div id="glob-results"></div>
+</div>
+
 <script>
 let _modalDomain = '';
 function showLookupPanel(domain) {
@@ -330,6 +353,65 @@ function renderLookupResults(data) {
         if (r.source === 'ct') { label += ' <span class="muted">(ccTLD/CT)</span>'; }
         else if (r.source === 'zone') { label += ' <span class="muted">(gTLD)</span>'; }
         if (r.hash_cached) { label += ' <span class="muted">(hash-cached)</span>'; }
+        var seen = r.first_seen ? String(r.first_seen).substring(0, 10) : '\u2014';
+        return '<tr><td><a href="javascript:void(0)" class="domain-link" onclick="showLookupPanel(\''
+            + htmlspecialchars(r.domain) + '\')">' + htmlspecialchars(r.domain) + '</a>' + label
+            + '</td><td>' + htmlspecialchars(r.tld || '') + '</td><td>' + htmlspecialchars(seen) + '</td></tr>';
+    }).join('');
+    results.innerHTML = '<table class="striped highlight responsive-table"><thead><tr>'
+        + '<th>Domain</th><th>TLD</th><th>First seen</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+function runGlobLookup() {
+    var qEl = document.getElementById('glob-q');
+    // No URL/host normalisation here: '?' is a glob metacharacter.
+    var q = (qEl ? qEl.value : '').trim().toLowerCase();
+    if (qEl && q) { qEl.value = q; }
+    var status = document.getElementById('glob-status');
+    var results = document.getElementById('glob-results');
+    if (!q) return;
+    closeDomainDetail();
+    if (results) results.innerHTML = '';
+    if (status) { status.style.display = 'block'; status.textContent = 'Searching the worker cache\u2026 (the worker polls every ~20 s)'; }
+    fetch('/ajax_domain_search.php', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': lookupCsrf()},
+        body: JSON.stringify({q: q, mode: 'glob'})
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+        if (!d.success) { if (status) status.textContent = d.error || 'Search failed'; return; }
+        pollGlobLookup(d.command_id, 0);
+    })
+    .catch(function () { if (status) status.textContent = 'Search failed'; });
+}
+function pollGlobLookup(commandId, tries) {
+    var status = document.getElementById('glob-status');
+    if (tries > 60) { if (status) status.textContent = 'Timed out waiting for the worker.'; return; }
+    fetch('/ajax_domain_search.php?command_id=' + encodeURIComponent(commandId), {cache: 'no-store'})
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d.success) { if (status) status.textContent = d.error || 'Search failed'; return; }
+            if (d.status === 'completed') { renderGlobResults(d); return; }
+            if (d.status === 'failed' || d.status === 'cancelled') { if (status) status.textContent = 'Search ' + d.status + '.'; return; }
+            setTimeout(function () { pollGlobLookup(commandId, tries + 1); }, 3000);
+        })
+        .catch(function () { setTimeout(function () { pollGlobLookup(commandId, tries + 1); }, 5000); });
+}
+function renderGlobResults(data) {
+    var status = document.getElementById('glob-status');
+    var results = document.getElementById('glob-results');
+    if (!results) return;
+    var list = data.results || [];
+    if (status) {
+        if (data.partial) { status.style.display = 'block'; status.textContent = data.note || 'Partial results.'; }
+        else if (!list.length) { status.style.display = 'block'; status.textContent = data.note || 'No cached domain matched.'; }
+        else { status.style.display = 'none'; }
+    }
+    if (!list.length) { results.innerHTML = ''; return; }
+    var rows = list.map(function (r) {
+        var label = '';
+        if (r.source === 'ct') { label += ' <span class="muted">(ccTLD/CT)</span>'; }
+        else if (r.source === 'zone') { label += ' <span class="muted">(gTLD)</span>'; }
         var seen = r.first_seen ? String(r.first_seen).substring(0, 10) : '\u2014';
         return '<tr><td><a href="javascript:void(0)" class="domain-link" onclick="showLookupPanel(\''
             + htmlspecialchars(r.domain) + '\')">' + htmlspecialchars(r.domain) + '</a>' + label

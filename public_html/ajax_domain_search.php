@@ -20,17 +20,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
 
     $input = json_decode(file_get_contents('php://input'), true) ?: [];
-    // Accept defanged IOCs (my-passkeys[.]com) and URLs; keep only the hostname.
-    $q = normalizeDomainSearch((string)($input['q'] ?? ''));
+    $raw = (string)($input['q'] ?? '');
     $mode = (string)($input['mode'] ?? '');
+    $allowedModes = ['exact', 'prefix', 'contains', 'glob'];
+    if (!in_array($mode, $allowedModes, true)) {
+        $mode = '';
+    }
 
-    if ($q === '' || strlen($q) > 253 || !preg_match('/^[a-z0-9\p{L}\-\.]+$/u', $q)) {
-        echo json_encode(['success' => false, 'error' => 'Invalid search query']);
-        exit;
+    if ($mode === 'glob') {
+        // A glob keeps its metacharacters: lowercase + trim only (no URL/host
+        // normalisation, which would strip '?' and '/' meaning). Validated
+        // against the same charset the keyword engine understands.
+        $q = strtolower(trim($raw));
+        if ($q === '' || strlen($q) > 253
+            || !preg_match('/^[a-z0-9\p{L}\-\.\*\?\[\]\{\}!^]+$/u', $q)) {
+            echo json_encode(['success' => false, 'error' => 'Invalid glob pattern']);
+            exit;
+        }
+    } else {
+        // Accept defanged IOCs (my-passkeys[.]com) and URLs; keep only the hostname.
+        $q = normalizeDomainSearch($raw);
+        if ($q === '' || strlen($q) > 253 || !preg_match('/^[a-z0-9\p{L}\-\.]+$/u', $q)) {
+            echo json_encode(['success' => false, 'error' => 'Invalid search query']);
+            exit;
+        }
     }
 
     // Auto-detect: a dotted / full domain is exact, otherwise partial.
-    if (!in_array($mode, ['exact', 'prefix', 'contains'], true)) {
+    if ($mode === '') {
         if (strpos($q, '.') !== false) {
             $mode = 'exact';
         } elseif (strlen($q) >= 4) {

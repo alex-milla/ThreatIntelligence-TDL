@@ -146,6 +146,55 @@ def glob_to_regex(pattern: str) -> tuple[re.Pattern, str]:
     return compiled, best_anchor
 
 
+def glob_anchor(pattern: str) -> str:
+    """Return the longest mandatory literal run of a glob (its anchor)."""
+    return glob_to_regex(pattern)[1]
+
+
+def glob_to_sqlite(pattern: str) -> str | None:
+    """Translate a glob to a SQLite GLOB pattern, or ``None`` when it uses {n,m}.
+
+    SQLite's GLOB operator supports ``*``, ``?`` and ``[...]`` (with ``^``
+    negation) and is case-sensitive — fine here because domains and queries are
+    lowercased. Our glob negates with ``!`` too, which is rewritten to SQLite's
+    ``^``. A ``{n,m}`` repetition has no GLOB equivalent, so the caller falls
+    back to a regex scan for full parity with the keyword matcher.
+    """
+    if "{" in pattern or "}" in pattern:
+        return None
+    out: list[str] = []
+    i = 0
+    n = len(pattern)
+    while i < n:
+        c = pattern[i]
+        if c == "[":
+            j = i + 1
+            if j < n and pattern[j] in ("!", "^"):
+                out.append("[^")
+                j += 1
+            else:
+                out.append("[")
+            closed = False
+            while j < n:
+                if pattern[j] == "]":
+                    out.append("]")
+                    closed = True
+                    j += 1
+                    break
+                out.append(pattern[j])
+                j += 1
+            if not closed:
+                return None  # unterminated class: let the regex path handle it
+            i = j
+        elif c in "*?":
+            out.append(c)
+            i += 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
 def _split_domain(domain_lower: str) -> tuple[str, str]:
     """Return (name_part, tld), never matching against the TLD portion."""
     parts = domain_lower.rsplit(".", 1)

@@ -930,6 +930,52 @@ def test_icann_failure_report() -> None:
     print("[PASS] test_icann_failure_report")
 
 
+def test_glob_search_cached_domains() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
+        now = "2026-09-25 00:00:00"
+        db.executemany(
+            "INSERT INTO domains_cache (domain, tld, first_seen) VALUES (?, ?, ?)",
+            [
+                ("bancosantander.com", "com", now),
+                ("banco-santander.com", "com", now),
+                ("banco12santander.com", "com", now),
+                ("santander-x.net", "net", now),
+                ("otrositio.org", "org", now),
+            ])
+        db.commit()
+
+        # Fast path: SQLite GLOB, unanchored '*' (matches anywhere in the domain).
+        res = scheduler.search_cached_domains(db, "banco*santander", mode="glob")
+        got = {r["domain"] for r in res["results"]}
+        assert "bancosantander.com" in got and "banco-santander.com" in got, got
+        assert "banco12santander.com" in got, got
+        assert "santander-x.net" not in got and "otrositio.org" not in got, got
+
+        # Negated class translated to SQLite '^' negation: exactly one non-digit
+        # between "banco" and "santander", so only the hyphenated domain matches.
+        res = scheduler.search_cached_domains(db, "banco[!0-9]santander", mode="glob")
+        got = {r["domain"] for r in res["results"]}
+        assert got == {"banco-santander.com"}, got
+
+        # {n,m} repetition: regex fallback with full parity.
+        res = scheduler.search_cached_domains(db, "banco[0-9]{2}santander", mode="glob")
+        got = {r["domain"] for r in res["results"]}
+        assert got == {"banco12santander.com"}, got
+
+        # No usable anchor: rejected without scanning.
+        res = scheduler.search_cached_domains(db, "*", mode="glob")
+        assert res["results"] == [], res
+        assert "literal" in res["note"].lower(), res
+
+        # glob_to_sqlite translation unit checks.
+        assert matcher.glob_to_sqlite("banco*santander") == "banco*santander"
+        assert matcher.glob_to_sqlite("banco[!0-9]santander") == "banco[^0-9]santander"
+        assert matcher.glob_to_sqlite("banco[0-9]{2}") is None
+        db.close()
+    print("[PASS] test_glob_search_cached_domains")
+
+
 if __name__ == "__main__":
     test_parser_basic()
     test_parser_origin_relative()
@@ -971,4 +1017,5 @@ if __name__ == "__main__":
     test_openintel_parquet_read()
     test_icann_auth_error_reporting()
     test_icann_failure_report()
+    test_glob_search_cached_domains()
     print("\nAll tests passed.")

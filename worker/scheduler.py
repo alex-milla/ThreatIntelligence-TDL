@@ -1758,8 +1758,63 @@ def perform_worker_update() -> tuple[str, str]:
     return (f"Worker source updated to {new_version}. Restart required to load it.", "completed")
 
 
-HASH_SEARCH_NOTE = ("Prefix/contains search only covers text-cached TLDs; huge TLDs "
+HASH_SEARCH_NOTE = ("Prefix/contains/glob search only covers text-cached TLDs; huge TLDs "
                     "cached as hashes (e.g. .com) are excluded. Exact search covers both.")
+
+
+def _search_glob_cache(conn: sqlite3.Connection, table: str, sqlite_glob: str | None,
+                       regex, limit: int, timeout: float) -> tuple[list[tuple], bool]:
+    """Search a (domain, tld, first_seen) table with a glob. Returns (rows, partial).
+
+    Uses SQLite's native GLOB (C-level) when the pattern has no ``{n,m}``; a
+    repetition falls back to a Python regex scan for full parity with the keyword
+    matcher. Both paths are bounded by a deadline so a broad pattern cannot hang
+    the worker. `table` is a fixed internal literal (never user input).
+    """
+    deadline = time.perf_counter() + max(1.0, float(timeout))
+
+    if sqlite_glob is not None:
+        def _progress() -> int:
+            return 1 if time.perf_counter() > deadline else 0
+
+        conn.set_progress_handler(_progress, 10000)
+        try:
+            # GLOB matches the whole string, so wrap the pattern to emulate the
+            # unanchored substring semantics of the keyword matcher.
+            rows = conn.execute(
+                f"SELECT domain, tld, first_seen FROM {table} WHERE domain GLOB ? LIMIT ?",
+                ("*" + sqlite_glob + "*", limit),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return [], True
+        finally:
+            conn.set_progress_handler(None, 0)
+        return rows, False
+
+    # {n,m}: bounded regex scan with keyset pagination.
+    rows: list[tuple] = []
+    last = ""
+    batch = 10000
+    while len(rows) < limit:
+        if time.perf_counter() > deadline:
+            return rows, True
+        try:
+            chunk = conn.execute(
+                f"SELECT domain, tld, first_seen FROM {table} WHERE domain > ? "
+                f"ORDER BY domain LIMIT ?",
+                (last, batch),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return rows, True
+        if not chunk:
+            break
+        last = chunk[-1][0]
+        for d, t, fs in chunk:
+            if regex.search(d):
+                rows.append((d, t, fs))
+                if len(rows) >= limit:
+                    break
+    return rows, False
 
 
 def get_openintel_db_path(cfg: configparser.ConfigParser) -> str:
@@ -1818,7 +1873,7 @@ def search_cached_domains(db: sqlite3.Connection, query: str, mode: str = "exact
 
     if not query:
         return {"results": [], "partial": False, "note": "Empty query."}
-    if mode not in ("exact", "prefix", "contains"):
+    if mode not in ("exact", "prefix", "contains", "glob"):
         mode = "exact"
     if mode == "contains" and len(query) < 4:
         return {"results": [], "partial": False,
@@ -1834,6 +1889,36 @@ def search_cached_domains(db: sqlite3.Connection, query: str, mode: str = "exact
             entry = {"domain": domain, "tld": tld, "first_seen": first_seen, "source": source}
             entry.update(extra)
             results.append(entry)
+
+    # Glob: text caches only (the hash cache stores no text). Requires a usable
+    # literal anchor so a bare '*' cannot trigger a full scan of every cache.
+    if mode == "glob":
+        glob_rx, anchor = matcher.glob_to_regex(query)
+        if len(anchor) < 3:
+            return {"results": [], "partial": False,
+                    "note": ("Glob search needs at least 3 literal characters "
+                             "(e.g. banco*santander); a bare '*' is too broad.")}
+        sqlite_glob = matcher.glob_to_sqlite(query)
+
+        rows, p = _search_glob_cache(db, "domains_cache", sqlite_glob, glob_rx, limit, timeout)
+        partial = partial or p
+        for d, t, fs in rows:
+            _add(d, t, fs, "zone")
+
+        if openintel_db_path and os.path.exists(openintel_db_path):
+            try:
+                oi = sqlite3.connect(f"file:{openintel_db_path}?mode=ro", uri=True, timeout=10)
+                try:
+                    orows, p = _search_glob_cache(oi, "cctld_seen", sqlite_glob, glob_rx, limit, timeout)
+                finally:
+                    oi.close()
+                partial = partial or p
+                for d, t, fs in orows:
+                    _add(d, t, fs, "ct", ccTLD=True)
+            except sqlite3.Error:
+                pass
+
+        return {"results": results[:limit], "partial": partial, "note": note}
 
     # CZDS text cache
     rows, p = _search_text_cache(db, "domains_cache", query, mode, limit, timeout)
