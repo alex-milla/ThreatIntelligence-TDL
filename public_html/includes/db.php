@@ -204,6 +204,28 @@ class Database {
             checked_at TEXT DEFAULT CURRENT_TIMESTAMP
         )");
 
+        // Cloudflare Radar enrichment (URL Scanner verdict + categories + rank +
+        // technologies, and the DNS top-locations distribution).
+        $db->exec("CREATE TABLE IF NOT EXISTS domain_cfscan (
+            domain TEXT PRIMARY KEY,
+            verdict TEXT,
+            status TEXT,
+            error TEXT,
+            categories TEXT,
+            phishing TEXT,
+            radar_rank TEXT,
+            technologies TEXT,
+            asn TEXT,
+            country TEXT,
+            cert_issuer TEXT,
+            dom_struct_hash TEXT,
+            favicon_hash TEXT,
+            report_url TEXT,
+            dns_countries TEXT,
+            last_analysis_date TEXT,
+            checked_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )");
+
         // Dormant-domain intelligence tracking. Each (domain, keyword) pair is
         // followed for the keyword's tracking window; the worker re-validates it
         // periodically and reports activation signals.

@@ -32,6 +32,7 @@ import matcher
 import sync_client
 import virustotal
 import abusech
+import cloudflare_radar
 import intel
 import whois
 
@@ -148,6 +149,13 @@ def init_local_db(db_path: str, cache_mb: int = 2048) -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS tracking_meta (
             key TEXT PRIMARY KEY,
             value TEXT
+        );
+
+        -- Cloudflare URL Scanner usage counters (period = day:YYYY-MM-DD or
+        -- month:YYYY-MM), to respect the plan quota (Free: 5,000/month).
+        CREATE TABLE IF NOT EXISTS cf_usage (
+            period TEXT PRIMARY KEY,
+            count INTEGER DEFAULT 0
         );
     """)
     # Migration: drop the unused tld index on the hash cache (older versions).
@@ -335,6 +343,132 @@ def auto_abusech_new_matches(cfg: configparser.ConfigParser, db: sqlite3.Connect
     except Exception as e:  # never abort the cycle
         log.warning("abuse.ch feed lookup failed: %s", e)
         return 0
+
+
+def _cf_config(cfg: configparser.ConfigParser) -> dict:
+    """Read the optional [cloudflare] Radar/URL Scanner settings."""
+    if not cfg.has_section("cloudflare"):
+        return {}
+    api_token = cfg.get("cloudflare", "api_token", fallback="").strip()
+    scanner_token = cfg.get("cloudflare", "urlscanner_token", fallback="").strip()
+    # A single token with both permissions is valid: fall back to the other one.
+    scanner_token = scanner_token or api_token
+    api_token = api_token or scanner_token
+    return {
+        "enabled": cfg.getboolean("cloudflare", "radar_enabled", fallback=True),
+        "api_token": api_token,
+        "urlscanner_token": scanner_token,
+        "account_id": cfg.get("cloudflare", "account_id", fallback="").strip(),
+        "visibility": cfg.get("cloudflare", "visibility", fallback="public").strip(),
+        "rate_delay": cfg.getfloat("cloudflare", "rate_delay_seconds", fallback=10.0),
+        "daily_limit": cfg.getint("cloudflare", "daily_limit", fallback=150),
+        "monthly_limit": cfg.getint("cloudflare", "monthly_limit", fallback=5000),
+        "timeout": cfg.getint("cloudflare", "timeout", fallback=30),
+        "poll_interval": cfg.getint("cloudflare", "poll_interval", fallback=15),
+        "poll_max_wait": cfg.getint("cloudflare", "poll_max_wait", fallback=180),
+        "dns_locations": cfg.getboolean("cloudflare", "dns_locations_enabled", fallback=True),
+        "dns_limit": cfg.getint("cloudflare", "dns_locations_limit", fallback=10),
+        "cache_days": cfg.getint("cloudflare", "cache_days", fallback=7),
+        "auto_scan": cfg.getboolean("cloudflare", "auto_scan", fallback=False),
+        "auto_scan_max": cfg.getint("cloudflare", "auto_scan_max", fallback=50),
+    }
+
+
+def _cf_periods() -> tuple[str, str]:
+    now = datetime.now(timezone.utc)
+    return now.strftime("day:%Y-%m-%d"), now.strftime("month:%Y-%m")
+
+
+def run_cfscan_batch(cfg: configparser.ConfigParser, db: sqlite3.Connection,
+                     host_url: str, api_key: str, domains: list[str]) -> dict:
+    """Scan ``domains`` with the Cloudflare URL Scanner (+ Radar DNS locations).
+
+    Sequential and rate limited (the Free plan allows one scan every 10 s). Each
+    result is sent to the hosting as soon as it is ready. Best effort per domain;
+    an auth failure or a quota hit stops the batch. Returns stats.
+    """
+    stats = {"requested": len(domains), "scanned": 0, "errors": 0, "error": None}
+    cf = _cf_config(cfg)
+    if not cf.get("enabled") or not cf.get("urlscanner_token") or not cf.get("account_id"):
+        stats["error"] = "Cloudflare URL Scanner not configured ([cloudflare] urlscanner_token/account_id)."
+        return stats
+
+    day_key, month_key = _cf_periods()
+    daily_limit = cf["daily_limit"] or 0
+    monthly_limit = cf["monthly_limit"] or 0
+
+    for domain in domains:
+        if daily_limit and cloudflare_radar.usage_count(db, day_key) >= daily_limit:
+            stats["error"] = f"Cloudflare daily scan limit reached ({daily_limit})."
+            break
+        if monthly_limit and cloudflare_radar.usage_count(db, month_key) >= monthly_limit:
+            stats["error"] = f"Cloudflare monthly scan limit reached ({monthly_limit})."
+            break
+        try:
+            scan = cloudflare_radar.scan_domain(
+                domain, cf["urlscanner_token"], cf["account_id"],
+                visibility=cf["visibility"], timeout=cf["timeout"])
+            report = cloudflare_radar.fetch_result(
+                cf["urlscanner_token"], cf["account_id"], scan.get("uuid", ""),
+                timeout=cf["timeout"], poll_interval=cf["poll_interval"],
+                max_wait=cf["poll_max_wait"])
+            entry = cloudflare_radar.classify(report, domain, scan.get("report_url", ""))
+            if cf["dns_locations"] and cf["api_token"]:
+                try:
+                    entry["dns_countries"] = cloudflare_radar.dns_top_locations(
+                        domain, cf["api_token"], timeout=cf["timeout"], limit=cf["dns_limit"])
+                except Exception as e:
+                    log.debug("Cloudflare DNS locations failed for %s: %s", domain, e)
+            sync_client.send_cfscan_results(host_url, api_key, [entry])
+            cloudflare_radar.usage_add(db, day_key)
+            cloudflare_radar.usage_add(db, month_key)
+            stats["scanned"] += 1
+            log.info("Cloudflare scan: %s -> %s", domain, entry.get("verdict") or entry.get("status"))
+        except cloudflare_radar.AuthError as e:
+            sync_client.send_cfscan_results(host_url, api_key, [cloudflare_radar.error_result(domain, str(e))])
+            stats["error"] = str(e)
+            stats["errors"] += 1
+            break
+        except cloudflare_radar.QuotaError as e:
+            sync_client.send_cfscan_results(host_url, api_key, [cloudflare_radar.error_result(domain, str(e))])
+            stats["error"] = str(e)
+            stats["errors"] += 1
+            break
+        except Exception as e:  # never abort the caller for one domain
+            sync_client.send_cfscan_results(host_url, api_key, [cloudflare_radar.error_result(domain, str(e))])
+            stats["errors"] += 1
+            log.warning("Cloudflare scan failed for %s: %s", domain, e)
+        if cf["rate_delay"] > 0:
+            time.sleep(cf["rate_delay"])
+    return stats
+
+
+def auto_cfscan_new_matches(cfg: configparser.ConfigParser, db: sqlite3.Connection,
+                            host_url: str, api_key: str, matches: list[dict]) -> int:
+    """Scan the freshly matched domains after a download (``[cloudflare] auto_scan``)."""
+    cf = _cf_config(cfg)
+    if not matches or not cf.get("enabled") or not cf.get("auto_scan"):
+        return 0
+    max_n = max(0, cf.get("auto_scan_max", 0))
+    if max_n == 0:
+        return 0
+    domains: list[str] = []
+    seen: set = set()
+    for m in matches:
+        if m.get("is_historical"):
+            continue
+        d = str(m.get("domain", "")).lower().strip()
+        if not d or d in seen:
+            continue
+        seen.add(d)
+        domains.append(d)
+        if len(domains) >= max_n:
+            break
+    if not domains:
+        return 0
+    stats = run_cfscan_batch(cfg, db, host_url, api_key, domains)
+    log.info("Cloudflare auto-scan: %s scanned, %s error(s)", stats.get("scanned", 0), stats.get("errors", 0))
+    return stats.get("scanned", 0)
 
 
 _WEEKDAYS = {
@@ -1440,6 +1574,14 @@ def run_worker_cycle(db: sqlite3.Connection, cfg: configparser.ConfigParser, hos
         log.warning("Auto-abuse.ch validation failed: %s", e)
         stats["abusech_validated"] = 0
 
+    # 6c-bis. Optionally scan the new matches with the Cloudflare URL Scanner
+    # (best effort; off by default, capped by auto_scan_max).
+    try:
+        stats["cloudflare_scanned"] = auto_cfscan_new_matches(cfg, db, host_url, api_key, all_matches)
+    except Exception as e:  # never abort the cycle for an enrichment failure
+        log.warning("Cloudflare auto-scan failed: %s", e)
+        stats["cloudflare_scanned"] = 0
+
     # 6d. Add recently registered clean matches to Intelligence tracking (the
     # web applies the per-keyword policy).
     try:
@@ -2294,6 +2436,37 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                                          + (" [quota reached]" if quota_hit else "")})
                             if not ok:
                                 status = "failed"
+
+            elif command == "cf_scan_lookup":
+                opts = {}
+                if payload:
+                    try:
+                        opts = json.loads(payload) if isinstance(payload, str) else {}
+                    except (ValueError, TypeError):
+                        opts = {}
+                domains = opts.get("domains")
+                if not domains and opts.get("domain"):
+                    domains = [opts["domain"]]
+                if not isinstance(domains, list):
+                    domains = []
+                domains = [str(d).lower().strip() for d in domains if d][:50]
+
+                cf = _cf_config(cfg)
+                if not cf.get("urlscanner_token") or not cf.get("account_id"):
+                    result = "Cloudflare URL Scanner not configured ([cloudflare] urlscanner_token/account_id)."
+                    status = "failed"
+                    logs.append({"level": "error", "message": result})
+                else:
+                    stats = run_cfscan_batch(cfg, db, host_url, api_key, domains)
+                    result = json.dumps(stats)
+                    if stats.get("error"):
+                        status = "failed"
+                        logs.append({"level": "error", "message":
+                                     f"Cloudflare scan: {stats['error']}"})
+                    else:
+                        logs.append({"level": "info", "message":
+                                     f"Cloudflare scan: {stats['scanned']} domain(s), "
+                                     f"{stats['errors']} error(s)"})
 
             elif command == "tracking_check":
                 opts = {}

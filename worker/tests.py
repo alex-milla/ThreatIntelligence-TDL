@@ -996,6 +996,88 @@ def test_glob_search_cached_domains() -> None:
     print("[PASS] test_glob_search_cached_domains")
 
 
+def test_cloudflare_radar_classify() -> None:
+    import cloudflare_radar as cf
+
+    report = {
+        "task": {"success": True, "status": "Finished", "time": "2026-09-25T10:00:00Z", "url": "https://evil.example"},
+        "verdicts": {"overall": {"malicious": True}},
+        "page": {"asn": "AS13335", "country": "United States", "ip": "1.2.3.4",
+                 "domStructHash": "abc123", "favicon": {"hash": "def456"}},
+        "lists": {"certificates": [{"issuer": "Let's Encrypt"}]},
+        "meta": {"processors": {
+            "domainCategories": ["Phishing", "Newly Seen Domains"],
+            "phishing": ["Credential Harvester"],
+            "radarRank": "123456",
+            "wappa": [{"name": "WordPress"}, {"name": "PHP"}],
+        }},
+    }
+    out = cf.classify(report, "evil.example", "https://radar.cloudflare.com/scan/x")
+    assert out["status"] == "ok", out
+    assert out["verdict"] == "malicious", out
+    assert "Phishing" in out["categories"], out
+    assert "Credential Harvester" in out["phishing"], out
+    assert out["radar_rank"] == "123456", out
+    assert "WordPress" in out["technologies"] and "PHP" in out["technologies"], out
+    assert out["asn"] == "AS13335" and out["country"] == "United States", out
+    assert out["cert_issuer"] == "Let's Encrypt", out
+    assert out["report_url"].endswith("/scan/x"), out
+
+    # A clean page (no malicious verdict, benign category) -> clean.
+    clean = cf.classify({"task": {"success": True}, "verdicts": {"overall": {}},
+                         "meta": {"processors": {"domainCategories": ["Technology"]}}}, "ok.example")
+    assert clean["verdict"] == "clean", clean
+
+    # A failed scan records an error and no verdict.
+    failed = cf.classify({"task": {"success": False, "status": "Failed"}}, "bad.example")
+    assert failed["status"] == "error" and failed["verdict"] == "", failed
+
+    # error_result is storable.
+    er = cf.error_result("x.example", "boom")
+    assert er["status"] == "error" and er["domain"] == "x.example", er
+    print("[PASS] test_cloudflare_radar_classify")
+
+
+def test_cloudflare_radar_errors() -> None:
+    import cloudflare_radar as cf
+
+    class FakeResp:
+        def __init__(self, status_code, data=None):
+            self.status_code = status_code
+            self._data = data or {}
+
+        def json(self):
+            return self._data
+
+    orig_post = cf.requests.post
+    orig_get = cf.requests.get
+    try:
+        cf.requests.post = lambda *a, **k: FakeResp(401)
+        try:
+            cf.scan_domain("x.example", "tok", "acct")
+            assert False, "expected AuthError"
+        except cf.AuthError:
+            pass
+
+        cf.requests.get = lambda *a, **k: FakeResp(429)
+        try:
+            cf.dns_top_locations("x.example", "tok")
+            assert False, "expected QuotaError"
+        except cf.QuotaError:
+            pass
+
+        # Missing configuration is an AuthError, not a crash.
+        try:
+            cf.scan_domain("x.example", "", "")
+            assert False, "expected AuthError"
+        except cf.AuthError:
+            pass
+    finally:
+        cf.requests.post = orig_post
+        cf.requests.get = orig_get
+    print("[PASS] test_cloudflare_radar_errors")
+
+
 if __name__ == "__main__":
     test_parser_basic()
     test_parser_origin_relative()
@@ -1038,4 +1120,6 @@ if __name__ == "__main__":
     test_icann_auth_error_reporting()
     test_icann_failure_report()
     test_glob_search_cached_domains()
+    test_cloudflare_radar_classify()
+    test_cloudflare_radar_errors()
     print("\nAll tests passed.")

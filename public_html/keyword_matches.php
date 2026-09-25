@@ -297,6 +297,7 @@ require __DIR__ . '/templates/header.php';
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
         <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleAbusech()"><i class="material-icons left">gpp_maybe</i>Check Abuse.ch</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleCfscan()"><i class="material-icons left">cloud</i>Check Cloudflare</button>
         <label class="check-inline" title="Report group the selected domains will be sent to">
             <span class="muted">Report group:</span>
             <select id="report-group" class="browser-default compact">

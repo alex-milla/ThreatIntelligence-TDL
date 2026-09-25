@@ -169,6 +169,38 @@ http_activate_any_200 = false
 http_timeout = 15
 http_max_bytes = 200000
 
+[cloudflare]
+; --- Cloudflare Radar (URL Scanner + DNS top locations) ---
+; Optional enrichment. Create a Custom Token with Account > Radar (Read) and/or
+; Account > URL Scanner (Write); a single token can carry both permissions.
+; Radar data is licensed CC BY-NC 4.0 (non-commercial). On the Free/Radar plan
+; scans are public and limited to 1 per 10 seconds and 5,000 per month.
+radar_enabled = true
+; Account > Radar (Read): DNS top locations for a domain.
+api_token = TU_API_TOKEN_RADAR
+; Account > URL Scanner (Write) + the account id, for the URL Scanner.
+urlscanner_token = TU_API_TOKEN_URLSCANNER
+account_id = TU_CLOUDFLARE_ACCOUNT_ID
+; Public (shown in Radar listings) or unlisted (Self-serve plan and above only).
+visibility = public
+; Seconds between scans (the Free plan allows 1 every 10 s).
+rate_delay_seconds = 10
+; Hard caps per calendar day / month (UTC) to respect the plan quota.
+daily_limit = 150
+monthly_limit = 5000
+; Skip domains already scanned within this many days (unless force is requested).
+cache_days = 7
+timeout = 30
+; Poll the asynchronous scan report every N seconds, up to this many seconds.
+poll_interval = 15
+poll_max_wait = 180
+; DNS top locations (Radar). Disable to skip that lookup.
+dns_locations_enabled = true
+dns_locations_limit = 10
+; Scan newly matched domains automatically after each TLD sync (best effort).
+auto_scan = false
+auto_scan_max = 50
+
 [openintel]
 ; Weekly ccTLD apex-domain lists from OpenINTEL (see README).
 ; Data license: CC BY-NC-SA 4.0 (non-commercial, attribution required).

@@ -246,6 +246,32 @@ Besides the on-demand lookup, the worker keeps a **local copy of the full URLhau
 - **What it sends**: only `malicious`/`suspicious` hits, so a feed "not found" never overwrites a richer on-demand result.
 - **Config**: `feed_enabled`, `feed_sync_hours`, `auto_abusech_max`, `feed_timeout`, `feed_urlhaus_dump` (default `recent.csv`).
 
+## Cloudflare Radar (URL Scanner + DNS)
+
+The domain detail also shows **Cloudflare Radar** enrichment, cached in `domain_cfscan` and refreshed **on demand** through the worker command queue (`cf_scan_lookup`), like VirusTotal/abuse.ch:
+
+- **URL Scanner** — scans the domain's page and returns a **verdict** (`malicious` / `suspicious` / `clean`), the Cloudflare **domain categories**, the **Radar rank**, the detected **technologies**, the phishing type, the hosting ASN/country and the TLS certificate issuer, plus a public **report** link ("Open in Radar"). Buttons: **Scan with Cloudflare** (per-domain and batch).
+- **DNS top locations** — the geographic distribution (top countries, 7 days) of DNS queries to the domain via the 1.1.1.1 resolver, shown as a compact country list.
+
+Enable it in `config.ini` with a Cloudflare **Custom Token** (`Account > Radar` read and/or `Account > URL Scanner` write) and your account id:
+
+```ini
+[cloudflare]
+radar_enabled = true
+api_token = ...            # Account > Radar (Read)  -> DNS top locations
+urlscanner_token = ...     # Account > URL Scanner (Write)
+account_id = ...
+visibility = public        # Free/Radar plan: only public scans (unlisted needs Self-serve)
+rate_delay_seconds = 10    # Free plan allows 1 scan / 10 s
+daily_limit = 150
+monthly_limit = 5000       # Free plan: 5,000 scans/month
+auto_scan = false          # scan new matches automatically after each sync
+auto_scan_max = 50
+```
+
+- The scans are **asynchronous** (the worker polls the report) and **rate limited** (~1/10 s on the free plan), so batches are capped and the UI updates as each result arrives.
+- The Radar API is free; its data is **CC BY-NC 4.0 (non-commercial, attribution)**. On the Free/Radar plan the URL Scanner only produces **public** scans (they appear in Radar's recent scans). No token → the feature stays off and the worker keeps running.
+
 ## Intelligence: dormant-domain tracking
 
 Attackers often register a domain and leave it dormant until it ages past reputation blocks (many defenses block domains younger than ~30 days) and then activate it to impersonate a legitimate site. **Intelligence** follows those domains instead of discarding them when they are still clean.

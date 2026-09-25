@@ -138,6 +138,22 @@ def send_abusech_results(host_url: str, api_key: str, entries: list[dict]) -> bo
     return False
 
 
+def send_cfscan_results(host_url: str, api_key: str, entries: list[dict]) -> bool:
+    """Send Cloudflare Radar (URL Scanner + DNS locations) results to the hosting API."""
+    if not entries:
+        return True
+    url = f"{host_url}/api/v1/cfscan_results.php"
+    headers = {
+        "X-API-Key": api_key,
+        "Content-Type": "application/json",
+    }
+    r = requests.post(url, headers=headers, json={"entries": entries}, timeout=60)
+    if r.status_code == 200:
+        return True
+    print(f"[-] Failed to send Cloudflare Radar results: HTTP {r.status_code} - {r.text}")
+    return False
+
+
 def get_tracking_due(host_url: str, api_key: str, limit: int = 200,
                      domains: list | None = None) -> list[dict]:
     """Fetch due Intelligence tracking entries from the hosting API.

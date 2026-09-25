@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.10] - 2026-09-25
+
+### Added - Cloudflare Radar enrichment (URL Scanner + DNS top locations)
+
+- **The domain detail now shows Cloudflare Radar data, cached in `domain_cfscan` and refreshed on demand** through the worker command queue (`cf_scan_lookup`), like the existing VirusTotal/abuse.ch enrichments.
+  - **URL Scanner**: submits the domain's page for an asynchronous scan and stores the **verdict** (`malicious`/`suspicious`/`clean`), the Cloudflare **domain categories**, the **Radar rank**, the detected **technologies**, the phishing type, the hosting ASN/country and the TLS certificate issuer, plus the public **report link** ("Open in Radar"). Buttons **Scan with Cloudflare** per-domain and in batch (Notifications, per-keyword list).
+  - **DNS top locations**: the geographic distribution (top countries) of DNS queries to the domain via the 1.1.1.1 resolver, rendered as a country list.
+  - **Worker** (`worker/cloudflare_radar.py`): URL Scanner `scan_domain` + `fetch_result` (polling), `classify`, and Radar `dns_top_locations`; `AuthError`/`QuotaError`. `scheduler.py` adds the `cf_scan_lookup` command, optional `auto_scan` after each sync, and per-day/month usage counters (`cf_usage`). `sync_client.send_cfscan_results()`.
+  - **Web**: `domain_cfscan` table, `api/v1/cfscan_results.php`, `ajax_cfscan_request.php` / `ajax_cfscan_cache.php`, the Cloudflare Radar block in `includes/domain_detail.php`, the `ddCheckCf` handler and a bulk button.
+  - **Config** `[cloudflare]`: token(s), account id, `visibility`, `rate_delay_seconds` (default 10 for the Free plan), `daily_limit`, `monthly_limit` (5,000), `auto_scan`, `auto_scan_max`. Radar data is **CC BY-NC 4.0** (non-commercial); on the Free/Radar plan only **public** scans are available.
+- **Tests**: `test_cloudflare_radar_classify`, `test_cloudflare_radar_errors`.
+
 ## [v1.18.9] - 2026-09-25
 
 ### Added - Discovery-date filter in the Dashboard glob search

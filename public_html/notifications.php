@@ -426,6 +426,7 @@ require __DIR__ . '/templates/header.php';
                 <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
                 <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
                 <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleAbusech()"><i class="material-icons left">gpp_maybe</i>Check Abuse.ch</button>
+                <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleCfscan()"><i class="material-icons left">cloud</i>Check Cloudflare</button>
                 <button type="button" class="btn btn-small waves-effect" onclick="sendSelectedToReport()"><i class="material-icons left">playlist_add</i>Send to report</button>
                 <button type="button" class="btn btn-small btn-outline waves-effect" onclick="removeSelectedFromReport()"><i class="material-icons left">playlist_remove</i>Remove from report</button>
                 <button type="button" class="btn btn-small btn-outline waves-effect" onclick="location.reload()" title="Reload this list with the current filters"><i class="material-icons left">refresh</i>Refresh</button>

@@ -138,4 +138,33 @@
             })
             .catch(function () { setTimeout(function () { ddPollAbusech(domain, tries + 1); }, 6000); });
     }
+
+    // Queue a Cloudflare Radar URL Scanner check (scans are async and slow,
+    // ~1 per 10 s on the Free plan), then refresh once cached.
+    window.ddCheckCf = function (domain) {
+        fetch('/ajax_cfscan_request.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+            body: JSON.stringify({ domain: domain, force: true })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+            if (!res.success) throw new Error(res.error || 'request failed');
+            if (!res.queued) { window.ddAfterAction(domain); return; }
+            ddPollCf(domain, 0);
+        })
+        .catch(function (e) { alert('Cloudflare request failed: ' + e.message); });
+    };
+
+    function ddPollCf(domain, tries) {
+        // Scans can take a couple of minutes (submit + poll + DNS), so be patient.
+        if (tries > 60) { alert('Timed out waiting for the worker.'); return; }
+        fetch('/ajax_cfscan_cache.php?domain=' + encodeURIComponent(domain))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data && data.success && data.cfscan) { window.ddAfterAction(domain); return; }
+                setTimeout(function () { ddPollCf(domain, tries + 1); }, 10000);
+            })
+            .catch(function () { setTimeout(function () { ddPollCf(domain, tries + 1); }, 12000); });
+    }
 })();

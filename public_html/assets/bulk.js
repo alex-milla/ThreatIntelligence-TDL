@@ -109,6 +109,25 @@
             .catch(function () { alert('Failed to queue abuse.ch lookup'); });
     };
 
+    window.fetchVisibleCfscan = function () {
+        var domains = selectedDomains();
+        if (!domains.length) { alert('No domains to scan.'); return; }
+        fetch('/ajax_cfscan_request.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+            body: JSON.stringify({ domains: domains })
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.success) {
+                    alert('Queued ' + (data.queued || 0) + ' domain(s) for Cloudflare Radar. Scans are rate limited (~1 every 10 s), so reload in a few minutes to see results.');
+                } else {
+                    alert(data.error || 'Failed to queue Cloudflare scan');
+                }
+            })
+            .catch(function () { alert('Failed to queue Cloudflare scan'); });
+    };
+
     // Bulk exclude / unexclude for the per-keyword match list. An empty tag
     // clears the classification (restore). Excluded rows are included so they
     // can be restored.
