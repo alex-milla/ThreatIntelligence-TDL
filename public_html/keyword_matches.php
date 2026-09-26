@@ -328,6 +328,7 @@ require __DIR__ . '/templates/header.php';
                 <?php endforeach; ?>
             </select>
         </label>
+        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="createReportGroup(<?= (int)$keywordId ?>)" title="Create a new report group and assign this keyword to it"><i class="material-icons left">create_new_folder</i>New group</button>
         <button type="button" class="btn btn-small waves-effect" onclick="sendSelectedToReport()"><i class="material-icons left">playlist_add</i>Send to report</button>
         <button type="button" class="btn btn-small btn-outline waves-effect" onclick="removeSelectedFromReport()"><i class="material-icons left">playlist_remove</i>Remove from report</button>
         <button type="button" class="btn btn-small btn-outline waves-effect" onclick="tagSelectedDomains('excluded')"><i class="material-icons left">block</i>Exclude selected</button>

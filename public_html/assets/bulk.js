@@ -313,6 +313,44 @@
             .catch(function () { toast('Failed to update the report queue', 'error'); });
     };
 
+    // Create a report group on the fly (e.g. an ungrouped keyword) and select it
+    // in the #report-group dropdown so the next "Send to report" uses it. The
+    // keyword that triggered it is assigned to the new group.
+    window.createReportGroup = function (keywordId) {
+        promptDialog({
+            title: 'New report group',
+            message: 'Name for the new report group? This keyword will be assigned to it.',
+            placeholder: 'Group name',
+            confirmText: 'Create'
+        }).then(function (name) {
+            if (name === null) return;
+            name = String(name).trim();
+            if (!name) { toast('Enter a group name.', 'warning'); return; }
+            var payload = { name: name };
+            var kid = parseInt(keywordId, 10);
+            if (kid > 0) { payload.keyword_id = kid; }
+            fetch('/ajax_report_group.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+                body: JSON.stringify(payload)
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data.success) { toast(data.error || 'Failed to create the group', 'error'); return; }
+                    var sel = document.getElementById('report-group');
+                    if (sel) {
+                        var opt = document.createElement('option');
+                        opt.value = data.id;
+                        opt.textContent = data.name;
+                        sel.appendChild(opt);
+                        sel.value = String(data.id);
+                    }
+                    toast('Group "' + data.name + '" created.', 'success');
+                })
+                .catch(function () { toast('Failed to create the group', 'error'); });
+        });
+    };
+
     // "Select all visible" helper shared by the list pages. Delegated so it also
     // works if the table is replaced by a live refresh.
     document.addEventListener('change', function (e) {

@@ -516,10 +516,13 @@ $cfMeta        = $apiUsageMeta['cloudflare'] ?? [];
 $vtDay         = usagePeriod($apiUsage, 'virustotal', "lookups:day:$utcDay");
 $abDay         = usagePeriod($apiUsage, 'abusech', "lookups:day:$utcDay");
 ?>
-<div class="card admin-pane" data-tab="api">
+<div class="card admin-pane" data-tab="api" id="api-usage" data-live-section>
     <div class="card-head">
         <h2><i class="material-icons left">data_usage</i>API quotas</h2>
-        <span class="muted">Estimated consumption reported by the worker. The caps come from <code>worker/config.ini</code> (<code>[cloudflare]</code>, <code>[virustotal]</code>, <code>[abusech]</code>).</span>
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <span class="muted">Estimated consumption reported by the worker. The caps come from <code>worker/config.ini</code> (<code>[cloudflare]</code>, <code>[virustotal]</code>, <code>[abusech]</code>).</span>
+            <button type="button" class="btn btn-small btn-outline waves-effect" data-refresh-live title="Refresh the reported usage now"><i class="material-icons left">refresh</i>Refresh</button>
+        </div>
     </div>
 
     <?php if (!$hasApiUsage): ?>

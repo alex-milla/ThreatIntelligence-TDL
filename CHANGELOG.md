@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.20] - 2026-09-26
+
+### Added - Refresh button in API quotas + create a report group from the match list
+
+- **Admin → API quotas: Refresh button.** The card is now a `data-live-section` (`id="api-usage"`) with a **Refresh** action (`data-refresh-live`) in its header. It re-fetches just that card in place (via the existing `App.refreshLiveSections()`), so the reported consumption updates without reloading the page; it also refreshes on its own while a worker command is active.
+- **Create a report group while sending domains to a report.** An ungrouped keyword could previously only be sent to the generic "Ungrouped" bucket. The per-keyword match list now has a **New group** button next to the **Report group** selector:
+  - It asks for a name (the themed `App.prompt`), creates the group through the new `ajax_report_group.php` (auth + CSRF) and **assigns the current keyword to it**, then adds and selects the option.
+  - The following **Send to report** queues the selected domains under the new group (`report_queue.group_key`), so its report is generated for that group.
+- `keyword_matches.php` passes the current `keyword_id` to `assets/bulk.js` (`createReportGroup()`); the helper reuses the v1.18.17 `App.prompt`/`App.toast`/`App.csrf` components.
+- **Tests/smoke**: `php -l` of all `public_html`; a session smoke creates a group (keyword assigned, option added) and queues a domain under it; empty names are rejected. Report layout is unchanged.
+
 ## [v1.18.19] - 2026-09-26
 
 ### Added/Changed - Cloudflare scan failures: reason, report link, retry and HTTP fallback
