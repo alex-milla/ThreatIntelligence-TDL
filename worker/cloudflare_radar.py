@@ -17,6 +17,7 @@ Scanner needs ``Account > URL Scanner`` write and the Radar DNS call needs
 Both APIs are free; Radar data is licensed CC BY-NC 4.0 (non-commercial).
 """
 
+import re
 import time
 
 import requests
@@ -38,6 +39,73 @@ class AuthError(Exception):
 
 class QuotaError(Exception):
     """Rate/quota limit reached (the batch should stop)."""
+
+
+def _header_field(value, key):
+    """Return the integer value of ``key=NN`` inside a Cloudflare header."""
+    match = re.search(r"(?:^|;)\s*" + re.escape(key) + r"\s*=\s*(\d+)", str(value or ""))
+    return int(match.group(1)) if match else None
+
+
+def parse_ratelimit_headers(response) -> dict:
+    """Extract Cloudflare's REST rate-limit headers from a response.
+
+    Only the REST API returns these; the SDKs read them to back off. Shapes:
+
+      * ``Ratelimit``:        ``"default";r=50;t=30``  -> remaining / reset
+      * ``Ratelimit-Policy``: ``"burst";q=100;w=60``   -> quota / window
+      * ``Retry-After``:      seconds until capacity (only on HTTP 429)
+    """
+    headers = getattr(response, "headers", None) or {}
+    out: dict = {}
+
+    raw = headers.get("Ratelimit")
+    if raw:
+        out["ratelimit"] = str(raw)
+        remaining = _header_field(raw, "r")
+        reset = _header_field(raw, "t")
+        if remaining is not None:
+            out["remaining"] = remaining
+        if reset is not None:
+            out["reset_seconds"] = reset
+
+    policy = headers.get("Ratelimit-Policy")
+    if policy:
+        out["ratelimit_policy"] = str(policy)
+        quota = _header_field(policy, "q")
+        window = _header_field(policy, "w")
+        if quota is not None:
+            out["quota"] = quota
+        if window is not None:
+            out["window_seconds"] = window
+
+    retry = headers.get("Retry-After")
+    if retry not in (None, ""):
+        out["retry_after"] = str(retry).strip()
+
+    return out
+
+
+def _note_call(usage, response) -> None:
+    """Record one API call in the ``usage`` collector (counter + last headers).
+
+    The last snapshot is merged so a later response without some header (e.g. a
+    429 that only carries ``Retry-After``) does not lose the previous window
+    reading; a non-429 response clears a stale ``Retry-After``.
+    """
+    if usage is None:
+        return
+    usage["calls"] = int(usage.get("calls", 0)) + 1
+    status = getattr(response, "status_code", None)
+    info = parse_ratelimit_headers(response)
+    if info:
+        merged = dict(usage.get("last") or {})
+        if status != 429:
+            merged.pop("retry_after", None)
+        merged.update(info)
+        usage["last"] = merged
+    if status == 429:
+        usage["rate_limited"] = True
 
 
 def _processor_items(value) -> list:
@@ -109,11 +177,12 @@ def _payload(response) -> dict:
 
 
 def scan_domain(domain: str, token: str, account_id: str,
-                visibility: str = "public", timeout: int = 30) -> dict:
+                visibility: str = "public", timeout: int = 30, usage: dict | None = None) -> dict:
     """Submit a URL scan. Returns {uuid, report_url, api_url, url}.
 
     Raises AuthError when the token/account is missing or rejected, QuotaError on
-    any other failure.
+    any other failure. When ``usage`` is given it is updated in place with the
+    call count and the last rate-limit headers seen.
     """
     if not token or not account_id:
         raise AuthError("Cloudflare URL Scanner not configured (urlscanner_token/account_id)")
@@ -121,6 +190,7 @@ def scan_domain(domain: str, token: str, account_id: str,
     vis = "unlisted" if str(visibility or "").strip().lower() == "unlisted" else "public"
     body = {"url": f"https://{domain}", "visibility": vis.capitalize()}
     r = requests.post(url, headers={"Authorization": f"Bearer {token}"}, json=body, timeout=timeout)
+    _note_call(usage, r)
     if r.status_code != 200:
         _raise_http_error(r, "URL Scanner")
     payload = _payload(r)
@@ -133,14 +203,19 @@ def scan_domain(domain: str, token: str, account_id: str,
 
 
 def fetch_result(token: str, account_id: str, scan_id: str, timeout: int = 30,
-                 poll_interval: int = 15, max_wait: int = 180) -> dict:
-    """Poll the scan report until it is ready. Returns the raw report object."""
+                 poll_interval: int = 15, max_wait: int = 180, usage: dict | None = None) -> dict:
+    """Poll the scan report until it is ready. Returns the raw report object.
+
+    Each poll is an API call; when ``usage`` is given every request is counted
+    (a scan spends several calls here, not just the initial submit).
+    """
     if not token or not account_id:
         raise AuthError("Cloudflare URL Scanner not configured (urlscanner_token/account_id)")
     url = URLSCANNER_BASE.format(account_id=account_id) + f"/result/{scan_id}"
     deadline = time.time() + max(1, int(max_wait))
     while True:
         r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=timeout)
+        _note_call(usage, r)
         if r.status_code == 200:
             return _payload(r)
         if r.status_code == 404:  # scan still in progress
@@ -246,16 +321,18 @@ def classify(report: dict, domain: str, report_url: str = "") -> dict:
 
 
 def dns_top_locations(domain: str, token: str, timeout: int = 30,
-                      limit: int = 10, date_range: str = "7d") -> list[dict]:
+                      limit: int = 10, date_range: str = "7d", usage: dict | None = None) -> list[dict]:
     """Return the top countries for DNS queries to a domain (1.1.1.1).
 
     Each item: {"code", "name", "value"}. Raises AuthError/QuotaError on failure.
+    When ``usage`` is given the (cheap) Radar call is counted.
     """
     if not token:
         raise AuthError("Cloudflare Radar not configured (api_token)")
     url = f"{RADAR_BASE}/dns/top/locations"
     params = {"domain": domain, "dateRange": date_range, "format": "json", "limit": max(1, int(limit))}
     r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, params=params, timeout=timeout)
+    _note_call(usage, r)
     if r.status_code != 200:
         _raise_http_error(r, "Radar DNS")
     try:

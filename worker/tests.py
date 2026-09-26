@@ -1140,22 +1140,101 @@ def test_cloudflare_dns_batch() -> None:
         assert cf["urlscanner_token"] == "tok", cf
 
         captured = []
+        reported = []
         orig_dns = scheduler.cloudflare_radar.dns_top_locations
         orig_send = scheduler.sync_client.send_cfscan_results
-        scheduler.cloudflare_radar.dns_top_locations = (
-            lambda d, tok, timeout=30, limit=10: [{"code": "ES", "name": "Spain", "value": "80.0"}])
+        orig_usage = scheduler.sync_client.send_api_usage
+
+        def fake_dns(d, tok, timeout=30, limit=10, usage=None):
+            if usage is not None:
+                usage["calls"] = int(usage.get("calls", 0)) + 1
+            return [{"code": "ES", "name": "Spain", "value": "80.0"}]
+
+        scheduler.cloudflare_radar.dns_top_locations = fake_dns
         scheduler.sync_client.send_cfscan_results = lambda h, k, e: captured.extend(e) or True
+        scheduler.sync_client.send_api_usage = lambda h, k, p: reported.append(p) or True
         try:
             stats = scheduler.run_cfdns_batch(cfg, db, "http://h", "k", ["a.example", "b.example"])
         finally:
             scheduler.cloudflare_radar.dns_top_locations = orig_dns
             scheduler.sync_client.send_cfscan_results = orig_send
+            scheduler.sync_client.send_api_usage = orig_usage
 
         assert stats["checked"] == 2, stats
         assert len(captured) == 2 and all(e.get("dns_only") for e in captured), captured
         assert captured[0]["dns_countries"][0]["code"] == "ES", captured
+        # The (cheap) Radar calls are reported so the Admin panel shows the usage.
+        assert reported, reported
+        day_key, _ = scheduler._cf_periods()
+        calls = {row["period"]: row for row in reported[0]["usage"]}
+        assert calls["calls:" + day_key]["count"] == 2, reported
         db.close()
     print("[PASS] test_cloudflare_dns_batch")
+
+
+def test_cloudflare_usage_headers() -> None:
+    import cloudflare_radar as cf
+    import scheduler
+
+    class FakeResp:
+        def __init__(self, status_code=200, headers=None):
+            self.status_code = status_code
+            self.headers = headers or {}
+            self._data = {}
+
+        def json(self):
+            return self._data
+
+    info = cf.parse_ratelimit_headers(FakeResp(200, {
+        "Ratelimit": '"default";r=50;t=30',
+        "Ratelimit-Policy": '"burst";q=100;w=60',
+    }))
+    assert info["remaining"] == 50 and info["reset_seconds"] == 30, info
+    assert info["quota"] == 100 and info["window_seconds"] == 60, info
+    assert info["ratelimit"].endswith("r=50;t=30"), info
+
+    # Empty / malformed headers never crash and yield no numeric fields.
+    assert "remaining" not in cf.parse_ratelimit_headers(
+        FakeResp(200, {"Ratelimit": "garbage"})), "garbage"
+    assert cf.parse_ratelimit_headers(FakeResp(200, {})) == {}, "empty"
+
+    usage = {"calls": 0}
+    cf._note_call(usage, FakeResp(200, {"Ratelimit": '"default";r=50;t=30'}))
+    cf._note_call(usage, FakeResp(429, {"Retry-After": "120"}))
+    assert usage["calls"] == 2, usage
+    assert usage["last"]["remaining"] == 50, usage          # merged, not lost
+    assert usage["last"]["retry_after"] == "120", usage
+    assert usage.get("rate_limited") is True, usage
+    # A following success clears the stale Retry-After.
+    cf._note_call(usage, FakeResp(200, {"Ratelimit": '"default";r=49;t=29'}))
+    assert "retry_after" not in usage["last"], usage
+    assert usage["last"]["remaining"] == 49, usage
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
+        cfg = configparser.ConfigParser()
+        cfg.add_section("cloudflare")
+        cfg.set("cloudflare", "urlscanner_token", "tok")
+        cfg.set("cloudflare", "account_id", "acct")
+        cfg.set("cloudflare", "daily_limit", "150")
+        cfg.set("cloudflare", "monthly_limit", "5000")
+
+        scheduler._cf_record_usage(db, {"calls": 3, "last": {"remaining": 50}, "rate_limited": True})
+        snap = scheduler.cf_usage_snapshot(db, cfg)
+        assert snap["calls"]["day"] == 3 and snap["calls"]["month"] == 3, snap
+        assert snap["scans"]["daily_limit"] == 150 and snap["scans"]["monthly_limit"] == 5000, snap
+        assert snap["meta"]["remaining"] == 50, snap
+        assert snap["meta"]["rate_limited"] == "1", snap
+
+        payload = scheduler._cf_usage_payload(db, cfg)
+        periods = {row["period"]: row for row in payload["usage"]}
+        day_key, month_key = scheduler._cf_periods()
+        assert periods["calls:" + day_key]["count"] == 3, payload
+        assert periods["scans:" + month_key]["limit_value"] == 5000, payload
+        assert any(m["key"] == "ratelimit" for m in payload["meta"]) or \
+            any(m["key"] == "remaining" for m in payload["meta"]), payload
+        db.close()
+    print("[PASS] test_cloudflare_usage_headers")
 
 
 if __name__ == "__main__":
@@ -1203,4 +1282,5 @@ if __name__ == "__main__":
     test_cloudflare_radar_classify()
     test_cloudflare_radar_errors()
     test_cloudflare_dns_batch()
+    test_cloudflare_usage_headers()
     print("\nAll tests passed.")

@@ -39,6 +39,31 @@ function humanDuration(?string $from, ?string $to): string {
     return floor($mins / 60) . 'h ' . ($mins % 60) . 'm';
 }
 
+/** A reported usage row, or zeroes when the worker has not reported it yet. */
+function usagePeriod(array $usage, string $provider, string $period): array {
+    return $usage[$provider][$period] ?? ['count' => 0, 'limit_value' => 0, 'updated_at' => null];
+}
+
+/** Compact "used / cap (left)" label. */
+function quotaLabel(int $used, int $limit): string {
+    if ($limit <= 0) {
+        return '<strong>' . number_format($used) . '</strong> <span class="muted">/ no cap</span>';
+    }
+    return '<strong>' . number_format($used) . '</strong> / ' . number_format($limit)
+        . ' <span class="muted">(' . number_format(max(0, $limit - $used)) . ' left)</span>';
+}
+
+/** Materialize progress bar tinted by how close it is to the cap. */
+function quotaBar(int $used, int $limit): string {
+    if ($limit <= 0) {
+        return '';
+    }
+    $pct = (int)min(100, round($used / $limit * 100));
+    $cls = $pct >= 100 ? 'red' : ($pct >= 80 ? 'orange' : 'green');
+    return '<div class="progress" style="height:8px;margin:6px 0;">'
+        . '<div class="determinate ' . $cls . '" style="width:' . $pct . '%"></div></div>';
+}
+
 // Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
@@ -190,6 +215,19 @@ $recheckCzdsTlds = $db->query("SELECT name, records_total FROM tlds WHERE source
 $recheckCcTlds = $db->query("SELECT name, records_total FROM tlds WHERE source = 'openintel' AND is_active = 1 ORDER BY name")->fetchAll();
 $recheckKeywords = $db->query("SELECT k.id, k.keyword, u.username FROM keywords k JOIN users u ON u.id = k.user_id WHERE k.is_active = 1 ORDER BY k.keyword ASC, u.username ASC")->fetchAll();
 
+// Provider API consumption reported by the worker (Cloudflare/VirusTotal/abuse.ch).
+$apiUsage = [];
+foreach ($db->query("SELECT provider, period, count, limit_value, updated_at FROM api_usage")->fetchAll() as $r) {
+    $apiUsage[$r['provider']][$r['period']] = $r;
+}
+$apiUsageMeta = [];
+foreach ($db->query("SELECT provider, key, value FROM api_usage_meta")->fetchAll() as $r) {
+    $apiUsageMeta[$r['provider']][$r['key']] = $r['value'];
+}
+$utcDay = gmdate('Y-m-d');
+$utcMonth = gmdate('Y-m');
+$hasApiUsage = !empty($apiUsage);
+
 // Sync health: the last ICANN (CZDS) worker cycle and the last sync report per
 // source. A cycle aborted at authentication/selection surfaces here even though
 // it produced no per-TLD rows.
@@ -279,6 +317,7 @@ require __DIR__ . '/../templates/header.php';
     <a href="#worker" data-tab="worker">Worker</a>
     <a href="#commands" data-tab="commands">Commands</a>
     <a href="#recheck" data-tab="recheck">Recheck</a>
+    <a href="#api" data-tab="api">API quotas</a>
     <a href="/admin/tlds.php" data-tab="tlds">TLDs</a>
     <a href="#users" data-tab="users">Users</a>
     <a href="#sync" data-tab="sync">Sync</a>
@@ -466,6 +505,93 @@ require __DIR__ . '/../templates/header.php';
                 </button>
             </div>
         </form>
+</div>
+
+<?php
+$cfScansDay    = usagePeriod($apiUsage, 'cloudflare', "scans:day:$utcDay");
+$cfScansMonth  = usagePeriod($apiUsage, 'cloudflare', "scans:month:$utcMonth");
+$cfCallsDay    = usagePeriod($apiUsage, 'cloudflare', "calls:day:$utcDay");
+$cfCallsMonth  = usagePeriod($apiUsage, 'cloudflare', "calls:month:$utcMonth");
+$cfMeta        = $apiUsageMeta['cloudflare'] ?? [];
+$vtDay         = usagePeriod($apiUsage, 'virustotal', "lookups:day:$utcDay");
+$abDay         = usagePeriod($apiUsage, 'abusech', "lookups:day:$utcDay");
+?>
+<div class="card admin-pane" data-tab="api">
+    <div class="card-head">
+        <h2><i class="material-icons left">data_usage</i>API quotas</h2>
+        <span class="muted">Estimated consumption reported by the worker. The caps come from <code>worker/config.ini</code> (<code>[cloudflare]</code>, <code>[virustotal]</code>, <code>[abusech]</code>).</span>
+    </div>
+
+    <?php if (!$hasApiUsage): ?>
+        <p class="muted">No usage reported yet. It appears after the first Cloudflare / VirusTotal / abuse.ch lookup (the worker reports it on each batch). Update the worker to a version that reports usage if this stays empty.</p>
+    <?php else: ?>
+
+    <h5><i class="material-icons left">cloud</i>Cloudflare URL Scanner + Radar</h5>
+    <table class="striped highlight responsive-table">
+        <thead><tr><th>Metric</th><th style="width:42%;">Consumed</th></tr></thead>
+        <tbody>
+            <tr>
+                <td>Scans today (UTC)</td>
+                <td><?= quotaLabel((int)$cfScansDay['count'], (int)$cfScansDay['limit_value']) ?><?= quotaBar((int)$cfScansDay['count'], (int)$cfScansDay['limit_value']) ?></td>
+            </tr>
+            <tr>
+                <td>Scans this month (UTC)</td>
+                <td><?= quotaLabel((int)$cfScansMonth['count'], (int)$cfScansMonth['limit_value']) ?><?= quotaBar((int)$cfScansMonth['count'], (int)$cfScansMonth['limit_value']) ?></td>
+            </tr>
+            <tr>
+                <td title="Each scan is 1 submit + the polling GETs; each DNS lookup is 1 Radar call.">Estimated REST calls (today / month)</td>
+                <td><?= number_format((int)$cfCallsDay['count']) ?> / <?= number_format((int)$cfCallsMonth['count']) ?></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p class="muted" style="margin-top:10px;">
+        Last rate-limit window (Cloudflare REST headers, only present on API responses):
+        <?php
+        $rlRemaining = $cfMeta['remaining'] ?? null;
+        $rlQuota     = $cfMeta['quota'] ?? null;
+        $rlReset     = $cfMeta['reset_seconds'] ?? null;
+        $rlWindow    = $cfMeta['window_seconds'] ?? null;
+        ?>
+        <?php if ($rlRemaining !== null || $rlQuota !== null): ?>
+            <strong><?= $rlRemaining !== null ? (int)$rlRemaining : '?' ?></strong><?= $rlQuota !== null ? ' / ' . (int)$rlQuota : '' ?> calls left<?= $rlWindow !== null ? ' in a ' . (int)$rlWindow . 's window' : '' ?><?= $rlReset !== null ? ' (resets in ' . (int)$rlReset . 's)' : '' ?>.
+        <?php elseif (!empty($cfMeta['ratelimit']) || !empty($cfMeta['ratelimit_policy'])): ?>
+            <span class="mono-sm">Ratelimit: <?= htmlspecialchars((string)($cfMeta['ratelimit'] ?? '')) ?><?= !empty($cfMeta['ratelimit_policy']) ? ' · Policy: ' . htmlspecialchars((string)$cfMeta['ratelimit_policy']) : '' ?></span>
+        <?php else: ?>
+            <span class="muted">not observed yet.</span>
+        <?php endif; ?>
+    </p>
+    <?php if (!empty($cfMeta['retry_after']) || !empty($cfMeta['rate_limited'])): ?>
+        <div class="notice notice-error">
+            <i class="material-icons">error</i>
+            <div><strong>Cloudflare rate limit hit (HTTP 429).</strong>
+                <?= !empty($cfMeta['retry_after']) ? 'Retry after ' . (int)$cfMeta['retry_after'] . 's.' : '' ?>
+                Scans back off until the window resets.</div>
+        </div>
+    <?php endif; ?>
+    <?php if (!empty($cfMeta['updated_at'])): ?>
+        <p class="muted">Last observed <?= htmlspecialchars(fmt_date($cfMeta['updated_at'])) ?>.</p>
+    <?php endif; ?>
+
+    <div class="divider"></div>
+
+    <h5><i class="material-icons left">security</i>Other providers (today, UTC)</h5>
+    <table class="striped highlight responsive-table">
+        <thead><tr><th>Provider</th><th style="width:42%;">Lookups</th></tr></thead>
+        <tbody>
+            <tr>
+                <td>VirusTotal</td>
+                <td><?= quotaLabel((int)$vtDay['count'], (int)$vtDay['limit_value']) ?><?= quotaBar((int)$vtDay['count'], (int)$vtDay['limit_value']) ?></td>
+            </tr>
+            <tr>
+                <td>abuse.ch (URLhaus + ThreatFox)</td>
+                <td><?= quotaLabel((int)$abDay['count'], (int)$abDay['limit_value']) ?><?= quotaBar((int)$abDay['count'], (int)$abDay['limit_value']) ?></td>
+            </tr>
+        </tbody>
+    </table>
+    <p class="muted">Counts are the worker's own estimates (what it actually requested), not the provider dashboard. The URL Scanner is async: a single scan spends several REST calls (submit + polling).</p>
+
+    <?php endif; ?>
 </div>
 
 <?php
@@ -757,7 +883,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
 (function() {
     const tabs = document.querySelectorAll('#admin-tabs a[data-tab]');
     const panes = document.querySelectorAll('.admin-pane[data-tab]');
-    const valid = ['overview','worker','commands','recheck','users','sync','system'];
+    const valid = ['overview','worker','commands','recheck','api','users','sync','system'];
     function activate(tab) {
         tabs.forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
         panes.forEach(p => p.classList.toggle('active', p.dataset.tab === tab));

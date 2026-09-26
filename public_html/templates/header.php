@@ -119,6 +119,7 @@ if (!in_array($tldSource, ['czds', 'openintel'], true)) {
                     <a href="/admin/#worker" class="sidebar-sublink" data-admin-tab="worker">Worker</a>
                     <a href="/admin/#commands" class="sidebar-sublink" data-admin-tab="commands">Commands</a>
                     <a href="/admin/#recheck" class="sidebar-sublink" data-admin-tab="recheck">Recheck</a>
+                    <a href="/admin/#api" class="sidebar-sublink" data-admin-tab="api">API quotas</a>
                     <a href="/admin/#users" class="sidebar-sublink" data-admin-tab="users">Users</a>
                     <a href="/admin/#sync" class="sidebar-sublink" data-admin-tab="sync">Sync</a>
                     <a href="/admin/#system" class="sidebar-sublink" data-admin-tab="system">System</a>
@@ -193,6 +194,7 @@ if (!in_array($tldSource, ['czds', 'openintel'], true)) {
                         <li><a href="/admin/#worker" data-admin-tab="worker">Worker</a></li>
                         <li><a href="/admin/#commands" data-admin-tab="commands">Commands</a></li>
                         <li><a href="/admin/#recheck" data-admin-tab="recheck">Recheck</a></li>
+                        <li><a href="/admin/#api" data-admin-tab="api">API quotas</a></li>
                         <li><a href="/admin/#users" data-admin-tab="users">Users</a></li>
                         <li><a href="/admin/#sync" data-admin-tab="sync">Sync</a></li>
                         <li><a href="/admin/#system" data-admin-tab="system">System</a></li>

@@ -153,6 +153,26 @@ class Database {
         $db->exec("CREATE INDEX IF NOT EXISTS idx_api_ip ON api_requests(ip_address, requested_at)");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_api_key ON api_requests(api_key, requested_at)");
 
+        // Provider API consumption reported by the worker (Cloudflare URL Scanner
+        // + Radar, VirusTotal and abuse.ch), shown in the Admin "API quotas" tab.
+        // period: scans:/calls:/lookups: + day:YYYY-MM-DD or month:YYYY-MM.
+        $db->exec("CREATE TABLE IF NOT EXISTS api_usage (
+            provider TEXT NOT NULL,
+            period TEXT NOT NULL,
+            count INTEGER DEFAULT 0,
+            limit_value INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (provider, period)
+        )");
+        // Last observed rate-limit headers (Cloudflare): r/t, q/w, Retry-After.
+        $db->exec("CREATE TABLE IF NOT EXISTS api_usage_meta (
+            provider TEXT NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (provider, key)
+        )");
+
         $db->exec("CREATE TABLE IF NOT EXISTS recheck_status (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             is_running INTEGER DEFAULT 0,

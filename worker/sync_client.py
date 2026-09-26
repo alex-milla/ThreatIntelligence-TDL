@@ -154,6 +154,22 @@ def send_cfscan_results(host_url: str, api_key: str, entries: list[dict]) -> boo
     return False
 
 
+def send_api_usage(host_url: str, api_key: str, payload: dict) -> bool:
+    """Report provider API consumption (Cloudflare/VirusTotal/abuse.ch) to hosting."""
+    if not payload:
+        return True
+    url = f"{host_url}/api/v1/api_usage.php"
+    headers = {
+        "X-API-Key": api_key,
+        "Content-Type": "application/json",
+    }
+    r = requests.post(url, headers=headers, json=payload, timeout=30)
+    if r.status_code == 200:
+        return True
+    print(f"[-] Failed to send API usage: HTTP {r.status_code} - {r.text}")
+    return False
+
+
 def get_tracking_due(host_url: str, api_key: str, limit: int = 200,
                      domains: list | None = None) -> list[dict]:
     """Fetch due Intelligence tracking entries from the hosting API.

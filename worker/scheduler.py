@@ -151,11 +151,18 @@ def init_local_db(db_path: str, cache_mb: int = 2048) -> sqlite3.Connection:
             value TEXT
         );
 
-        -- Cloudflare URL Scanner usage counters (period = day:YYYY-MM-DD or
-        -- month:YYYY-MM), to respect the plan quota (Free: 5,000/month).
+        -- Cloudflare usage counters. Periods: scans:/calls: + day:YYYY-MM-DD or
+        -- month:YYYY-MM, to respect the plan quota (Free: 5,000 scans/month).
         CREATE TABLE IF NOT EXISTS cf_usage (
             period TEXT PRIMARY KEY,
             count INTEGER DEFAULT 0
+        );
+
+        -- Last Cloudflare rate-limit headers seen (Ratelimit / Ratelimit-Policy /
+        -- Retry-After), reported to the Admin panel. Value is JSON.
+        CREATE TABLE IF NOT EXISTS cf_usage_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT
         );
     """)
     # Migration: drop the unused tld index on the hash cache (older versions).
@@ -408,6 +415,113 @@ def _cf_periods() -> tuple[str, str]:
     return now.strftime("day:%Y-%m-%d"), now.strftime("month:%Y-%m")
 
 
+def _cf_record_usage(db: sqlite3.Connection, usage: dict | None) -> None:
+    """Persist a batch's REST-call counter and the last rate-limit headers.
+
+    ``usage`` is the collector filled by ``cloudflare_radar`` (``calls`` plus the
+    last ``Ratelimit``/``Ratelimit-Policy``/``Retry-After`` seen). Best effort:
+    never abort the caller for a reporting failure.
+    """
+    if not usage:
+        return
+    try:
+        calls = int(usage.get("calls", 0) or 0)
+        if calls > 0:
+            day_key, month_key = _cf_periods()
+            cloudflare_radar.usage_add(db, "calls:" + day_key, calls)
+            cloudflare_radar.usage_add(db, "calls:" + month_key, calls)
+        meta = dict(usage.get("last") or {})
+        if usage.get("rate_limited"):
+            meta["rate_limited"] = "1"
+        if not meta:
+            return
+        meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+        db.execute(
+            "INSERT INTO cf_usage_meta (key, value) VALUES ('last', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (json.dumps(meta),),
+        )
+        db.commit()
+    except (sqlite3.Error, TypeError, ValueError) as e:
+        log.warning("Failed to record Cloudflare usage: %s", e)
+
+
+def cf_usage_snapshot(db: sqlite3.Connection, cfg: configparser.ConfigParser) -> dict:
+    """Summarise Cloudflare consumption for the hosting Admin panel."""
+    cf = _cf_config(cfg)
+    day_key, month_key = _cf_periods()
+    meta: dict = {}
+    try:
+        row = db.execute("SELECT value FROM cf_usage_meta WHERE key = 'last'").fetchone()
+        if row and row[0]:
+            loaded = json.loads(row[0])
+            if isinstance(loaded, dict):
+                meta = loaded
+    except (sqlite3.Error, ValueError, TypeError):
+        meta = {}
+    return {
+        "provider": "cloudflare",
+        "scans": {
+            "day": cloudflare_radar.usage_count(db, day_key),
+            "month": cloudflare_radar.usage_count(db, month_key),
+            "daily_limit": int(cf.get("daily_limit", 0) or 0),
+            "monthly_limit": int(cf.get("monthly_limit", 0) or 0),
+        },
+        "calls": {
+            "day": cloudflare_radar.usage_count(db, "calls:" + day_key),
+            "month": cloudflare_radar.usage_count(db, "calls:" + month_key),
+        },
+        "meta": meta,
+    }
+
+
+def _cf_usage_payload(db: sqlite3.Connection, cfg: configparser.ConfigParser) -> dict:
+    """Build the ``usage`` + ``meta`` payload for ``api/v1/api_usage.php``."""
+    snap = cf_usage_snapshot(db, cfg)
+    day_key, month_key = _cf_periods()
+    usage = [
+        {"provider": "cloudflare", "period": "scans:" + day_key,
+         "count": snap["scans"]["day"], "limit_value": snap["scans"]["daily_limit"]},
+        {"provider": "cloudflare", "period": "scans:" + month_key,
+         "count": snap["scans"]["month"], "limit_value": snap["scans"]["monthly_limit"]},
+        {"provider": "cloudflare", "period": "calls:" + day_key,
+         "count": snap["calls"]["day"], "limit_value": 0},
+        {"provider": "cloudflare", "period": "calls:" + month_key,
+         "count": snap["calls"]["month"], "limit_value": 0},
+    ]
+    meta = [
+        {"provider": "cloudflare", "key": str(key), "value": str(value)}
+        for key, value in (snap.get("meta") or {}).items()
+    ]
+    return {"usage": usage, "meta": meta}
+
+
+def _send_cf_usage(host_url: str, api_key: str, db: sqlite3.Connection,
+                   cfg: configparser.ConfigParser) -> None:
+    """Report the current Cloudflare consumption snapshot to the hosting."""
+    try:
+        sync_client.send_api_usage(host_url, api_key, _cf_usage_payload(db, cfg))
+    except Exception as e:  # never abort the caller
+        log.warning("Failed to report Cloudflare usage: %s", e)
+
+
+def _report_api_lookup(host_url: str, api_key: str, provider: str,
+                       count: int, limit_value: int) -> None:
+    """Report a VirusTotal/abuse.ch per-day lookup counter to the hosting."""
+    try:
+        day_key, _ = _cf_periods()
+        sync_client.send_api_usage(host_url, api_key, {
+            "usage": [{
+                "provider": provider,
+                "period": "lookups:" + day_key,
+                "count": int(count),
+                "limit_value": int(limit_value or 0),
+            }],
+        })
+    except Exception as e:  # never abort the caller
+        log.warning("Failed to report %s usage: %s", provider, e)
+
+
 def run_cfscan_batch(cfg: configparser.ConfigParser, db: sqlite3.Connection,
                      host_url: str, api_key: str, domains: list[str]) -> dict:
     """Scan ``domains`` with the Cloudflare URL Scanner (+ Radar DNS locations).
@@ -425,6 +539,7 @@ def run_cfscan_batch(cfg: configparser.ConfigParser, db: sqlite3.Connection,
     day_key, month_key = _cf_periods()
     daily_limit = cf["daily_limit"] or 0
     monthly_limit = cf["monthly_limit"] or 0
+    usage = {"calls": 0}
 
     for domain in domains:
         if daily_limit and cloudflare_radar.usage_count(db, day_key) >= daily_limit:
@@ -436,11 +551,11 @@ def run_cfscan_batch(cfg: configparser.ConfigParser, db: sqlite3.Connection,
         try:
             scan = cloudflare_radar.scan_domain(
                 domain, cf["urlscanner_token"], cf["account_id"],
-                visibility=cf["visibility"], timeout=cf["timeout"])
+                visibility=cf["visibility"], timeout=cf["timeout"], usage=usage)
             report = cloudflare_radar.fetch_result(
                 cf["urlscanner_token"], cf["account_id"], scan.get("uuid", ""),
                 timeout=cf["timeout"], poll_interval=cf["poll_interval"],
-                max_wait=cf["poll_max_wait"])
+                max_wait=cf["poll_max_wait"], usage=usage)
             entry = cloudflare_radar.classify(report, domain, scan.get("report_url", ""))
             sync_client.send_cfscan_results(host_url, api_key, [entry])
             cloudflare_radar.usage_add(db, day_key)
@@ -461,8 +576,12 @@ def run_cfscan_batch(cfg: configparser.ConfigParser, db: sqlite3.Connection,
             sync_client.send_cfscan_results(host_url, api_key, [cloudflare_radar.error_result(domain, str(e))])
             stats["errors"] += 1
             log.warning("Cloudflare scan failed for %s: %s", domain, e)
+        finally:
+            _cf_record_usage(db, usage)
+            usage["calls"] = 0
         if cf["rate_delay"] > 0:
             time.sleep(cf["rate_delay"])
+    _send_cf_usage(host_url, api_key, db, cfg)
     return stats
 
 
@@ -480,10 +599,11 @@ def run_cfdns_batch(cfg: configparser.ConfigParser, db: sqlite3.Connection,
         stats["error"] = "Cloudflare Radar not configured ([cloudflare] api_token)."
         return stats
 
+    usage = {"calls": 0}
     for domain in domains:
         try:
             locations = cloudflare_radar.dns_top_locations(
-                domain, cf["api_token"], timeout=cf["timeout"], limit=cf["dns_limit"])
+                domain, cf["api_token"], timeout=cf["timeout"], limit=cf["dns_limit"], usage=usage)
             sync_client.send_cfscan_results(host_url, api_key, [{
                 "domain": domain, "dns_only": True, "dns_countries": locations,
             }])
@@ -495,8 +615,12 @@ def run_cfdns_batch(cfg: configparser.ConfigParser, db: sqlite3.Connection,
         except Exception as e:  # never abort the caller for one domain
             stats["errors"] += 1
             log.warning("Cloudflare DNS locations failed for %s: %s", domain, e)
+        finally:
+            _cf_record_usage(db, usage)
+            usage["calls"] = 0
         if cf["dns_rate_delay"] > 0:
             time.sleep(cf["dns_rate_delay"])
+    _send_cf_usage(host_url, api_key, db, cfg)
     return stats
 
 
@@ -2407,6 +2531,7 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                         db.execute("INSERT OR REPLACE INTO vt_usage (day, count) VALUES (?, ?)",
                                    (today, used + len(entries)))
                         db.commit()
+                        _report_api_lookup(host_url, api_key, "virustotal", used + len(entries), vt_daily)
                         ok = sync_client.send_vt_results(host_url, api_key, entries)
                         result = json.dumps({
                             "requested": len(domains), "looked_up": len(entries), "sent": ok,
@@ -2477,6 +2602,7 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                         db.execute("INSERT OR REPLACE INTO abusech_usage (day, count) VALUES (?, ?)",
                                    (today, used + len(entries)))
                         db.commit()
+                        _report_api_lookup(host_url, api_key, "abusech", used + len(entries), abuse_daily)
                         ok = sync_client.send_abusech_results(host_url, api_key, entries)
                         result = json.dumps({
                             "requested": len(domains), "looked_up": len(entries), "sent": ok,

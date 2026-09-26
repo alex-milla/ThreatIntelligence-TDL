@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.16] - 2026-09-26
+
+### Added - Admin "API quotas" (Cloudflare / VirusTotal / abuse.ch consumption)
+
+- **New Admin tab "API quotas"** showing the worker's estimated consumption against the free-plan caps from `worker/config.ini`:
+  - **Cloudflare URL Scanner + Radar**: scans today/this month vs `daily_limit`/`monthly_limit` (bar turns orange at 80% and red at 100%), estimated REST calls today/month, and the **last rate-limit window** parsed from the Cloudflare response headers (`Ratelimit` → remaining `r` / reset `t`; `Ratelimit-Policy` → quota `q` / window `w`) with a warning when a `429` + `Retry-After` was seen.
+  - **VirusTotal** and **abuse.ch**: lookups today vs their `daily_limit`, with the remaining count.
+  - Counts are the worker's **own estimates** (what it actually requested), not the provider dashboard, and are labelled as such.
+- **The worker now reports usage to the hosting** after every Cloudflare batch and every VirusTotal/abuse.ch lookup, via the new `sync_client.send_api_usage()` → `api/v1/api_usage.php`. Stored in the new web tables `api_usage` (provider + period + count + limit, periods `scans:`/`calls:`/`lookups:` × `day:`/`month:`) and `api_usage_meta` (last rate-limit headers).
+- **Real REST-call counting for Cloudflare**: `cloudflare_radar.py` accepts an optional `usage` collector; `scan_domain` (submit), `fetch_result` (each polling GET) and `dns_top_locations` all count as calls and merge the last `Ratelimit`/`Ratelimit-Policy`/`Retry-After` seen. This makes visible that a single async scan costs several calls against the 1,200 / 5 min token limit, not just one.
+- **Tests**: new `test_cloudflare_usage_headers` (header parsing, call counter, 429 back-off, snapshot/payload) and the DNS batch test now asserts the reported call count.
+
+### Notes
+
+- Visualisation only (phase 1): the caps are read from the worker config; editing them from Admin is not included yet.
+- The rate-limit headers exist **only on REST responses** (not GraphQL/Edge); the panel shows the last one observed.
+- The web DB is migrated automatically (`api_usage` / `api_usage_meta` created on connect); an old worker that does not report usage simply leaves the tab empty.
+
 ## [v1.18.15] - 2026-09-25
 
 ### Added - Delete the cached "ficha" (re-run the checks) + parse validation
