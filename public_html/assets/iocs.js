@@ -1,4 +1,12 @@
+// Copy an IOC list (TXT) to the clipboard. Uses the themed App.toast.
 (function () {
+    'use strict';
+
+    function toast(message, type) {
+        if (window.App && App.toast) { App.toast(message, type); }
+        else { window.alert(message); }
+    }
+
     document.addEventListener('click', function (e) {
         var el = e.target.closest ? e.target.closest('[data-ioc-copy]') : null;
         if (!el) return;
@@ -10,7 +18,7 @@
                 var n = text.trim() ? text.trim().split('\n').filter(Boolean).length : 0;
                 if (navigator.clipboard && navigator.clipboard.writeText) {
                     navigator.clipboard.writeText(text).then(function () {
-                        alert('Copied ' + n + ' domain(s).');
+                        toast('Copied ' + n + ' domain(s).', 'success');
                     });
                 } else {
                     var ta = document.createElement('textarea');
@@ -19,9 +27,9 @@
                     ta.select();
                     try { document.execCommand('copy'); } catch (err) {}
                     document.body.removeChild(ta);
-                    alert('Copied ' + n + ' domain(s).');
+                    toast('Copied ' + n + ' domain(s).', 'success');
                 }
             })
-            .catch(function () { alert('Copy failed.'); });
+            .catch(function () { toast('Copy failed.', 'error'); });
     });
 })();

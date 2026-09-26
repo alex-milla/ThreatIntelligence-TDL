@@ -154,16 +154,31 @@ var App = {
         });
     },
 
-    // Elements with data-confirm ask for confirmation before acting
+    // Elements with [data-confirm] ask for confirmation (themed modal) before
+    // acting. Delegated on document so it also covers content injected later.
     bindConfirms: function () {
-        document.querySelectorAll('[data-confirm]').forEach(function (el) {
-            el.addEventListener('click', function (e) {
-                if (!window.confirm(this.getAttribute('data-confirm'))) {
-                    e.preventDefault();
-                    e.stopImmediatePropagation();
+        document.addEventListener('click', function (e) {
+            var el = e.target.closest ? e.target.closest('[data-confirm]') : null;
+            if (!el || el._tdlConfirmed) return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            App.confirm({
+                message: el.getAttribute('data-confirm'),
+                title: el.getAttribute('data-confirm-title') || 'Please confirm',
+                confirmText: el.getAttribute('data-confirm-ok') || 'Aceptar',
+                danger: el.hasAttribute('data-confirm-danger')
+            }).then(function (ok) {
+                if (!ok) return;
+                el._tdlConfirmed = true;
+                var form = el.form || (el.tagName === 'FORM' ? el : null);
+                if (form && el.type !== 'submit' && typeof form.requestSubmit === 'function') {
+                    form.requestSubmit(el.tagName === 'BUTTON' ? el : undefined);
+                } else {
+                    el.click();
                 }
+                setTimeout(function () { el._tdlConfirmed = false; }, 0);
             });
-        });
+        }, true);
     },
 
     // Mobile navigation drawer
@@ -245,18 +260,239 @@ var App = {
         }
     },
 
-    // Toast notification helper
-    toast: function (message, type) {
-        if (!window.M) return;
-        var classes = 'blue-grey darken-1';
-        switch (type) {
-            case 'success': classes = 'green darken-1'; break;
-            case 'error': classes = 'red darken-1'; break;
-            case 'warning': classes = 'amber darken-2'; break;
+    // CSRF token from the page <meta> tag (also exposed as window.csrfToken()).
+    csrf: function () {
+        var m = document.querySelector('meta[name="csrf-token"]');
+        return m ? m.content : '';
+    },
+
+    // Themed in-app notification (replaces window.alert). opts:
+    //   {title, icon, actionLabel, onAction, timeout}
+    // A toast with an action stays longer so the button can be pressed.
+    toast: function (message, type, opts) {
+        opts = opts || {};
+        var stack = document.getElementById('tdl-toast-stack');
+        if (!stack) {
+            stack = document.createElement('div');
+            stack.id = 'tdl-toast-stack';
+            stack.className = 'tdl-toast-stack';
+            document.body.appendChild(stack);
         }
-        M.toast({ html: message, classes: classes, displayLength: 4000 });
+        var kind = (type === 'success' || type === 'error' || type === 'warning') ? type : 'info';
+        var icons = { success: 'check_circle', error: 'error', warning: 'warning', info: 'info' };
+
+        var el = document.createElement('div');
+        el.className = 'tdl-toast tdl-toast-' + kind;
+        el.setAttribute('role', 'status');
+
+        var icon = document.createElement('i');
+        icon.className = 'material-icons tdl-toast-icon';
+        icon.textContent = opts.icon || icons[kind];
+        el.appendChild(icon);
+
+        var body = document.createElement('div');
+        body.className = 'tdl-toast-body';
+        if (opts.title) {
+            var title = document.createElement('span');
+            title.className = 'tdl-toast-title';
+            title.textContent = opts.title;
+            body.appendChild(title);
+        }
+        var text = document.createElement('span');
+        text.textContent = message;
+        body.appendChild(text);
+        el.appendChild(body);
+
+        var removed = false;
+        var timer = null;
+        function dismiss() {
+            if (removed) return;
+            removed = true;
+            if (timer) clearTimeout(timer);
+            el.classList.remove('is-visible');
+            el.classList.add('is-leaving');
+            setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 220);
+        }
+
+        if (opts.actionLabel && typeof opts.onAction === 'function') {
+            var action = document.createElement('button');
+            action.type = 'button';
+            action.className = 'tdl-toast-action';
+            action.textContent = opts.actionLabel;
+            action.addEventListener('click', function () {
+                dismiss();
+                opts.onAction();
+            });
+            el.appendChild(action);
+        }
+
+        var close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'tdl-toast-close';
+        close.setAttribute('aria-label', 'Close');
+        close.innerHTML = '<i class="material-icons">close</i>';
+        close.addEventListener('click', dismiss);
+        el.appendChild(close);
+
+        stack.appendChild(el);
+        requestAnimationFrame(function () { el.classList.add('is-visible'); });
+
+        var timeout = typeof opts.timeout === 'number'
+            ? opts.timeout
+            : (opts.actionLabel ? 10000 : 5000);
+        if (timeout > 0) timer = setTimeout(dismiss, timeout);
+        return dismiss;
+    },
+
+    // Themed confirmation dialog (replaces window.confirm). Returns a Promise
+    // resolving true (Aceptar) or false (Cancelar / Esc / click outside).
+    confirm: function (opts) {
+        opts = opts || {};
+        return new Promise(function (resolve) {
+            var overlay = document.createElement('div');
+            overlay.className = 'tdl-modal-overlay';
+
+            var modal = document.createElement('div');
+            modal.className = 'tdl-modal';
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-modal', 'true');
+
+            var head = document.createElement('div');
+            head.className = 'tdl-modal-head';
+            var hIcon = document.createElement('i');
+            hIcon.className = 'material-icons';
+            hIcon.textContent = opts.icon || (opts.danger ? 'warning' : 'help_outline');
+            var hText = document.createElement('span');
+            hText.textContent = opts.title || 'Please confirm';
+            head.appendChild(hIcon);
+            head.appendChild(hText);
+            modal.appendChild(head);
+
+            var body = document.createElement('div');
+            body.className = 'tdl-modal-body';
+            var p = document.createElement('p');
+            p.textContent = opts.message || '';
+            body.appendChild(p);
+            modal.appendChild(body);
+
+            var actions = document.createElement('div');
+            actions.className = 'tdl-modal-actions';
+            var cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'btn btn-outline waves-effect';
+            cancelBtn.textContent = opts.cancelText || 'Cancelar';
+            var okBtn = document.createElement('button');
+            okBtn.type = 'button';
+            okBtn.className = 'btn waves-effect ' + (opts.danger ? 'btn-danger' : '');
+            okBtn.textContent = opts.confirmText || 'Aceptar';
+            actions.appendChild(cancelBtn);
+            actions.appendChild(okBtn);
+            modal.appendChild(actions);
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+            requestAnimationFrame(function () { overlay.classList.add('is-visible'); });
+
+            function onKey(e) {
+                if (e.key === 'Escape') { close(false); }
+                else if (e.key === 'Enter') { e.preventDefault(); close(true); }
+            }
+            function close(result) {
+                document.removeEventListener('keydown', onKey);
+                overlay.classList.remove('is-visible');
+                setTimeout(function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 200);
+                resolve(result);
+            }
+            cancelBtn.addEventListener('click', function () { close(false); });
+            okBtn.addEventListener('click', function () { close(true); });
+            overlay.addEventListener('click', function (e) { if (e.target === overlay) close(false); });
+            document.addEventListener('keydown', onKey);
+            okBtn.focus();
+        });
+    },
+
+    // Themed text prompt (replaces window.prompt). Resolves the string, or null
+    // if cancelled. opts: {title, message, value, placeholder, confirmText}.
+    prompt: function (opts) {
+        opts = opts || {};
+        return new Promise(function (resolve) {
+            var overlay = document.createElement('div');
+            overlay.className = 'tdl-modal-overlay';
+
+            var modal = document.createElement('div');
+            modal.className = 'tdl-modal';
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-modal', 'true');
+
+            var head = document.createElement('div');
+            head.className = 'tdl-modal-head';
+            var hIcon = document.createElement('i');
+            hIcon.className = 'material-icons';
+            hIcon.textContent = opts.icon || 'edit';
+            var hText = document.createElement('span');
+            hText.textContent = opts.title || 'Input';
+            head.appendChild(hIcon);
+            head.appendChild(hText);
+            modal.appendChild(head);
+
+            var body = document.createElement('div');
+            body.className = 'tdl-modal-body';
+            if (opts.message) {
+                var p = document.createElement('p');
+                p.textContent = opts.message;
+                body.appendChild(p);
+            }
+            var field = document.createElement('div');
+            field.className = 'tdl-modal-input';
+            var input = document.createElement('input');
+            input.type = opts.type || 'text';
+            input.value = opts.value != null ? opts.value : '';
+            if (opts.placeholder) input.placeholder = opts.placeholder;
+            field.appendChild(input);
+            body.appendChild(field);
+            modal.appendChild(body);
+
+            var actions = document.createElement('div');
+            actions.className = 'tdl-modal-actions';
+            var cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'btn btn-outline waves-effect';
+            cancelBtn.textContent = opts.cancelText || 'Cancelar';
+            var okBtn = document.createElement('button');
+            okBtn.type = 'button';
+            okBtn.className = 'btn waves-effect';
+            okBtn.textContent = opts.confirmText || 'Aceptar';
+            actions.appendChild(cancelBtn);
+            actions.appendChild(okBtn);
+            modal.appendChild(actions);
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+            requestAnimationFrame(function () { overlay.classList.add('is-visible'); });
+
+            function onKey(e) {
+                if (e.key === 'Escape') { close(null); }
+                else if (e.key === 'Enter') { e.preventDefault(); close(input.value); }
+            }
+            function close(result) {
+                document.removeEventListener('keydown', onKey);
+                overlay.classList.remove('is-visible');
+                setTimeout(function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 200);
+                resolve(result);
+            }
+            cancelBtn.addEventListener('click', function () { close(null); });
+            okBtn.addEventListener('click', function () { close(input.value); });
+            overlay.addEventListener('click', function (e) { if (e.target === overlay) close(null); });
+            document.addEventListener('keydown', onKey);
+            input.focus();
+            if (input.select) input.select();
+        });
     }
 };
+
+// Expose the CSRF helper globally so the asset scripts share one implementation
+// (some of them call a bare csrfToken()).
+window.csrfToken = window.csrfToken || function () { return App.csrf(); };
 
 document.addEventListener('DOMContentLoaded', function () {
     App.init();

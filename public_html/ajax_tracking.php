@@ -55,7 +55,7 @@ if ($action === 'check') {
         $payload = '';
     }
     $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")->execute(['tracking_check', $payload]);
-    echo json_encode(['success' => true, 'queued' => 1]);
+    echo json_encode(['success' => true, 'queued' => 1, 'command_id' => (int)$db->lastInsertId()]);
     exit;
 }
 

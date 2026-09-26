@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.17] - 2026-09-26
+
+### Added - Themed in-app notifications/dialogs + cancel a queued command
+
+- **The native browser `alert()` / `confirm()` / `prompt()` no longer break the UI.** A custom, theme-aware component set replaces them so messages match the app in light and dark mode:
+  - `App.toast(message, type, opts)` — stacked notifications (top-right) with success/warning/error/info variants, a close button and an optional action button, in `css/app.css` (`.tdl-toast`) and `js/app.js`.
+  - `App.confirm(opts) → Promise<bool>` — themed modal with **Aceptar / Cancelar** (`.tdl-modal`); `App.prompt(opts)` for text/number input; `App.csrf()` helper (also exposed as `window.csrfToken()`, fixing the bare `csrfToken()` call in `tracking.js`).
+  - Every bulk/domain-detail/tracking action now **confirms before queueing** (so a mistaken click can be aborted) instead of firing immediately.
+- **Cancel a queued command ("undo").** After a lookup is queued the success toast offers **Cancelar**, which calls the new `ajax_command_cancel.php` (auth + CSRF). It cancels only `pending` commands of the user-triggered enrichment types (`whois_lookup`, `vt_lookup`, `abusech_lookup`, `cf_scan_lookup`, `cf_dns_lookup`, `tracking_check`); a command the worker already picked up (`running`) or an admin/system command (`run_worker`, `update_worker`) is rejected. The worker only executes `pending` commands, so cancelling reliably prevents the run.
+- **Correct queue messages.** The toasts now use the server's own `queued`/`message` (e.g. "Already queued", "All requested domains are already cached") and warn when only part of the selection fit the per-provider batch cap, instead of the previous fixed "Queued 0 domain(s)…" text.
+- Files touched: `css/app.css`, `js/app.js`, `assets/bulk.js`, `assets/domain-detail.js`, `assets/tracking.js`, `assets/iocs.js`, `keyword_matches.php`, `ajax_tracking.php` (returns `command_id`) and the new `ajax_command_cancel.php`.
+
+### Notes
+
+- Scope: the action buttons on the list/detail pages. The inline `confirm(...)` handlers of the admin/system pages are unchanged.
+- Cancellation is effective only while the command is still `pending` (the worker polls every ~20 s), and any authenticated user can cancel a pending enrichment command.
+
 ## [v1.18.16] - 2026-09-26
 
 ### Added - Admin "API quotas" (Cloudflare / VirusTotal / abuse.ch consumption)

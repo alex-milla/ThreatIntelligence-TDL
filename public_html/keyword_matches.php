@@ -549,9 +549,16 @@ document.addEventListener('click', function (e) {
         .then(function (r) { return r.json(); })
         .then(function (data) {
             if (data.success) { location.reload(); }
-            else { btn.disabled = false; alert(data.error || 'Failed to update domain'); }
+            else {
+                btn.disabled = false;
+                var msg = data.error || 'Failed to update domain';
+                if (window.App && App.toast) { App.toast(msg, 'error'); } else { alert(msg); }
+            }
         })
-        .catch(function () { btn.disabled = false; alert('Failed to update domain'); });
+        .catch(function () {
+            btn.disabled = false;
+            if (window.App && App.toast) { App.toast('Failed to update domain', 'error'); } else { alert('Failed to update domain'); }
+        });
 });
 </script>
 
