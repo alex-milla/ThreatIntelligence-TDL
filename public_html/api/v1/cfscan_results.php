@@ -125,6 +125,13 @@ try {
             $dnsCountries = $prevRow['dns_countries'] ?? null;
         }
 
+        // Keep the scanner report link even when the scan failed: it is the
+        // scan's own URL (not a data field), so the UI can open it to see why.
+        $reportUrl = trim((string)($entry['report_url'] ?? ''));
+        if ($reportUrl === '' || $malformed($reportUrl)) {
+            $reportUrl = (string)($prevRow['report_url'] ?? '');
+        }
+
         $stmt->execute([
             $domain,
             $verdict,
@@ -139,7 +146,7 @@ try {
             substr($pick('cert_issuer', $entry['cert_issuer'] ?? ''), 0, 255),
             substr($pick('dom_struct_hash', $entry['dom_struct_hash'] ?? ''), 0, 80),
             substr($pick('favicon_hash', $entry['favicon_hash'] ?? ''), 0, 80),
-            substr($pick('report_url', $entry['report_url'] ?? ''), 0, 500),
+            substr($reportUrl, 0, 500),
             $dnsCountries,
             substr((string)($entry['last_analysis_date'] ?? ''), 0, 40),
         ]);

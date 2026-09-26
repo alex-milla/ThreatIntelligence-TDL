@@ -407,6 +407,10 @@ def _cf_config(cfg: configparser.ConfigParser) -> dict:
         "cache_days": _cf_int(cfg, "cache_days", 7),
         "auto_scan": _cf_bool(cfg, "auto_scan", False),
         "auto_scan_max": _cf_int(cfg, "auto_scan_max", 50),
+        # A failed scan (host down / TLS / bot-block) is retried once, and then
+        # once over plain HTTP in case the host has no working HTTPS endpoint.
+        "retry_failed": _cf_bool(cfg, "retry_failed", True),
+        "http_fallback": _cf_bool(cfg, "http_fallback", True),
     }
 
 
@@ -522,6 +526,18 @@ def _report_api_lookup(host_url: str, api_key: str, provider: str,
         log.warning("Failed to report %s usage: %s", provider, e)
 
 
+def _cf_scan_once(cf: dict, domain: str, scheme: str, usage: dict) -> dict:
+    """One Cloudflare URL Scanner attempt (submit + poll + classify)."""
+    scan = cloudflare_radar.scan_domain(
+        domain, cf["urlscanner_token"], cf["account_id"],
+        visibility=cf["visibility"], timeout=cf["timeout"], usage=usage, scheme=scheme)
+    report = cloudflare_radar.fetch_result(
+        cf["urlscanner_token"], cf["account_id"], scan.get("uuid", ""),
+        timeout=cf["timeout"], poll_interval=cf["poll_interval"],
+        max_wait=cf["poll_max_wait"], usage=usage)
+    return cloudflare_radar.classify(report, domain, scan.get("report_url", ""))
+
+
 def run_cfscan_batch(cfg: configparser.ConfigParser, db: sqlite3.Connection,
                      host_url: str, api_key: str, domains: list[str]) -> dict:
     """Scan ``domains`` with the Cloudflare URL Scanner (+ Radar DNS locations).
@@ -549,14 +565,18 @@ def run_cfscan_batch(cfg: configparser.ConfigParser, db: sqlite3.Connection,
             stats["error"] = f"Cloudflare monthly scan limit reached ({monthly_limit})."
             break
         try:
-            scan = cloudflare_radar.scan_domain(
-                domain, cf["urlscanner_token"], cf["account_id"],
-                visibility=cf["visibility"], timeout=cf["timeout"], usage=usage)
-            report = cloudflare_radar.fetch_result(
-                cf["urlscanner_token"], cf["account_id"], scan.get("uuid", ""),
-                timeout=cf["timeout"], poll_interval=cf["poll_interval"],
-                max_wait=cf["poll_max_wait"], usage=usage)
-            entry = cloudflare_radar.classify(report, domain, scan.get("report_url", ""))
+            entry = _cf_scan_once(cf, domain, "https", usage)
+            # A failed scan (host down / TLS / bot-block) is retried once, and
+            # then once over plain HTTP in case the host has no working HTTPS.
+            if entry.get("status") == "error" and cf.get("retry_failed"):
+                log.info("Cloudflare scan failed for %s (%s); retrying",
+                         domain, entry.get("error") or "scan failed")
+                entry = _cf_scan_once(cf, domain, "https", usage)
+            if entry.get("status") == "error" and cf.get("http_fallback"):
+                http_entry = _cf_scan_once(cf, domain, "http", usage)
+                if http_entry.get("status") == "ok":
+                    log.info("Cloudflare scan recovered over HTTP for %s", domain)
+                    entry = http_entry
             sync_client.send_cfscan_results(host_url, api_key, [entry])
             cloudflare_radar.usage_add(db, day_key)
             cloudflare_radar.usage_add(db, month_key)

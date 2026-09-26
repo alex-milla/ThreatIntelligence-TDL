@@ -183,6 +183,11 @@ function renderDomainDetail(array $present, array $keywords, array $rules): stri
     $cfLabels = ['malicious' => 'Malicious', 'suspicious' => 'Suspicious', 'clean' => 'Clean',
                  'not_checked' => 'Not checked', 'unproven' => 'Error'];
     $cfLabel = $cfLabels[$cfState] ?? 'Not checked';
+    // A Cloudflare scan can fail even for a malicious domain: the URL Scanner
+    // loads the live page, while VirusTotal also uses passive data and feeds.
+    $cfTip = ($cfState === 'unproven')
+        ? 'The Cloudflare URL Scanner loads the live page, so it can fail when the host is down, has no valid HTTPS or blocks scanners - even when VirusTotal flags the domain from passive data and feeds.'
+        : '';
     $cfDns = (array)($present['_cf_dns'] ?? []);
     $cfDetail = trim(implode(' · ', array_filter([
         (string)($present['cf_categories'] ?? ''),
@@ -237,7 +242,7 @@ function renderDomainDetail(array $present, array $keywords, array $rules): stri
         <div class="dd-block">
             <h4>Cloudflare Radar</h4>
             <dl class="dd-list">
-                <div><dt>Verdict</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($cfState) ?>"><?= htmlspecialchars($repSymbol[$cfState] ?? '') ?> <?= htmlspecialchars($cfLabel) ?></span><?php if ($cfState === 'unproven' && !empty($present['cf_error'])): ?> <span class="muted"><?= htmlspecialchars((string)$present['cf_error']) ?></span><?php elseif ($cfDetail !== ''): ?> <span class="muted"><?= htmlspecialchars($cfDetail) ?></span><?php endif; ?></dd></div>
+                <div><dt>Verdict</dt><dd><span class="rep-pill rep-<?= htmlspecialchars($cfState) ?>"<?= $cfTip !== '' ? ' title="' . htmlspecialchars($cfTip) . '"' : '' ?>><?= htmlspecialchars($repSymbol[$cfState] ?? '') ?> <?= htmlspecialchars($cfLabel) ?></span><?php if ($cfState === 'unproven' && !empty($present['cf_error'])): ?> <span class="muted"><?= htmlspecialchars((string)$present['cf_error']) ?></span><?php elseif ($cfDetail !== ''): ?> <span class="muted"><?= htmlspecialchars($cfDetail) ?></span><?php endif; ?></dd></div>
                 <div><dt>Radar rank</dt><dd><?= !empty($present['cf_radar_rank']) ? htmlspecialchars((string)$present['cf_radar_rank']) : '<span class="muted">&mdash;</span>' ?></dd></div>
                 <div><dt>Technologies</dt><dd><?= !empty($present['cf_technologies']) ? htmlspecialchars((string)$present['cf_technologies']) : '<span class="muted">&mdash;</span>' ?></dd></div>
                 <div><dt>Hosting</dt><dd><?php

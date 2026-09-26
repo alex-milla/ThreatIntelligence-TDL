@@ -1123,6 +1123,109 @@ def test_cloudflare_radar_errors() -> None:
     print("[PASS] test_cloudflare_radar_errors")
 
 
+def test_cloudflare_scan_error_detail() -> None:
+    import cloudflare_radar as cf
+    import scheduler
+
+    # An HTTP-level failure mentions the status code.
+    http_fail = cf.classify({"task": {"success": False, "status": "Failed"},
+                             "page": {"status": "403"}}, "x.example")
+    assert http_fail["status"] == "error", http_fail
+    assert "HTTP 403" in http_fail["error"], http_fail
+
+    # No page at all -> the host could not be reached (DNS/TCP/TLS/timeout).
+    unreachable = cf.classify({"task": {"success": False}}, "x.example")
+    assert unreachable["status"] == "error", unreachable
+    assert "not loaded" in unreachable["error"], unreachable
+
+    # A page without a status -> generic message.
+    generic = cf.classify({"task": {"success": False}, "page": {"asn": "AS1"}}, "x.example")
+    assert generic["error"] == "scan failed", generic
+
+    # A successful scan keeps the error empty.
+    ok = cf.classify({"task": {"success": True}, "verdicts": {"overall": {}},
+                      "meta": {"processors": {"domainCategories": ["Technology"]}}}, "ok.example")
+    assert ok["status"] == "ok" and ok["error"] == "", ok
+
+    # scan_domain honours the http scheme (used by the HTTP fallback).
+    class FakeResp:
+        status_code = 200
+        headers = {}
+
+        def json(self):
+            return {"result": {"uuid": "u1", "result": "https://radar/report",
+                               "api": "", "url": "http://x.example"}}
+
+    orig_post = cf.requests.post
+    seen = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        seen["url"] = json.get("url")
+        return FakeResp()
+
+    cf.requests.post = fake_post
+    try:
+        out = cf.scan_domain("x.example", "tok", "acct", scheme="http")
+    finally:
+        cf.requests.post = orig_post
+    assert seen["url"] == "http://x.example", seen
+    assert out["url"] == "http://x.example", out
+
+    # _cf_config reads the retry/fallback flags (with inline comments tolerated).
+    cfg = configparser.ConfigParser()
+    cfg.add_section("cloudflare")
+    cfg.set("cloudflare", "urlscanner_token", "tok")
+    cfg.set("cloudflare", "account_id", "acct")
+    cfg.set("cloudflare", "retry_failed", "no")
+    cfg.set("cloudflare", "http_fallback", "true ; note")
+    c = scheduler._cf_config(cfg)
+    assert c["retry_failed"] is False, c
+    assert c["http_fallback"] is True, c
+    print("[PASS] test_cloudflare_scan_error_detail")
+
+
+def test_cloudflare_scan_retry_fallback() -> None:
+    import scheduler
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
+        cfg = configparser.ConfigParser()
+        cfg.add_section("cloudflare")
+        cfg.set("cloudflare", "urlscanner_token", "tok")
+        cfg.set("cloudflare", "account_id", "acct")
+        cfg.set("cloudflare", "rate_delay_seconds", "0")
+        cfg.set("cloudflare", "retry_failed", "true")
+        cfg.set("cloudflare", "http_fallback", "true")
+
+        calls = []
+
+        def fake_once(cf, domain, scheme, usage):
+            calls.append(scheme)
+            if scheme == "http":
+                return {"domain": domain, "status": "ok", "verdict": "clean", "error": ""}
+            return {"domain": domain, "status": "error", "verdict": "",
+                    "error": "scan failed (HTTP 403)"}
+
+        orig_once = scheduler._cf_scan_once
+        orig_send = scheduler.sync_client.send_cfscan_results
+        orig_usage = scheduler.sync_client.send_api_usage
+        scheduler._cf_scan_once = fake_once
+        scheduler.sync_client.send_cfscan_results = lambda h, k, e: True
+        scheduler.sync_client.send_api_usage = lambda h, k, p: True
+        try:
+            stats = scheduler.run_cfscan_batch(cfg, db, "http://h", "k", ["x.example"])
+        finally:
+            scheduler._cf_scan_once = orig_once
+            scheduler.sync_client.send_cfscan_results = orig_send
+            scheduler.sync_client.send_api_usage = orig_usage
+
+        # https fails, https retry fails, http fallback recovers.
+        assert calls == ["https", "https", "http"], calls
+        assert stats["scanned"] == 1, stats
+        db.close()
+    print("[PASS] test_cloudflare_scan_retry_fallback")
+
+
 def test_cloudflare_dns_batch() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db = scheduler.init_local_db(os.path.join(tmpdir, "worker.db"))
@@ -1281,6 +1384,8 @@ if __name__ == "__main__":
     test_glob_search_cached_domains()
     test_cloudflare_radar_classify()
     test_cloudflare_radar_errors()
+    test_cloudflare_scan_error_detail()
+    test_cloudflare_scan_retry_fallback()
     test_cloudflare_dns_batch()
     test_cloudflare_usage_headers()
     print("\nAll tests passed.")

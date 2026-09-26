@@ -201,6 +201,11 @@ dns_rate_delay_seconds = 1
 ; Scan newly matched domains automatically after each TLD sync (best effort).
 auto_scan = false
 auto_scan_max = 50
+; When a scan fails (host down / TLS / bot-block), retry it once (same URL) and
+; then once over plain HTTP in case the host has no working HTTPS endpoint.
+; Each attempt spends URL Scanner quota, so disable to save it.
+retry_failed = true
+http_fallback = true
 
 [openintel]
 ; Weekly ccTLD apex-domain lists from OpenINTEL (see README).

@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.19] - 2026-09-26
+
+### Added/Changed - Cloudflare scan failures: reason, report link, retry and HTTP fallback
+
+A Cloudflare URL Scanner failure is expected even for a domain VirusTotal flags as malicious: the scanner loads the **live page** (DNS/TCP/TLS/HTTP), while VirusTotal also uses passive data and feeds. A host that is down, parked, only serves HTTP or blocks scanners fails the scan regardless of its reputation. The worker now handles this better without breaking the report layout:
+
+- **Useful failure reason** (`worker/cloudflare_radar.py`): `classify()` builds the error text from the report's `page.status` and whether a page was loaded: `scan failed (HTTP 403)` or `scan failed (page not loaded: DNS/TCP/TLS/timeout)` instead of the generic `scan failed`.
+- **The scanner report link is kept on failure** (`api/v1/cfscan_results.php`): `report_url` is no longer blanked when the scan errors, so the domain detail shows **Open in URL Scanner** even for a **CF ERROR** and you can inspect why.
+- **Automatic retry + HTTP fallback** (`worker/scheduler.py`, new `[cloudflare]` options):
+  - `retry_failed = true` — a failed scan is retried once with the same URL.
+  - `http_fallback = true` — if it still fails, the scan is tried once over plain `http://` (hosts without a working HTTPS endpoint often recover). `scan_domain()` gained a `scheme` parameter.
+  - Both are configurable (each attempt spends URL Scanner quota; disable to save it).
+- **UI note**: the Cloudflare **Error** pill in the domain detail now has a tooltip explaining why a scan can fail while VirusTotal flags the domain. It is a `title` attribute, so the layout and the printed report are unchanged.
+- **Tests**: `test_cloudflare_scan_error_detail` (error detail + `scheme`) and `test_cloudflare_scan_retry_fallback` (https fail → https retry fail → http recovers).
+
+### Notes
+
+- The retry/fallback attempts add to the estimated **REST calls** shown in Admin → API quotas; the per-domain scan counters are unchanged.
+- Existing **CF ERROR** rows can be re-scanned from the bulk button (v1.18.18) or the domain detail; the error text only improves for new scans.
+
 ## [v1.18.18] - 2026-09-26
 
 ### Fixed - Cloudflare "Check Cloudflare" could not re-scan CF ERROR / not-yet-scanned domains

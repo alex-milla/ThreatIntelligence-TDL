@@ -108,6 +108,22 @@ def _note_call(usage, response) -> None:
         usage["rate_limited"] = True
 
 
+def _scan_error_detail(report: dict) -> str:
+    """Human-readable reason for a failed URL Scanner task.
+
+    Cloudflare's report has no explicit error string; the useful hints are the
+    page HTTP status and whether a page was loaded at all (no page usually means
+    DNS/TCP/TLS/timeout, i.e. the host could not be reached from Cloudflare).
+    """
+    page = report.get("page") or {}
+    status_code = str(page.get("status") or "").strip()
+    if status_code:
+        return f"scan failed (HTTP {status_code})"
+    if not page:
+        return "scan failed (page not loaded: DNS/TCP/TLS/timeout)"
+    return "scan failed"
+
+
 def _processor_items(value) -> list:
     """Return the item list of a Cloudflare processor (``{"data": [...]}``).
 
@@ -177,18 +193,22 @@ def _payload(response) -> dict:
 
 
 def scan_domain(domain: str, token: str, account_id: str,
-                visibility: str = "public", timeout: int = 30, usage: dict | None = None) -> dict:
+                visibility: str = "public", timeout: int = 30, usage: dict | None = None,
+                scheme: str = "https") -> dict:
     """Submit a URL scan. Returns {uuid, report_url, api_url, url}.
 
-    Raises AuthError when the token/account is missing or rejected, QuotaError on
-    any other failure. When ``usage`` is given it is updated in place with the
-    call count and the last rate-limit headers seen.
+    ``scheme`` is normally ``https``; ``http`` is used by the fallback for hosts
+    without a working TLS endpoint. Raises AuthError when the token/account is
+    missing or rejected, QuotaError on any other failure. When ``usage`` is given
+    it is updated in place with the call count and the last rate-limit headers.
     """
     if not token or not account_id:
         raise AuthError("Cloudflare URL Scanner not configured (urlscanner_token/account_id)")
     url = URLSCANNER_BASE.format(account_id=account_id) + "/scan"
     vis = "unlisted" if str(visibility or "").strip().lower() == "unlisted" else "public"
-    body = {"url": f"https://{domain}", "visibility": vis.capitalize()}
+    proto = "http" if str(scheme or "").strip().lower() == "http" else "https"
+    target = f"{proto}://{domain}"
+    body = {"url": target, "visibility": vis.capitalize()}
     r = requests.post(url, headers={"Authorization": f"Bearer {token}"}, json=body, timeout=timeout)
     _note_call(usage, r)
     if r.status_code != 200:
@@ -198,7 +218,7 @@ def scan_domain(domain: str, token: str, account_id: str,
         "uuid": payload.get("uuid") or "",
         "report_url": payload.get("result") or "",
         "api_url": payload.get("api") or "",
-        "url": payload.get("url") or f"https://{domain}",
+        "url": payload.get("url") or target,
     }
 
 
@@ -291,9 +311,9 @@ def classify(report: dict, domain: str, report_url: str = "") -> dict:
     bad_category = any(c.strip().lower() in _BAD_CATEGORIES for c in categories)
 
     if failed:
-        status, verdict = "error", ""
+        status, verdict, error_text = "error", "", _scan_error_detail(report)
     else:
-        status = "ok"
+        status, error_text = "ok", ""
         if malicious:
             verdict = "malicious"
         elif phishing or bad_category:
@@ -304,7 +324,7 @@ def classify(report: dict, domain: str, report_url: str = "") -> dict:
     return {
         "domain": domain,
         "status": status,
-        "error": ("scan failed" if failed else ""),
+        "error": error_text,
         "verdict": verdict,
         "categories": ", ".join(categories),
         "phishing": ", ".join(phishing),
