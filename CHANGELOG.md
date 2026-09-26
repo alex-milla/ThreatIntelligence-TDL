@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.18] - 2026-09-26
+
+### Fixed - Cloudflare "Check Cloudflare" could not re-scan CF ERROR / not-yet-scanned domains
+
+- **Only a successful scan is treated as cached.** `ajax_cfscan_request.php` counted *any* `domain_cfscan` row as cached, so a domain showing **CF ERROR** (`status='error'`) or a domain with only a **DNS** row (no scan result, `status` empty) was skipped and no command was queued ("no salen en los comandos" / the old "Queued 0 domain(s)"). The scan-mode cached check is now `status = 'ok'`:
+  - **CF ERROR** domains can be re-scanned from the bulk button.
+  - Domains without a real scan result (DNS-only or empty) are queued, and still show as "—" / Not checked.
+  - Domains with a good scan are skipped, as before.
+- **New "Force re-scan" checkbox** next to **Check Cloudflare** on the Notifications and per-keyword toolbars. When ticked, `fetchVisibleCfscan()` sends `force:true`, so domains with a good cached scan are re-queued too (uses plan quota). The confirm dialog says "Force re-scan" in that case.
+- **Clearer feedback when nothing is queued**: if `queued = 0` the toast is now a **warning** and uses the server's own message (e.g. "All requested domains are already cached", "Already queued; waiting for the worker"), so it is obvious why no command was created.
+
+### Notes
+
+- The per-domain **Scan with Cloudflare** button already sent `force:true`, so it was unaffected; this brings the bulk button in line while defaulting to not wasting quota.
+
 ## [v1.18.17] - 2026-09-26
 
 ### Added - Themed in-app notifications/dialogs + cancel a queued command

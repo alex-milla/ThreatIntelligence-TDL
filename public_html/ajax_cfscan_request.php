@@ -83,15 +83,17 @@ foreach ($pendStmt->fetchAll() as $c) {
     }
 }
 
-// Skip domains already cached unless a refresh was requested. For a scan any
-// row counts; for DNS only rows that already carry a distribution.
+// Skip domains already cached unless a refresh was requested. For a scan only a
+// *successful* scan counts as cached: a CF ERROR row (status='error') or a
+// DNS-only row (no scan result, status empty) must be re-scannable. For DNS
+// only rows that already carry a distribution count.
 $cached = [];
 if (!$force) {
     $placeholders = implode(',', array_fill(0, count($clean), '?'));
     if ($mode === 'dns') {
         $stmt = $db->prepare("SELECT domain FROM domain_cfscan WHERE dns_countries IS NOT NULL AND domain IN ($placeholders)");
     } else {
-        $stmt = $db->prepare("SELECT domain FROM domain_cfscan WHERE domain IN ($placeholders)");
+        $stmt = $db->prepare("SELECT domain FROM domain_cfscan WHERE status = 'ok' AND domain IN ($placeholders)");
     }
     $stmt->execute($clean);
     foreach ($stmt->fetchAll() as $r) {

@@ -46,7 +46,7 @@
         }
         var queued = data.queued || 0;
         if (queued <= 0) {
-            toast(data.message || ('Nothing to queue for ' + label + '.'), 'info');
+            toast(data.message || ('Nothing to queue for ' + label + '.'), 'warning');
             return;
         }
         var msg = 'Queued ' + queued + ' domain(s) for ' + label + '.';
@@ -170,16 +170,23 @@
     window.fetchVisibleCfscan = function () {
         var domains = selectedDomains();
         if (!domains.length) { toast('No domains to scan.', 'warning'); return; }
+        // "Force re-scan" (optional checkbox) also re-queues domains with a good
+        // cached scan; without it only uncached/error/DNS-only domains are sent.
+        var forceEl = document.getElementById('cf-force');
+        var force = !!(forceEl && forceEl.checked);
         confirmDialog({
-            title: 'Queue Cloudflare scan',
-            message: 'Scan ' + domains.length + ' domain(s) with Cloudflare Radar? Scans are rate limited (~1 every 10 s) and consume the plan quota.',
+            title: force ? 'Force Cloudflare re-scan' : 'Queue Cloudflare scan',
+            message: (force ? 'Force re-scan ' : 'Scan ') + domains.length + ' domain(s) with Cloudflare Radar? '
+                + 'Scans are rate limited (~1 every 10 s) and consume the plan quota.',
             confirmText: 'Aceptar'
         }).then(function (ok) {
             if (!ok) return;
+            var body = { domains: domains, mode: 'scan' };
+            if (force) { body.force = true; }
             fetch('/ajax_cfscan_request.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
-                body: JSON.stringify({ domains: domains, mode: 'scan' })
+                body: JSON.stringify(body)
             })
                 .then(function (r) { return r.json(); })
                 .then(function (data) { handleQueueResponse(data, 'Cloudflare Radar', domains.length); })
