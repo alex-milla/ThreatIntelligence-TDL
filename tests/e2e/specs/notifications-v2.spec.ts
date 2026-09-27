@@ -11,8 +11,6 @@ test.describe('Notifications v2 layout', () => {
     await page.goto('/notifications.php?ui=classic');
     await expect(page.locator('body')).not.toHaveClass(/ui-v2/);
     await expect(page.locator('.stat-strip')).toHaveCount(0);
-    await expect(page.locator('.page-header')).toHaveCount(0);
-    await expect(page.locator('.card-head')).toHaveCount(1);
   });
 
   test('v2 layout renders the header, KPIs and filter chips', async ({ page }) => {
@@ -21,10 +19,6 @@ test.describe('Notifications v2 layout', () => {
     await expect(page.locator('.stat-strip .stat')).toHaveCount(4);
     await expect(page.locator('.chip-tabs .chip').first()).toBeVisible();
     await expect(page.locator('.page-header h1')).toContainText('Notifications');
-    // The classic card header is not rendered in v2 (no duplicated title/action).
-    await expect(page.locator('.page-header')).toHaveCount(1);
-    await expect(page.locator('.card-head')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /Mark All Read|Marcar todo leído/i })).toHaveCount(1);
   });
 
   test('clicking a domain opens the side drawer', async ({ page }) => {

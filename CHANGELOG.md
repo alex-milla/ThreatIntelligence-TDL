@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.19.5] - 2026-09-27
+
+### Reverted - rollback of the v1.19.4 Notifications header change
+
+- Reverts the v1.19.4 change that hid the classic card header in the v2 layout. The v2 Notifications page is back to its v1.19.3 markup/behaviour (the reported regression after v1.19.4 is removed). `public_html/notifications.php` and its E2E spec are restored to the v1.19.3 versions.
+
 ## [v1.19.4] - 2026-09-27
 
 ### Fixed - v2 Notifications duplicated header

@@ -346,7 +346,6 @@ require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="card">
-    <?php if (!$uiV2): ?>
     <div class="card-head">
         <h2>Notifications</h2>
         <?php if (!empty($notifications) || $hiddenCount > 0): ?>
@@ -357,7 +356,6 @@ require __DIR__ . '/templates/header.php';
         </form>
         <?php endif; ?>
     </div>
-    <?php endif; ?>
 
     <?php if ($uiV2):
         // KPI aggregate over the default (unfiltered) view for this user.
