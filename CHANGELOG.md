@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.19.2] - 2026-09-27
+
+### Changed - v2 drawer: clearer layout of the compact actions
+
+Polish of the compact action toolbar in the v2 Notifications side drawer:
+
+- **Cloudflare checks on their own row**, renamed **CF Scan** and **CF DNS** (they no longer wrap awkwardly with the other checks).
+- The classification control (**Good | Bad | Insufficient | Clear**) now spans the full row width with the four segments evenly sized and centred (it used to hug the left).
+- The admin cache action is labelled **Delete cache** (was the ambiguous "Cache").
+- The watchlist action shows its state: **Add to Watchlist** / **Remove from Watchlist**.
+
+Only the v2 drawer of Notifications is affected; the classic layout, Watchlist, Dashboard, reports and print are unchanged.
+
+### Tests
+
+- Playwright: the v2 drawer asserts the `CF Scan`, `CF DNS`, `Delete cache` and `Add to Watchlist` labels.
+
 ## [v1.19.1] - 2026-09-27
 
 ### Changed - v2 Notifications: split drawer and compact detail actions

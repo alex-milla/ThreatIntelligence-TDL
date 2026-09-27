@@ -30,6 +30,11 @@ test.describe('Notifications v2 layout', () => {
     // v2 uses the compact grouped actions, not the classic big button row.
     await expect(drawer.locator('.dd-actions-compact')).toBeVisible();
     await expect(drawer.locator('.dd-actions:not(.dd-actions-compact)')).toHaveCount(0);
+    const compact = drawer.locator('.dd-actions-compact');
+    await expect(compact).toContainText('CF Scan');
+    await expect(compact).toContainText('CF DNS');
+    await expect(compact).toContainText('Delete cache');
+    await expect(compact).toContainText('Add to Watchlist');
     await page.locator('.drawer-close').click();
     await expect(page.locator('.drawer-panel.open')).toHaveCount(0);
   });

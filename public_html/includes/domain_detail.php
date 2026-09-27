@@ -186,8 +186,10 @@ function renderDomainActions(array $present, string $domain, bool $compact = fal
             <button type="button" class="btn btn-small waves-effect" onclick="ddFetchWhois('<?= $domainArg ?>')" title="Fetch WHOIS (worker)"><i class="material-icons left">cloud_download</i>WHOIS</button>
             <button type="button" class="btn btn-small waves-effect" onclick="ddCheckVt('<?= $domainArg ?>')" title="Check VirusTotal"><i class="material-icons left">verified_user</i>VirusTotal</button>
             <button type="button" class="btn btn-small waves-effect" onclick="ddCheckAbusech('<?= $domainArg ?>')" title="Check Abuse.ch"><i class="material-icons left">gpp_maybe</i>Abuse.ch</button>
-            <button type="button" class="btn btn-small waves-effect" onclick="ddCheckCf('<?= $domainArg ?>')" title="Scan with Cloudflare"><i class="material-icons left">cloud</i>Cloudflare</button>
-            <button type="button" class="btn btn-small waves-effect" onclick="ddCheckCfdns('<?= $domainArg ?>')" title="Cloudflare DNS locations"><i class="material-icons left">public</i>DNS</button>
+        </div>
+        <div class="dac-group dac-cf" role="group" aria-label="Cloudflare checks">
+            <button type="button" class="btn btn-small waves-effect" onclick="ddCheckCf('<?= $domainArg ?>')" title="Scan with Cloudflare URL Scanner"><i class="material-icons left">cloud</i>CF Scan</button>
+            <button type="button" class="btn btn-small waves-effect" onclick="ddCheckCfdns('<?= $domainArg ?>')" title="Cloudflare DNS top locations"><i class="material-icons left">public</i>CF DNS</button>
         </div>
         <div class="dac-group dac-links" role="group" aria-label="External reports">
             <a class="dac-link" href="<?= htmlspecialchars($vtUrl) ?>" target="_blank" rel="noopener" title="Open in VirusTotal"><i class="material-icons">shield</i>VirusTotal</a>
@@ -197,9 +199,9 @@ function renderDomainActions(array $present, string $domain, bool $compact = fal
             <?php endif; ?>
         </div>
         <div class="dac-group dac-utility">
-            <button type="button" class="btn btn-small btn-outline waves-effect" onclick="ddWatchlist('<?= $domainArg ?>')" title="<?= $inWatchlist ? 'Remove from watchlist' : 'Add to watchlist' ?>"><i class="material-icons left"><?= $inWatchlist ? 'star' : 'star_border' ?></i>Watchlist</button>
+            <button type="button" class="btn btn-small btn-outline waves-effect" onclick="ddWatchlist('<?= $domainArg ?>')" title="<?= $inWatchlist ? 'Remove from watchlist' : 'Add to watchlist' ?>"><i class="material-icons left"><?= $inWatchlist ? 'star' : 'star_border' ?></i><?= $inWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist' ?></button>
             <?php if ($isAdmin): ?>
-            <button type="button" class="btn btn-small btn-danger waves-effect" onclick="ddDeleteFicha('<?= $domainArg ?>')" title="Delete cached enrichment (tags, watchlist, reports and Intelligence are kept)"><i class="material-icons left">delete_sweep</i>Cache</button>
+            <button type="button" class="btn btn-small btn-danger waves-effect" onclick="ddDeleteFicha('<?= $domainArg ?>')" title="Delete cached enrichment (tags, watchlist, reports and Intelligence are kept)"><i class="material-icons left">delete_sweep</i>Delete cache</button>
             <?php endif; ?>
         </div>
     </div>
