@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.19.7] - 2026-09-27
+
+### Added - v2 Notifications selection mode
+
+- With **2 or more notifications selected**, the v2 layout enters a selection mode: the left navigation sidebar is hidden and the bulk-action bar stays in place at the top of the content (sticky under the header), so the analyst can act on many domains without the chrome shifting. With 1 selected the toolbar behaves as before; with 0 everything returns to normal.
+- The action bar uses **compact buttons** and a fixed-width counter so it no longer reflows between 1 and N selections. CSS/JS only, scoped to v2 Notifications.
+
+### Tests
+
+- Playwright: 1 selected keeps the sidebar; 2 selected hide it and show the bulk bar; unchecking restores it.
+
 ## [v1.19.6] - 2026-09-27
 
 ### Restored - v2 Notifications single header (re-applies v1.19.4)

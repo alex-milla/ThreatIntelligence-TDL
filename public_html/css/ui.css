@@ -126,8 +126,8 @@
 .ui-v2 .context-toolbar {
     display: none;
     position: sticky;
-    top: 0;
-    z-index: 6;
+    top: 64px;
+    z-index: 20;
     align-items: center;
     flex-wrap: wrap;
     gap: 8px;
@@ -141,9 +141,26 @@
 .ui-v2 .context-toolbar .sel-count {
     font-weight: 700;
     margin-right: 4px;
+    min-width: 120px;
 }
 .ui-v2 .context-toolbar .section-actions,
 .ui-v2 .context-toolbar form { margin: 0; }
+/* Compact buttons so the bar does not reflow between 1 and N selected. */
+.ui-v2 .context-toolbar .btn {
+    height: 28px;
+    line-height: 28px;
+    padding: 0 10px;
+    font-size: .78rem;
+}
+.ui-v2 .context-toolbar .btn .material-icons.left {
+    font-size: 15px;
+    margin-right: 4px;
+}
+/* From 2 selected rows: hide the nav sidebar and keep only the bulk bar. */
+.ui-v2.selection-mode .app-sidebar { display: none; }
+.ui-v2.selection-mode .context-toolbar {
+    box-shadow: 0 6px 14px rgba(0, 0, 0, .14);
+}
 
 /* ---------- Dense tables ---------- */
 .ui-v2 table.striped th,

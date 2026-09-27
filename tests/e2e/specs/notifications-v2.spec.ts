@@ -74,6 +74,24 @@ test.describe('Notifications v2 layout', () => {
     await expect(page.locator('#bulk-form')).toHaveClass(/has-selection/);
     await expect(page.locator('.context-toolbar')).toBeVisible();
     await expect(page.locator('.context-toolbar .sel-count')).toContainText('1');
+    // One selection keeps the sidebar (no selection mode yet).
+    await expect(page.locator('body')).not.toHaveClass(/selection-mode/);
+    await expect(page.locator('.app-sidebar')).toBeVisible();
+  });
+
+  test('selecting two rows hides the sidebar and keeps the bulk bar', async ({ page }) => {
+    await page.goto('/notifications.php?ui=v2');
+    const checks = page.locator('tr[data-domain] .row-check');
+    await checks.nth(0).check();
+    await checks.nth(1).check();
+    await expect(page.locator('body')).toHaveClass(/selection-mode/);
+    await expect(page.locator('.app-sidebar')).toBeHidden();
+    await expect(page.locator('.context-toolbar')).toBeVisible();
+
+    // Back to a single selection: the sidebar returns.
+    await checks.nth(1).uncheck();
+    await expect(page.locator('body')).not.toHaveClass(/selection-mode/);
+    await expect(page.locator('.app-sidebar')).toBeVisible();
   });
 
   test('the classic layout still expands the detail inline', async ({ page }) => {

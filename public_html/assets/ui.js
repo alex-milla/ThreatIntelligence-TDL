@@ -108,6 +108,8 @@
         var all = $all('.row-check');
         var checked = all.filter(function (cb) { return cb.checked; });
         form.classList.toggle('has-selection', checked.length > 0);
+        // From 2 selected rows, hide the nav sidebar and keep only the bulk bar.
+        document.body.classList.toggle('selection-mode', checked.length >= 2);
         var out = $('.sel-count', form);
         if (out) {
             out.textContent = checked.length + ' seleccionado' + (checked.length === 1 ? '' : 's');
