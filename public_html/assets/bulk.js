@@ -260,7 +260,7 @@
             Promise.all(domains.map(function (d) {
                 return fetch('/ajax_tag_domain.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
                     body: JSON.stringify({ domain: d, tag: tag })
                 }).then(function (r) { return r.json(); });
             })).then(function () {

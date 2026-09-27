@@ -1340,6 +1340,36 @@ def test_cloudflare_usage_headers() -> None:
     print("[PASS] test_cloudflare_usage_headers")
 
 
+def test_worker_update_pin() -> None:
+    """resolve_update_ref: env overrides config, pin becomes a tag ref (H7)."""
+    cfg = configparser.ConfigParser()
+    cfg.add_section("worker")
+
+    old_pin = os.environ.pop("TDL_WORKER_PIN", None)
+    try:
+        # No pin anywhere -> track main (current behaviour).
+        assert scheduler.resolve_update_ref(cfg) == ("origin/main", "main")
+        assert scheduler.resolve_update_ref(None) == ("origin/main", "main")
+
+        # config.ini pin.
+        cfg.set("worker", "update_pin", "v1.19.0")
+        assert scheduler.resolve_update_ref(cfg) == ("refs/tags/v1.19.0", "v1.19.0")
+
+        # Environment overrides config.
+        os.environ["TDL_WORKER_PIN"] = "v1.20.0"
+        assert scheduler.resolve_update_ref(cfg) == ("refs/tags/v1.20.0", "v1.20.0")
+
+        # An explicit refs/ path is used verbatim.
+        os.environ["TDL_WORKER_PIN"] = "refs/heads/release"
+        assert scheduler.resolve_update_ref(cfg) == ("refs/heads/release", "refs/heads/release")
+    finally:
+        if old_pin is None:
+            os.environ.pop("TDL_WORKER_PIN", None)
+        else:
+            os.environ["TDL_WORKER_PIN"] = old_pin
+    print("[PASS] test_worker_update_pin")
+
+
 if __name__ == "__main__":
     test_parser_basic()
     test_parser_origin_relative()
@@ -1388,4 +1418,5 @@ if __name__ == "__main__":
     test_cloudflare_scan_retry_fallback()
     test_cloudflare_dns_batch()
     test_cloudflare_usage_headers()
+    test_worker_update_pin()
     print("\nAll tests passed.")

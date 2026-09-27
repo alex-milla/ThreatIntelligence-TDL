@@ -22,6 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    validateCsrf();
+
     $input = json_decode(file_get_contents('php://input'), true) ?: [];
     $domain = strtolower(trim($input['domain'] ?? ''));
     $tag = $input['tag'] ?? '';
@@ -32,7 +34,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($tag === '' || $tag === null) {
-        $db->prepare("DELETE FROM domain_tags WHERE domain = ?")->execute([$domain]);
+        // Tags are global; only the author or an admin may remove one, so a
+        // self-registered account cannot wipe the team's classifications.
+        if (!empty($_SESSION['is_admin'])) {
+            $db->prepare("DELETE FROM domain_tags WHERE domain = ?")->execute([$domain]);
+            echo json_encode(['success' => true]);
+            exit;
+        }
+        $stmt = $db->prepare("SELECT created_by FROM domain_tags WHERE domain = ? LIMIT 1");
+        $stmt->execute([$domain]);
+        $owner = $stmt->fetchColumn();
+        if ($owner !== false && (int)$owner !== $userId) {
+            echo json_encode(['success' => false, 'error' => 'Only the tag author or an admin can remove it.']);
+            exit;
+        }
+        $db->prepare("DELETE FROM domain_tags WHERE domain = ? AND created_by = ?")->execute([$domain, $userId]);
         echo json_encode(['success' => true]);
         exit;
     }

@@ -1,0 +1,14 @@
+# Test configuration for the worker suite.
+#
+# Run from the worker directory (the tests import sibling modules directly):
+#   pip install -r requirements-dev.txt
+#   pytest
+#
+# `python tests.py` still works standalone without pytest.
+[tool.pytest.ini_options]
+testpaths = ["tests.py"]
+addopts = "--cov=. --cov-report=term-missing --cov-fail-under=35"
+
+[tool.coverage.run]
+# The test file itself is not application code.
+omit = ["tests.py"]

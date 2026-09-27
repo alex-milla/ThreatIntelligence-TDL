@@ -29,6 +29,14 @@ if (!in_array($mode, ['scan', 'dns'], true)) {
 $batchMax = $mode === 'dns' ? 200 : 20;
 $command = $mode === 'dns' ? 'cf_dns_lookup' : 'cf_scan_lookup';
 
+// Per-session throttle: Cloudflare quota is shared by the whole instance.
+$rlKey = $mode === 'dns' ? 'cfscan_dns_times' : 'cfscan_scan_times';
+$rlMax = $mode === 'dns' ? 20 : 6;
+if (sessionRateLimited($rlKey, $rlMax, 60)) {
+    echo json_encode(['success' => false, 'error' => 'Too many Cloudflare requests, please slow down.']);
+    exit;
+}
+
 $domains = $input['domains'] ?? null;
 if (!$domains && !empty($input['domain'])) {
     $domains = [$input['domain']];

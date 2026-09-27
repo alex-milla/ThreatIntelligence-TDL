@@ -545,10 +545,11 @@ document.addEventListener('click', function (e) {
     if (!btn) return;
     var domain = btn.getAttribute('data-domain');
     var tag = btn.getAttribute('data-tag') || '';
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
     btn.disabled = true;
     fetch('/ajax_tag_domain.php', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfMeta ? csrfMeta.content : '' },
         body: JSON.stringify({ domain: domain, tag: tag })
     })
         .then(function (r) { return r.json(); })

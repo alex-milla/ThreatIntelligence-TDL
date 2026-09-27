@@ -363,7 +363,7 @@ require __DIR__ . '/templates/header.php';
             <input id="q" type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder=" ">
             <label for="q">Search domain, TLD or keyword</label>
         </div>
-        <select name="date" class="browser-default compact">
+        <select name="date" class="browser-default compact" aria-label="Date range">
             <option value="all" <?= $dateFilter === 'all' ? 'selected' : '' ?>>All time</option>
             <option value="24h" <?= $dateFilter === '24h' ? 'selected' : '' ?>>Last 24h</option>
             <option value="7d" <?= $dateFilter === '7d' ? 'selected' : '' ?>>Last 7 days</option>
@@ -375,7 +375,7 @@ require __DIR__ . '/templates/header.php';
         </label>
         <div class="check-inline">
             <span class="muted">Created &le;</span>
-            <input type="number" name="new_days" value="<?= $newDays ?? $defaultNewDays ?>" min="1" max="365" class="browser-default compact num-input">
+            <input type="number" name="new_days" value="<?= $newDays ?? $defaultNewDays ?>" min="1" max="365" class="browser-default compact num-input" aria-label="Created within days">
             <span class="muted">day(s)</span>
         </div>
         <label class="check-inline" title="Reveal hidden domains: tagged good/bad, recheck matches, or validated as registered before the last scan">
@@ -550,7 +550,7 @@ require __DIR__ . '/templates/header.php';
                     $detailDomainArg = htmlspecialchars(addslashes($n['domain']));
                 ?>
                 <tr class="<?= $n['is_read'] ? '' : 'unread' ?>" data-domain="<?= htmlspecialchars($n['domain']) ?>">
-                    <td><label><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form"><span></span></label></td>
+                    <td><label><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form" aria-label="Select <?= htmlspecialchars($n['domain']) ?>"><span></span></label></td>
                     <td><?= $n['is_read'] ? '<span class="status-badge status-cancelled">Read</span>' : '<span class="status-badge status-pending">Unread</span>' ?></td>
                     <td><a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><?= htmlspecialchars($n['domain']) ?></a><?= $intelBadge ?><?= $tagBadge ?><?= $queueBadge ?></td>
                     <td><?= $vtCell ?></td>

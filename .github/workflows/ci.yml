@@ -32,8 +32,24 @@ jobs:
           done < <(find public_html -type f -name '*.php' -print0)
           echo "Checked ${count} PHP file(s): OK"
 
+  php-tests:
+    name: PHP tests (dependency-free runner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite
+          coverage: none
+
+      - name: Run PHP test suite
+        run: php tests/run.php
+
   python-tests:
-    name: Worker tests (Python)
+    name: Worker tests (pytest + coverage)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -47,10 +63,46 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Compile worker modules
         run: python -m compileall -q .
 
-      - name: Run unit tests
-        run: python tests.py
+      - name: Run unit tests with coverage
+        run: pytest
+
+  e2e:
+    name: E2E + accessibility (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install E2E dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E + accessibility tests
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

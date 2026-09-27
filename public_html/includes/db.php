@@ -129,6 +129,15 @@ class Database {
             attempted_at TEXT DEFAULT CURRENT_TIMESTAMP
         )");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_login_ip ON login_attempts(ip_address, attempted_at)");
+
+        // Registration throttling (mirrors login_attempts) so an open signup
+        // form cannot be used to mass-create accounts from one IP.
+        $db->exec("CREATE TABLE IF NOT EXISTS register_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ip_address TEXT NOT NULL,
+            attempted_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_register_ip ON register_attempts(ip_address, attempted_at)");
         
         $db->exec("CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,

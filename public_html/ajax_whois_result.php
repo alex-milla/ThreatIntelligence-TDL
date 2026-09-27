@@ -22,7 +22,12 @@ $response = [
 ];
 
 if ($commandId) {
-    $stmt = $db->prepare("SELECT status, result FROM commands WHERE id = ? LIMIT 1");
+    // Recent whois_lookup commands only, so a stale command_id belonging to
+    // another user cannot be read by enumerating ids.
+    $stmt = $db->prepare(
+        "SELECT status, result FROM commands WHERE id = ? AND command = 'whois_lookup' "
+        . "AND created_at >= datetime('now','-30 minutes') LIMIT 1"
+    );
     $stmt->execute([$commandId]);
     $cmd = $stmt->fetch();
     if ($cmd) {

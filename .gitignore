@@ -14,6 +14,9 @@ env/
 # Local documentation checkpoints (not published)
 md/
 
+# Local reference skills (not part of the app)
+skills/
+
 # Python virtualenv
 .venv/
 worker/.venv/
@@ -21,6 +24,12 @@ worker/.venv/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Python coverage
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
 
 # IDE
 .vscode/
@@ -31,3 +40,12 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Test scratch space
+tests/tmp/
+
+# Node / Playwright (E2E)
+node_modules/
+.e2e/
+playwright-report/
+test-results/

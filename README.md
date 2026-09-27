@@ -321,7 +321,13 @@ CZDS only covers gTLDs. For **country-code TLDs** (`.io`, `.es`, `.fr`, ...) the
 
 The admin panel includes a **System Update** page (`/admin/update.php`) that checks GitHub releases and updates the **web application** files automatically. Your SQLite database is never overwritten during updates.
 
+- **Manifest-based, not blind overwrite:** only new/changed files are copied (verified against a SHA-256 manifest stored in `data/.manifest.json`), and files that a previous release installed but the new one no longer ships are removed. Files you added yourself are never touched.
+- **Safe extraction:** release archives whose entries contain path traversal (`..`, absolute paths) are rejected before extraction.
+- **Backups + restore:** a full backup is taken before every update, and every listed backup has a **Restore** button (a pre-restore snapshot is taken first, so restoring is reversible).
+
 The **worker** is updated separately: use **Admin → Update Worker** (queues the `update_worker` command, requires a git checkout + the `tdl-worker` systemd service) or run `worker/update.sh --restart` on the worker host. The panel shows a warning if the worker version does not match the app version.
+
+**Supply-chain hardening (optional):** set `TDL_WORKER_PIN=vX.Y.Z` in the worker environment (or `[worker] update_pin` in `config.ini`) to make **Update Worker** reset to a specific release tag instead of `main`, so a compromised/unauthorised push to `main` cannot change the code that runs on the worker. Leave it empty to keep tracking `main`.
 
 For private repositories, set a GitHub personal access token in `admin/update.php` or via the `GITHUB_TOKEN` environment variable.
 
@@ -331,6 +337,27 @@ For private repositories, set a GitHub personal access token in `admin/update.ph
 - Keep `data/` outside the web root if your hosting allows it; otherwise `data/.htaccess` blocks direct access.
 - Use HTTPS between the worker and the hosting.
 - The worker never stores user data or keywords locally (only a domain cache for deduplication).
+
+## Testing
+
+Three independent suites (all run in CI via `.github/workflows/ci.yml`):
+
+```bash
+# PHP: security/updater/db helpers (dependency-free runner, no Composer)
+php tests/run.php
+
+# Worker: unit tests with coverage (from the worker/ directory)
+cd worker
+pip install -r requirements.txt -r requirements-dev.txt
+pytest                       # or: python tests.py   (pytest-free)
+
+# End-to-end + accessibility (Playwright + axe-core)
+npm ci
+npx playwright install chromium
+npx playwright test
+```
+
+The E2E suite serves a throwaway copy of `public_html/` (in `.e2e/`, gitignored) seeded with a known admin, so it never touches the real deployment or `data/`. The accessibility specs gate on **critical** axe-core violations and attach the full report to the Playwright HTML report.
 
 ## License
 

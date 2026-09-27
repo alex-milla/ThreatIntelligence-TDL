@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/updater.php';
 requireAdmin();
 
 set_time_limit(300);
@@ -218,11 +219,23 @@ function doUpdate(string $zipUrl, string $versionFile, string $backupBase): arra
         return ['success' => false, 'error' => $downloadError ?: 'Downloaded ZIP is empty or corrupt.', 'backup' => $backupDir];
     }
 
-    // 3. Verify ZIP integrity
+    // 3. Verify ZIP integrity and reject path-traversal entries before extracting.
     $zip = new ZipArchive();
     if ($zip->open($tempZip) !== true) {
         @unlink($tempZip);
         return ['success' => false, 'error' => 'Downloaded file is not a valid ZIP archive.', 'backup' => $backupDir];
+    }
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $entry = (string)$zip->getNameIndex($i);
+        if (tdl_zip_entry_unsafe($entry)) {
+            $zip->close();
+            @unlink($tempZip);
+            return [
+                'success' => false,
+                'error'   => 'Release ZIP contains an unsafe path and was rejected: <code>' . htmlspecialchars($entry) . '</code>',
+                'backup'  => $backupDir,
+            ];
+        }
     }
     $zip->extractTo($extractDir);
     $zip->close();
@@ -252,24 +265,45 @@ function doUpdate(string $zipUrl, string $versionFile, string $backupBase): arra
         return ['success' => false, 'error' => 'Release ZIP does not contain recognizable application files. Aborting.', 'backup' => $backupDir];
     }
 
-    // 6. Copy files
-    $copied = 0;
+    // 6. Copy only new/changed files (manifest), then prune files that the new
+    //    release no longer ships. The modern layout tracks a SHA-256 manifest;
+    //    legacy/flat layouts keep the previous full-copy behaviour.
+    $repoRoot   = dirname($appRoot);
+    $dataDir    = $appRoot . '/data';
+    $prevManifest = tdl_load_manifest($dataDir);
+    $newManifest  = [];
+    $changed   = 0;
+    $unchanged = 0;
+    $removed   = 0;
 
     if ($hasPublicHtml) {
         // Modern layout: copy public_html/* into the web root and worker/* next to it.
-        $copied += copyTree(
+        $r = tdl_sync_tree(
             $sourceDir . '/public_html',
             $appRoot,
-            ['data', '.git', '.github']
+            ['data', '.git', '.github'],
+            [],
+            'public_html/',
+            $newManifest
         );
+        $changed += $r['changed'];
+        $unchanged += $r['unchanged'];
+
         if ($hasWorker) {
-            $copied += copyTree(
+            $r = tdl_sync_tree(
                 $sourceDir . '/worker',
-                dirname($appRoot) . '/worker',
+                $repoRoot . '/worker',
                 ['data', 'logs', 'zones', '__pycache__'],
-                ['config.ini']
+                ['config.ini'],
+                'worker/',
+                $newManifest
             );
+            $changed += $r['changed'];
+            $unchanged += $r['unchanged'];
         }
+
+        $removed = tdl_prune_removed($prevManifest, $newManifest, $appRoot, $repoRoot);
+        tdl_save_manifest($dataDir, $newManifest);
     } elseif ($hasLegacyWeb) {
         // Legacy mode: copy web/ → root, worker/ → worker/
         foreach (['web', 'worker'] as $dir) {
@@ -289,7 +323,7 @@ function doUpdate(string $zipUrl, string $versionFile, string $backupBase): arra
                 $target = $dst . '/' . $relative;
                 @mkdir(dirname($target), 0755, true);
                 copy($file->getPathname(), $target);
-                $copied++;
+                $changed++;
             }
         }
     } else {
@@ -313,7 +347,7 @@ function doUpdate(string $zipUrl, string $versionFile, string $backupBase): arra
             $target = $appRoot . '/' . $relative;
             @mkdir(dirname($target), 0755, true);
             copy($file->getPathname(), $target);
-            $copied++;
+            $changed++;
         }
     }
 
@@ -321,7 +355,13 @@ function doUpdate(string $zipUrl, string $versionFile, string $backupBase): arra
     @unlink($tempZip);
     rrmdir($extractDir);
 
-    return ['success' => true, 'copied' => $copied, 'backup' => $backupDir];
+    return [
+        'success'   => true,
+        'copied'    => $changed,
+        'unchanged' => $unchanged,
+        'removed'   => $removed,
+        'backup'    => $backupDir,
+    ];
 }
 
 // Get current installed version
@@ -365,6 +405,27 @@ if (!$release && empty($error)) {
 
 $forceUpdate = isset($_POST['force']) && $_POST['force'] === '1';
 
+// Restore a backup (admin + CSRF). A snapshot of the current state is taken
+// first, so the restore itself is reversible.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'restore') {
+    validateCsrf();
+    $name = basename((string)($_POST['backup'] ?? ''));
+    $dir  = $backupBase . '/' . $name;
+    if ($name === '' || strpos($name, 'backup_') !== 0 || !is_dir($dir)) {
+        $error = 'Invalid backup selected.';
+    } else {
+        $safety = backupApp($backupBase);
+        $res = tdl_restore_backup($dir, dirname(__DIR__), dirname(dirname(__DIR__)), dirname(__DIR__) . '/data');
+        if (!empty($res['success'])) {
+            $_SESSION['flash_message'] = "Restored <code>" . htmlspecialchars($name) . "</code>. Files restored: {$res['changed']}, removed: {$res['removed']}. "
+                . "Pre-restore snapshot: <code>" . htmlspecialchars(basename($safety)) . "</code>.";
+            header('Location: /admin/update.php');
+            exit;
+        }
+        $error = $res['error'] ?? 'Restore failed.';
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $release && empty($error)) {
     validateCsrf();
 
@@ -379,7 +440,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $release && empty($error)) {
             $action = $forceUpdate ? 'Force updated' : 'Updated';
             // Redirect (PRG) so the browser reloads the freshly installed files
             // and the message is shown by the new version.
-            $_SESSION['flash_message'] = "{$action} successfully to v{$remoteVersion}. Files copied: {$result['copied']}.<br>Backup saved to: <code>" . htmlspecialchars(basename($result['backup'])) . "</code>";
+            $_SESSION['flash_message'] = "{$action} successfully to v{$remoteVersion}. Files copied: {$result['copied']}"
+                . (isset($result['unchanged']) ? ", unchanged: {$result['unchanged']}" : '')
+                . (isset($result['removed']) && $result['removed'] > 0 ? ", removed: {$result['removed']}" : '')
+                . ".<br>Backup saved to: <code>" . htmlspecialchars(basename($result['backup'])) . "</code>";
             header('Location: /admin/update.php');
             exit;
         } else {
@@ -467,10 +531,10 @@ require __DIR__ . '/../templates/header.php';
 <?php if (!empty($backups)): ?>
 <div class="card">
     <div class="card-head"><h2>Backups</h2></div>
-    <p>Stored in <code>data/backups/</code></p>
+    <p>Stored in <code>data/backups/</code>. Restoring copies the backed-up files back over the app (your <code>data/</code> and <code>config.ini</code> are never touched) and takes a fresh snapshot first.</p>
     <table class="striped highlight">
         <thead>
-            <tr><th>Backup</th><th>Size</th></tr>
+            <tr><th>Backup</th><th>Size</th><th>Actions</th></tr>
         </thead>
         <tbody>
             <?php foreach (array_slice($backups, 0, 10) as $b):
@@ -480,6 +544,14 @@ require __DIR__ . '/../templates/header.php';
             <tr>
                 <td><?= htmlspecialchars($b) ?></td>
                 <td><?= htmlspecialchars($size) ?></td>
+                <td>
+                    <form method="POST" class="inline" onsubmit="return confirm('Restore <?= htmlspecialchars($b, ENT_QUOTES) ?>? The current files will be snapshotted first.');">
+                        <?php csrfField(); ?>
+                        <input type="hidden" name="action" value="restore">
+                        <input type="hidden" name="backup" value="<?= htmlspecialchars($b) ?>">
+                        <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">restore</i>Restore</button>
+                    </form>
+                </td>
             </tr>
             <?php endforeach; ?>
         </tbody>

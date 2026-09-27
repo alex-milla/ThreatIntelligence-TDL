@@ -3,7 +3,88 @@
  * Authentication helpers + CSRF protection
  */
 
+/**
+ * Whether the current request reached the app over HTTPS (directly or via a
+ * reverse proxy / Cloudflare). Used for cookie flags and log decisions only.
+ */
+function tdl_is_https(): bool {
+    if (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') {
+        return true;
+    }
+    if (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443) {
+        return true;
+    }
+    if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+        $proto = strtolower(trim(explode(',', (string)$_SERVER['HTTP_X_FORWARDED_PROTO'])[0]));
+        if ($proto === 'https') {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * True when $ip belongs to one of Cloudflare's published edge ranges.
+ *
+ * Used to decide whether proxy headers may be trusted: if the direct peer is a
+ * Cloudflare edge, CF-Connecting-IP / the last X-Forwarded-For hop are set by
+ * Cloudflare and cannot be spoofed by the client. In every other case the
+ * caller falls back to REMOTE_ADDR, which the client cannot forge.
+ */
+function tdl_is_cloudflare_ip(string $ip): bool {
+    $ranges = [
+        '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+        '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+        '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+        '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+        '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32',
+        '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32',
+    ];
+    $packed = @inet_pton($ip);
+    if ($packed === false) {
+        return false;
+    }
+    foreach ($ranges as $cidr) {
+        [$net, $bits] = explode('/', $cidr, 2);
+        $packedNet = @inet_pton($net);
+        if ($packedNet === false || strlen($packedNet) !== strlen($packed)) {
+            continue;
+        }
+        $bits      = (int)$bits;
+        $bytes     = intdiv($bits, 8);
+        $remainder = $bits % 8;
+        if ($bytes > 0 && substr($packed, 0, $bytes) !== substr($packedNet, 0, $bytes)) {
+            continue;
+        }
+        if ($remainder === 0) {
+            return true;
+        }
+        $mask = 0xFF << (8 - $remainder) & 0xFF;
+        if ((ord($packed[$bytes]) & $mask) === (ord($packedNet[$bytes]) & $mask)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Start the session with hardened cookie flags. Never call session_start()
+// elsewhere. SameSite=Lax keeps normal top-level navigation working while
+// blocking cross-site POSTs; Secure is only set on HTTPS so local HTTP setups
+// do not lose their session.
 if (session_status() === PHP_SESSION_NONE) {
+    if (PHP_VERSION_ID >= 70300) {
+        session_set_cookie_params([
+            'lifetime' => 0,
+            'path'     => '/',
+            'domain'   => '',
+            'secure'   => tdl_is_https(),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+    } else {
+        // Old PHP fallback: "path; samesite=Lax" is understood by the kernel.
+        session_set_cookie_params(0, '/; samesite=Lax', '', tdl_is_https(), true);
+    }
     session_start();
 }
 
@@ -40,6 +121,9 @@ function fmt_date(?string $utc): string {
 
 function requireAuth(): void {
     if (empty($_SESSION['user_id'])) {
+        // Cover the redirect (302) with the security headers too; otherwise they
+        // would only be sent on rendered pages, never on an unauthenticated hit.
+        sendSecurityHeaders();
         header('Location: /login.php');
         exit;
     }
@@ -102,19 +186,75 @@ function sendSecurityHeaders(): void {
     header('X-Frame-Options: DENY');
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: strict-origin-when-cross-origin');
+    // Report-Only: it observes violations without blocking, so the current UI
+    // (Materialize inline styles, the inline theme bootstrap) keeps working.
+    // Promote it to an enforcing Content-Security-Policy after a clean period.
+    header(
+        "Content-Security-Policy-Report-Only: default-src 'self'; "
+        . "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
+        . "script-src 'self'; "
+        . "style-src 'self' 'unsafe-inline'; "
+        . "img-src 'self' data:; "
+        . "font-src 'self'; "
+        . "connect-src 'self'"
+    );
 }
 
 /* ---------- Rate Limiting ---------- */
 
+/**
+ * Return the real client IP.
+ *
+ * Proxy headers are only trusted when explicitly enabled (TDL_TRUST_PROXY=1) or
+ * when the direct peer is a Cloudflare edge (auto-detected). In that case the
+ * last X-Forwarded-For hop / CF-Connecting-IP is used, which the client cannot
+ * forge. Otherwise REMOTE_ADDR is returned, so a spoofed XFF can no longer
+ * bypass the login/API rate limits.
+ */
 function getClientIp(): string {
-    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-        $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-        return trim($ips[0]);
+    $trustProxy = getenv('TDL_TRUST_PROXY');
+    $remote     = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $trusted    = ($trustProxy === '1')
+        || ($trustProxy !== '0' && tdl_is_cloudflare_ip($remote));
+
+    if ($trusted) {
+        if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+            return trim((string)$_SERVER['HTTP_CF_CONNECTING_IP']);
+        }
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            // The trusted proxy appends the real client IP at the END of the
+            // chain; the first entries are attacker-controlled.
+            $ips  = explode(',', (string)$_SERVER['HTTP_X_FORWARDED_FOR']);
+            $last = trim((string)end($ips));
+            if ($last !== '') {
+                return $last;
+            }
+        }
     }
-    if (!empty($_SERVER['HTTP_X_REAL_IP'])) {
-        return $_SERVER['HTTP_X_REAL_IP'];
+    return $remote;
+}
+
+/**
+ * Per-session sliding-window rate limit. Returns true when the caller should be
+ * throttled. Used to protect shared provider quotas (VirusTotal/abuse.ch/
+ * Cloudflare) from a single account draining them for everyone.
+ */
+function sessionRateLimited(string $key, int $max, int $windowSeconds = 60): bool {
+    $now   = time();
+    $times = $_SESSION[$key] ?? [];
+    if (!is_array($times)) {
+        $times = [];
     }
-    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $times = array_values(array_filter($times, function ($t) use ($now, $windowSeconds) {
+        return is_numeric($t) && (int)$t > $now - $windowSeconds;
+    }));
+    if (count($times) >= $max) {
+        $_SESSION[$key] = $times;
+        return true;
+    }
+    $times[]        = $now;
+    $_SESSION[$key] = $times;
+    return false;
 }
 
 function isRateLimited(PDO $db, string $ip, int $maxAttempts = 5, int $windowMinutes = 15): bool {
@@ -125,13 +265,39 @@ function isRateLimited(PDO $db, string $ip, int $maxAttempts = 5, int $windowMin
 }
 
 function recordLoginAttempt(PDO $db, string $ip, string $username = ''): void {
-    $stmt = $db->prepare("INSERT INTO login_attempts (ip_address, username) VALUES (?, ?)");
-    $stmt->execute([$ip, $username]);
+    try {
+        $stmt = $db->prepare("INSERT INTO login_attempts (ip_address, username) VALUES (?, ?)");
+        $stmt->execute([$ip, $username]);
+        // Keep the table bounded so rotating/spoofed IPs cannot bloat the DB.
+        $db->prepare("DELETE FROM login_attempts WHERE attempted_at < ?")
+           ->execute([date('Y-m-d H:i:s', strtotime('-1 day'))]);
+    } catch (Throwable $e) {
+        // Login must never fail because of throttling bookkeeping.
+    }
 }
 
 function clearLoginAttempts(PDO $db, string $ip): void {
     $stmt = $db->prepare("DELETE FROM login_attempts WHERE ip_address = ?");
     $stmt->execute([$ip]);
+}
+
+/* ---------- Registration rate limiting ---------- */
+
+function isRegisterRateLimited(PDO $db, string $ip, int $maxAttempts = 5, int $windowMinutes = 15): bool {
+    $since = date('Y-m-d H:i:s', strtotime("-{$windowMinutes} minutes"));
+    $stmt = $db->prepare("SELECT COUNT(*) FROM register_attempts WHERE ip_address = ? AND attempted_at > ?");
+    $stmt->execute([$ip, $since]);
+    return (int)$stmt->fetchColumn() >= $maxAttempts;
+}
+
+function recordRegisterAttempt(PDO $db, string $ip): void {
+    try {
+        $db->prepare("INSERT INTO register_attempts (ip_address) VALUES (?)")->execute([$ip]);
+        $db->prepare("DELETE FROM register_attempts WHERE attempted_at < ?")
+           ->execute([date('Y-m-d H:i:s', strtotime('-1 day'))]);
+    } catch (Throwable $e) {
+        // Registration must never fail because of throttling bookkeeping.
+    }
 }
 
 /* ---------- Settings ---------- */
@@ -348,9 +514,11 @@ function checkApiRateLimit(PDO $db, string $ip, string $apiKey = '', string $end
         return true;
     }
 
-    // Log this request
+    // Log this request. The API key is stored hashed so a leaked/backed-up
+    // api_requests table never exposes a usable credential; counting by key
+    // still works because the hash is deterministic.
     $stmt = $db->prepare("INSERT INTO api_requests (ip_address, api_key, endpoint, requested_at) VALUES (?, ?, ?, datetime('now'))");
-    $stmt->execute([$ip, $apiKey, $endpoint]);
+    $stmt->execute([$ip, $apiKey === '' ? '' : hash('sha256', $apiKey), $endpoint]);
 
     return false;
 }

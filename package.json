@@ -1,0 +1,13 @@
+{
+  "name": "threatintelligence-tdl-e2e",
+  "private": true,
+  "description": "Playwright E2E + accessibility suite for ThreatIntelligence-TDL.",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
+    "@playwright/test": "^1.48.0"
+  }
+}

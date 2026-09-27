@@ -19,6 +19,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 validateCsrf();
 
+// Per-session throttle: abuse.ch has a shared daily limit, so one account must
+// not be able to drain it on its own.
+if (sessionRateLimited('abusech_request_times', 6, 60)) {
+    echo json_encode(['success' => false, 'error' => 'Too many abuse.ch requests, please slow down.']);
+    exit;
+}
+
 define('ABUSECH_BATCH_MAX', 50);
 
 $input = json_decode(file_get_contents('php://input'), true) ?: [];

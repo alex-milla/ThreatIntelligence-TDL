@@ -18,27 +18,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Registration is currently closed.';
     } else {
         validateCsrf();
-        $username = trim($_POST['username'] ?? '');
-        $email = trim($_POST['email'] ?? '');
-        $password = $_POST['password'] ?? '';
-
-        if (strlen($username) < 3 || strlen($username) > 30 || !preg_match('/^[a-zA-Z0-9_]+$/', $username)) {
-            $error = 'Username must be 3-30 characters and contain only letters, numbers, and underscores.';
-        } elseif (strlen($password) < 8 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $error = 'Password must be at least 8 characters and email must be valid.';
+        $clientIp = getClientIp();
+        if (isRegisterRateLimited($db, $clientIp)) {
+            http_response_code(429);
+            $error = 'Too many registration attempts. Please try again later.';
         } else {
-            $db = Database::get();
-            $hash = password_hash($password, PASSWORD_DEFAULT);
-            $stmt = $db->prepare("INSERT INTO users (username, email, password_hash, max_keywords) VALUES (?, ?, ?, ?)");
-            try {
-                $stmt->execute([$username, $email, $hash, DEFAULT_MAX_KEYWORDS]);
-                header('Location: /login.php?registered=1');
-                exit;
-            } catch (PDOException $e) {
-                if (strpos($e->getMessage(), 'UNIQUE constraint failed') !== false) {
-                    $error = 'Username or email already exists.';
-                } else {
-                    $error = 'Registration failed. Please try again.';
+            recordRegisterAttempt($db, $clientIp);
+            $username = trim($_POST['username'] ?? '');
+            $email = trim($_POST['email'] ?? '');
+            $password = $_POST['password'] ?? '';
+
+            if (strlen($username) < 3 || strlen($username) > 30 || !preg_match('/^[a-zA-Z0-9_]+$/', $username)) {
+                $error = 'Username must be 3-30 characters and contain only letters, numbers, and underscores.';
+            } elseif (strlen($password) < 8 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $error = 'Password must be at least 8 characters and email must be valid.';
+            } else {
+                $hash = password_hash($password, PASSWORD_DEFAULT);
+                $stmt = $db->prepare("INSERT INTO users (username, email, password_hash, max_keywords) VALUES (?, ?, ?, ?)");
+                try {
+                    $stmt->execute([$username, $email, $hash, DEFAULT_MAX_KEYWORDS]);
+                    header('Location: /login.php?registered=1');
+                    exit;
+                } catch (PDOException $e) {
+                    if (strpos($e->getMessage(), 'UNIQUE constraint failed') !== false) {
+                        $error = 'Username or email already exists.';
+                    } else {
+                        $error = 'Registration failed. Please try again.';
+                    }
                 }
             }
         }

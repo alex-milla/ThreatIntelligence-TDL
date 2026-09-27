@@ -2064,15 +2064,37 @@ def recheck_cctld(db: sqlite3.Connection, cfg: configparser.ConfigParser, host_u
     return stats
 
 
-def perform_worker_update() -> tuple[str, str]:
-    """Update the worker checkout to origin/main. Returns (message, status).
+def resolve_update_ref(cfg: configparser.ConfigParser | None) -> tuple[str, str]:
+    """Return the git ref the worker update should reset to.
+
+    By default the worker tracks ``origin/main`` (current behaviour). Setting
+    ``TDL_WORKER_PIN=v1.2.3`` in the environment or ``[worker] update_pin`` in
+    config.ini pins the checkout to that release tag instead, so a compromised
+    or unauthorised push to ``main`` cannot change the code running on the
+    worker host. An explicit environment variable overrides config.ini.
+    """
+    pin = (os.environ.get("TDL_WORKER_PIN") or "").strip()
+    if not pin and cfg is not None and cfg.has_section("worker"):
+        pin = (cfg.get("worker", "update_pin", fallback="") or "").strip()
+    if not pin:
+        return ("origin/main", "main")
+    ref = pin if pin.startswith("refs/") else f"refs/tags/{pin}"
+    return (ref, pin)
+
+
+def perform_worker_update(cfg: configparser.ConfigParser | None = None) -> tuple[str, str]:
+    """Update the worker checkout to origin/main (or a pinned tag).
 
     Untracked files (config.ini, data/, zones/) are never touched. A hard reset
-    is used so a deployment checkout always matches the published main branch.
+    is used so a deployment checkout always matches the chosen ref. When a pin
+    is configured (TDL_WORKER_PIN / [worker] update_pin) the checkout is reset
+    to that tag instead of main.
     """
     repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if not os.path.isdir(os.path.join(repo_dir, ".git")):
         return ("This worker is not a git checkout; cannot self-update. Run update.sh on the server.", "failed")
+
+    ref, label = resolve_update_ref(cfg)
 
     env = dict(os.environ)
     env["GIT_TERMINAL_PROMPT"] = "0"
@@ -2080,7 +2102,7 @@ def perform_worker_update() -> tuple[str, str]:
 
     try:
         fetch = subprocess.run(
-            ["git", "-C", repo_dir, "fetch", "--prune", "origin"],
+            ["git", "-C", repo_dir, "fetch", "--prune", "--tags", "origin"],
             capture_output=True, text=True, timeout=180, env=env
         )
         if fetch.returncode != 0:
@@ -2088,17 +2110,17 @@ def perform_worker_update() -> tuple[str, str]:
             return (f"git fetch failed: {detail}", "failed")
 
         reset = subprocess.run(
-            ["git", "-C", repo_dir, "reset", "--hard", "origin/main"],
+            ["git", "-C", repo_dir, "reset", "--hard", ref],
             capture_output=True, text=True, timeout=180, env=env
         )
         if reset.returncode != 0:
             detail = (reset.stderr or reset.stdout).strip()[:300]
-            return (f"git reset failed: {detail}", "failed")
+            return (f"git reset to {label} failed: {detail}", "failed")
     except Exception as e:
         return (f"Update error: {e}", "failed")
 
     new_version = get_version()
-    return (f"Worker source updated to {new_version}. Restart required to load it.", "completed")
+    return (f"Worker source updated to {new_version} (ref {label}). Restart required to load it.", "completed")
 
 
 HASH_SEARCH_NOTE = ("Prefix/contains/glob search only covers text-cached TLDs; huge TLDs "
@@ -2477,7 +2499,7 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 logs.append({"level": "info", "message": result})
 
             elif command == "update_worker":
-                result, status = perform_worker_update()
+                result, status = perform_worker_update(cfg)
                 logs.append({"level": "info" if status == "completed" else "error", "message": result})
                 if status == "completed":
                     restart_requested = True

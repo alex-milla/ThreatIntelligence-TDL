@@ -22,6 +22,13 @@ max_domain_age_days = 30
 ; very long ICANN/CZDS recheck; the UI can override it per run.
 recheck_max_domains = 0
 
+; --- Worker self-update pin (supply-chain hardening) ---
+; Empty = track origin/main (default). Set to a release tag (e.g. v1.19.0) to
+; make "Admin -> Update Worker" reset to that tag instead of main, so a
+; compromised/unauthorised push to main cannot change the code running here.
+; The TDL_WORKER_PIN environment variable overrides this value.
+update_pin =
+
 ; --- Automatic WHOIS after a download ---
 ; Cache the WHOIS/RDAP registration data of newly matched domains right after
 ; each download, so the panel and reports already show creation dates (no

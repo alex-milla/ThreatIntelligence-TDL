@@ -18,6 +18,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 validateCsrf();
 
+// Per-session throttle: the free VirusTotal quota (500/day) is shared by the
+// whole instance, so one account must not be able to drain it on its own.
+if (sessionRateLimited('vt_request_times', 6, 60)) {
+    echo json_encode(['success' => false, 'error' => 'Too many VirusTotal requests, please slow down.']);
+    exit;
+}
+
 define('VT_BATCH_MAX', 25);
 
 $input = json_decode(file_get_contents('php://input'), true) ?: [];

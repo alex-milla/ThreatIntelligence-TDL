@@ -72,7 +72,7 @@
     window.ddTag = function (domain, tag) {
         fetch('/ajax_tag_domain.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
             body: JSON.stringify({ domain: domain, tag: tag })
         })
         .then(function (r) { return r.json(); })
@@ -86,7 +86,7 @@
     window.ddWatchlist = function (domain) {
         fetch('/ajax_watchlist.php', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
             body: JSON.stringify({ domain: domain })
         })
         .then(function (r) { return r.json(); })

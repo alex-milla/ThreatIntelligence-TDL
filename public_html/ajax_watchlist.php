@@ -7,6 +7,18 @@ header('Content-Type: application/json');
 $db = Database::get();
 $userId = (int)$_SESSION['user_id'];
 
+// Resolve a group id only if it belongs to the current user (otherwise null),
+// so a crafted request cannot point a watchlist row at another user's group.
+$ownGroup = function ($groupId) use ($db, $userId): ?int {
+    $groupId = (int)$groupId;
+    if ($groupId <= 0) {
+        return null;
+    }
+    $stmt = $db->prepare("SELECT id FROM watchlist_groups WHERE id = ? AND user_id = ? LIMIT 1");
+    $stmt->execute([$groupId, $userId]);
+    return $stmt->fetchColumn() ? $groupId : null;
+};
+
 // GET: Check if a domain is in the user's watchlist
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['check'])) {
     $domain = trim($_GET['check']);
@@ -28,6 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['check'])) {
 
 // POST: Toggle add/remove from watchlist, or group actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    validateCsrf();
+
     $input = json_decode(file_get_contents('php://input'), true);
     $action = $input['action'] ?? 'toggle';
 
@@ -48,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute([(int)$existing['id'], $userId]);
             echo json_encode(['success' => true, 'action' => 'removed']);
         } else {
-            $groupId = isset($input['group_id']) && $input['group_id'] !== '' ? (int)$input['group_id'] : null;
+            $groupId = $ownGroup($input['group_id'] ?? null);
             $db->prepare("INSERT INTO watchlist (user_id, domain, note, group_id) VALUES (?, ?, ?, ?)")
                 ->execute([$userId, $domain, null, $groupId]);
             echo json_encode(['success' => true, 'action' => 'added']);
@@ -59,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Set group for a watchlist entry
     if ($action === 'set_group') {
         $watchId = (int)($input['watch_id'] ?? 0);
-        $groupId = isset($input['group_id']) && $input['group_id'] !== '' ? (int)$input['group_id'] : null;
+        $groupId = $ownGroup($input['group_id'] ?? null);
         $db->prepare("UPDATE watchlist SET group_id = ? WHERE id = ? AND user_id = ?")
             ->execute([$groupId, $watchId, $userId]);
         echo json_encode(['success' => true]);

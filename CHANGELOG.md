@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.21] - 2026-09-27
+
+### Security - Hardening of the web app, worker and self-updater
+
+Closes the findings still open from the v1.15.3 security audit (`md/AUDITORIA-SEGURIDAD-v1.15.3-2026-09-24.md`), all backward-compatible:
+
+- **H1 - Client IP / rate-limit bypass.** `getClientIp()` no longer trusts the first `X-Forwarded-For` hop. It auto-detects Cloudflare edge peers (`tdl_is_cloudflare_ip`) and uses `CF-Connecting-IP` / the last XFF hop (not client-forgeable); otherwise `REMOTE_ADDR`. Overridable with `TDL_TRUST_PROXY` (`1`/`0`).
+- **H3 - Session cookie flags.** `session_set_cookie_params()` with `HttpOnly`, `SameSite=Lax` and `Secure` (only on HTTPS).
+- **H4 - Missing CSRF** on `ajax_watchlist.php` and `ajax_tag_domain.php`; `X-CSRF-Token` added to every JS caller (`domain-detail.js`, `bulk.js`, `keyword_matches.php`).
+- **H5 - Global tag deletion.** Only the tag author or an admin can remove a `domain_tags` entry.
+- **H6 - Shared provider quota.** Per-session throttle on the VirusTotal, abuse.ch and Cloudflare queue endpoints.
+- **H8 - Command result IDOR.** `search_domain` / `whois_lookup` results are only readable for commands from the last 30 minutes.
+- **H9 / H9.2 - Headers.** `sendSecurityHeaders()` now runs on the `requireAuth()` redirect (302) and adds `Content-Security-Policy-Report-Only` (non-blocking).
+- **H10.1 / H10.4.** Per-IP registration rate limit (new `register_attempts` table) and `api_requests` now stores a SHA-256 hash of the API key.
+- **H10.5.** Watchlist `group_id` is validated against the current user.
+
+### Changed - Safer self-updater (web + worker)
+
+- **Manifest-based web update** (`public_html/includes/updater.php`): only new/changed files are copied (SHA-256 manifest at `data/.manifest.json`), and files removed from a release are pruned. Operator-added files are never touched.
+- **Path-traversal guard:** release ZIP entries with `..`/absolute paths are rejected before extraction.
+- **Restore:** every backup listed in `/admin/update.php` can be restored (a pre-restore snapshot is taken first).
+- **Worker pin (`TDL_WORKER_PIN` / `[worker] update_pin`):** optionally reset the worker to a release tag instead of `origin/main`.
+
+### Added - Test suites and CI
+
+- Dependency-free PHP test runner (`php tests/run.php`) covering the security/updater/db helpers.
+- Worker suite now runs under `pytest` with coverage (`worker/pyproject.toml`, `requirements-dev.txt`); `python tests.py` still works.
+- Playwright E2E + axe-core accessibility suite (`tests/e2e/`) against a throwaway seeded copy of `public_html/`.
+- CI jobs: `php-tests`, `python-tests` (pytest+coverage) and `e2e`.
+
+### Accessibility
+
+- Notifications page: accessible names added to the date-range select, the "created within days" input and the row checkboxes.
+
 ## [v1.18.20] - 2026-09-26
 
 ### Added - Refresh button in API quotas + create a report group from the match list

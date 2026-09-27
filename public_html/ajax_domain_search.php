@@ -147,7 +147,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         exit;
     }
 
-    $stmt = $db->prepare("SELECT status, result FROM commands WHERE id = ? AND command = 'search_domain' LIMIT 1");
+    // Only very recent commands are readable: the result is polled for a few
+    // minutes after queueing, so an old command_id of another user cannot be
+    // enumerated to read their searches.
+    $stmt = $db->prepare(
+        "SELECT status, result FROM commands WHERE id = ? AND command = 'search_domain' "
+        . "AND created_at >= datetime('now','-30 minutes') LIMIT 1"
+    );
     $stmt->execute([$commandId]);
     $cmd = $stmt->fetch();
 
