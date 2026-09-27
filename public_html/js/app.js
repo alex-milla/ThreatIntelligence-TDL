@@ -149,9 +149,17 @@ var App = {
                 e.preventDefault();
                 var next = self.currentTheme() === 'dark' ? 'light' : 'dark';
                 try { localStorage.setItem(self.STORAGE_KEY, next); } catch (err) {}
+                self.setThemeCookie(next);
                 self.applyTheme(next);
             });
         });
+    },
+
+    // Mirror the choice into a cookie so the server can render the right theme
+    // on the next page load (progressive enhancement over localStorage).
+    setThemeCookie: function (theme) {
+        var secure = window.location.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = 'tdl_theme=' + theme + '; path=/; max-age=31536000; SameSite=Lax' + secure;
     },
 
     // Elements with [data-confirm] ask for confirmation (themed modal) before

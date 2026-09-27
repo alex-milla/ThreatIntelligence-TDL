@@ -63,7 +63,8 @@ if ($step === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $success = "Admin user created successfully.";
             $showKey = $apiKey;
         } catch (PDOException $e) {
-            $error = "Database error: " . $e->getMessage();
+            error_log('install: ' . $e->getMessage());
+            $error = "Database error. Check that the data directory is writable and try again.";
         }
     }
 }

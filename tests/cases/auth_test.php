@@ -128,3 +128,16 @@ test('sessionRateLimited blocks after the configured max', function () {
     assert_false(sessionRateLimited('rl_test', 2, 60));
     assert_true(sessionRateLimited('rl_test', 2, 60));
 });
+
+test('apiRateLimitMeta reports limit, remaining and reset', function () {
+    $meta = apiRateLimitMeta(0, 10, 60, 1000);
+    assert_same(10, $meta['limit']);
+    assert_same(9, $meta['remaining'], 'first request leaves 9 of 10');
+    assert_same(1060, $meta['reset']);
+
+    $mid = apiRateLimitMeta(4, 10, 60, 1000);
+    assert_same(5, $mid['remaining']);
+
+    $exhausted = apiRateLimitMeta(10, 10, 60, 1000);
+    assert_same(0, $exhausted['remaining'], 'never negative');
+});

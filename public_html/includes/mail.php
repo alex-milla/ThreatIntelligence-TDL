@@ -4,6 +4,22 @@
  * Uses PHP mail(). For production SMTP, replace this file with PHPMailer.
  */
 
+/**
+ * Domain used for the From: header and links in notification emails.
+ *
+ * Prefers TDL_MAIL_FROM_DOMAIN so a spoofed Host header can never change the
+ * sender; otherwise falls back to the sanitised Host (legacy behaviour).
+ */
+function mail_from_domain(): string {
+    $env = getenv('TDL_MAIL_FROM_DOMAIN');
+    if (is_string($env) && $env !== '' && preg_match('/^[A-Za-z0-9.\-]+$/', $env)) {
+        return $env;
+    }
+    return isset($_SERVER['HTTP_HOST'])
+        ? preg_replace('/[^a-zA-Z0-9\.\-:]/', '', $_SERVER['HTTP_HOST'])
+        : 'yourdomain.com';
+}
+
 function sendMatchEmail(string $to, string $username, array $matches): bool {
     if (empty($matches) || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
         return false;
@@ -16,7 +32,7 @@ function sendMatchEmail(string $to, string $username, array $matches): bool {
     foreach ($matches as $m) {
         $body .= "- {$m['domain']} (keyword: {$m['keyword']})\n";
     }
-    $host = isset($_SERVER['HTTP_HOST']) ? preg_replace('/[^a-zA-Z0-9\.\-:]/', '', $_SERVER['HTTP_HOST']) : 'yourdomain.com';
+    $host = mail_from_domain();
     $body .= "\nView all matches at: https://" . $host . "/\n";
     $body .= "\n--\nThreatIntelligence-TDL";
 
@@ -43,7 +59,7 @@ function sendIntelligenceEmail(string $to, string $username, array $items): bool
     foreach ($items as $it) {
         $body .= "- {$it['domain']} (keyword: {$it['keyword']}) - {$it['reason']}\n";
     }
-    $host = isset($_SERVER['HTTP_HOST']) ? preg_replace('/[^a-zA-Z0-9\.\-:]/', '', $_SERVER['HTTP_HOST']) : 'yourdomain.com';
+    $host = mail_from_domain();
     $body .= "\nReview them at: https://" . $host . "/intelligence.php\n";
     $body .= "\n--\nThreatIntelligence-TDL";
 

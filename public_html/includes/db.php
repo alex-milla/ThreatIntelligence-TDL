@@ -4,12 +4,28 @@
  * SQLite wrapper with automatic table creation
  */
 
+/**
+ * Directory that holds app.db.
+ *
+ * Defaults to public_html/data (legacy layout). Set the TDL_DATA_DIR
+ * environment variable to move the database outside the web root (recommended
+ * where the server honours it); the default is untouched, so existing installs
+ * keep working. Moving the DB requires moving the file with the service stopped.
+ */
+function tdl_data_dir(): string {
+    $env = getenv('TDL_DATA_DIR');
+    if (is_string($env) && $env !== '' && is_dir($env)) {
+        return rtrim($env, '/\\');
+    }
+    return __DIR__ . '/../data';
+}
+
 class Database {
     private static ?PDO $instance = null;
     
     public static function get(): PDO {
         if (self::$instance === null) {
-            $dbDir = __DIR__ . '/../data';
+            $dbDir = tdl_data_dir();
             if (!is_dir($dbDir)) {
                 mkdir($dbDir, 0755, true);
             }

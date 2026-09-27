@@ -334,7 +334,8 @@ For private repositories, set a GitHub personal access token in `admin/update.ph
 ## Security Notes
 
 - The worker API is protected by a single API key (generated during install).
-- Keep `data/` outside the web root if your hosting allows it; otherwise `data/.htaccess` blocks direct access.
+- Keep `data/` outside the web root if your hosting allows it; otherwise `data/.htaccess` blocks direct access. To move the SQLite database outside the served tree, set **`TDL_DATA_DIR`** to a directory outside `public_html/` (opt-in; the default `public_html/data/` is unchanged). Move the existing `app.db` with the app stopped.
+- Set **`TDL_MAIL_FROM_DOMAIN`** to pin the sender domain of notification emails instead of deriving it from the request `Host` header.
 - Use HTTPS between the worker and the hosting.
 - The worker never stores user data or keywords locally (only a domain cache for deduplication).
 

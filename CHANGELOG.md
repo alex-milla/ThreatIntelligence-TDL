@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.22] - 2026-09-27
+
+### Added - API conventions, server-side theme, onboarding and audit cleanup
+
+- **API rate-limit headers (compatible).** `checkApiRateLimit()` now emits `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` (plus `Retry-After` on a 429) on every `api/v1` response, via the pure `apiRateLimitMeta()` helper. No status code or response field changed, so the worker contract is untouched.
+- **API contract documented** in `docs/openapi.yaml` (18 endpoints, `X-API-Key`, error schema, rate-limit headers).
+- **Server-side theme** (`public_html/includes/theme.php`): the initial `data-theme` is resolved from the `tdl_theme` cookie, the duplicated inline bootstrap in `templates/header.php`, `login.php` and `register.php` is now one helper, and `js/app.js` mirrors the toggle choice into the cookie (`SameSite=Lax`, `Secure` on HTTPS). The inline script only overrides the server value when the visitor has an explicit `localStorage` preference, so existing users are unaffected (no FOUC).
+- **`AGENTS.md`** onboarding guide (architecture, commands, conventions, security invariants).
+
+### Security - Remaining low-severity audit items
+
+- **H2.** New opt-in `TDL_DATA_DIR` (`includes/db.php`) to move `app.db` outside the web root; the default `public_html/data/` is unchanged, so existing installs keep working.
+- **H10.3.** `install.php` returns a generic database error (detail only in `error_log`), no internal schema/path leakage.
+- **H10.6.** `mail_from_domain()` (`includes/mail.php`) lets the notification `From` domain be pinned with `TDL_MAIL_FROM_DOMAIN` instead of deriving it from the request `Host` header.
+- **H10.7.** cURL redirects in `ajax_whois.php` are restricted to HTTPS (`CURLOPT_PROTOCOLS` / `CURLOPT_REDIR_PROTOCOLS`).
+- **H10.10.** Removed no-op `RewriteRule` lines from `public_html/.htaccess`.
+
+### Tests
+
+- New PHP tests for `tdl_data_dir()` and `mail_from_domain()`, `apiRateLimitMeta()`, and the theme helpers.
+- New E2E specs: theme toggle + cookie persistence, and worker API rate-limit headers / 401 handling.
+
 ## [v1.18.21] - 2026-09-27
 
 ### Security - Hardening of the web app, worker and self-updater

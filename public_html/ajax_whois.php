@@ -35,6 +35,8 @@ function getRdapServer(string $tld): ?string {
             CURLOPT_TIMEOUT => 15,
             CURLOPT_USERAGENT => 'TDL-Whois/1.0',
             CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+            CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
         ]);
         $body = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -80,6 +82,8 @@ function fetchRdap(string $url): array {
         CURLOPT_USERAGENT => 'TDL-Whois/1.0',
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_SSL_VERIFYHOST => 2,
+        CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+        CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
         CURLOPT_HTTPHEADER => ['Accept: application/json'],
     ]);
     $body = curl_exec($ch);

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/theme.php';
 sendSecurityHeaders();
 
 $loggedIn = !empty($_SESSION['user_id']);
@@ -35,24 +36,14 @@ if (!in_array($tldSource, ['czds', 'openintel'], true)) {
 }
 ?>
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="<?= htmlspecialchars(tdl_resolve_theme()) ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(csrfToken()) ?>">
     <meta name="theme-color" content="#f97316">
     <title><?= htmlspecialchars($pageTitle ?? 'ThreatIntelligence-TDL') ?></title>
-    <script>
-    (function () {
-        try {
-            var t = localStorage.getItem('tdl-theme');
-            if (t !== 'dark' && t !== 'light') { t = 'light'; }
-            document.documentElement.setAttribute('data-theme', t);
-        } catch (e) {
-            document.documentElement.setAttribute('data-theme', 'light');
-        }
-    })();
-    </script>
+    <?= tdl_theme_boot_script() ?>
     <link rel="stylesheet" href="/css/fonts.css?v=<?= urlencode($assetVersion) ?>">
     <link rel="stylesheet" href="/css/materialize.min.css?v=<?= urlencode($assetVersion) ?>">
     <link rel="stylesheet" href="/css/materialize.colors.min.css?v=<?= urlencode($assetVersion) ?>">

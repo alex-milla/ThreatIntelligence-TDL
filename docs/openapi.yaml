@@ -1,0 +1,376 @@
+openapi: 3.0.3
+info:
+  title: ThreatIntelligence-TDL Worker API
+  version: "1"
+  description: |
+    Server-to-server API used by the Python worker to sync with the PHP web app.
+
+    Authentication: every request must send the **admin** API key in the
+    `X-API-Key` header. Responses are JSON. Success payloads include
+    `success: true` plus endpoint-specific fields; errors use HTTP status codes
+    with `{ "success": false, "error": "<message>" }`.
+
+    Rate limiting is per client IP and window (60 s); the limits are advertised
+    in `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`
+    headers, and a `429` includes `Retry-After`.
+servers:
+  - url: https://your-domain.example
+    description: Shared hosting (web app root)
+tags:
+  - name: keywords
+  - name: matches
+  - name: worker
+  - name: commands
+  - name: tlds
+  - name: enrichment
+  - name: tracking
+  - name: tags
+security:
+  - ApiKeyAuth: []
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: Invalid API key
+    Success:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: The key is valid but the user is not an administrator.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: Invalid or missing payload.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Rate limit exceeded.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+paths:
+  /api/v1/keywords.php:
+    get:
+      tags: [keywords]
+      summary: Active keywords for the matcher.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      keywords:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            user_id: { type: integer }
+                            keyword: { type: string }
+                            match_type: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/matches.php:
+    post:
+      tags: [matches]
+      summary: Ingest new domain matches; returns the number stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                discovered_at: { type: string, format: date-time }
+                matches:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      keyword_id: { type: integer }
+                      domain: { type: string }
+                      tld: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      inserted: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/worker_status.php:
+    get:
+      tags: [worker]
+      summary: Current worker status (heartbeat, counters, version).
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    post:
+      tags: [worker]
+      summary: Update the worker heartbeat/status.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/worker_logs.php:
+    get:
+      tags: [worker]
+      summary: Recent worker logs (bounded limit, optional level filter).
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    post:
+      tags: [worker]
+      summary: Append worker log lines.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/commands.php:
+    get:
+      tags: [commands]
+      summary: Pending commands (`?recover=1` returns commands left "running").
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Success'
+                  - type: object
+                    properties:
+                      commands:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            command: { type: string }
+                            payload: { type: string, nullable: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    post:
+      tags: [commands]
+      summary: Update a command's lifecycle status/result.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/tlds.php:
+    get:
+      tags: [tlds]
+      summary: TLD list (`?active=1`; `?source=czds|openintel`).
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    post:
+      tags: [tlds]
+      summary: Replace the approved TLD list.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/tld_sync.php:
+    post:
+      tags: [tlds]
+      summary: Report per-TLD download/parse results.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/cctld_sync.php:
+    post:
+      tags: [tlds]
+      summary: Report per-ccTLD (OpenINTEL) results.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/recheck_status.php:
+    get:
+      tags: [worker]
+      summary: Recheck progress.
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    post:
+      tags: [worker]
+      summary: Update recheck progress.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/whois_results.php:
+    post:
+      tags: [enrichment]
+      summary: Store WHOIS/RDAP registration data.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/vt_results.php:
+    post:
+      tags: [enrichment]
+      summary: Store VirusTotal domain reputations.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/abusech_results.php:
+    post:
+      tags: [enrichment]
+      summary: Store abuse.ch (URLhaus + ThreatFox) validations.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/cfscan_results.php:
+    post:
+      tags: [enrichment]
+      summary: Store Cloudflare Radar (URL Scanner + DNS) results.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/api_usage.php:
+    post:
+      tags: [enrichment]
+      summary: Report provider API consumption (Cloudflare/VirusTotal/abuse.ch).
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/domain_tags.php:
+    get:
+      tags: [tags]
+      summary: Tags for a domain (`?domain=`).
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    post:
+      tags: [tags]
+      summary: Set tags for one or more domains.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    delete:
+      tags: [tags]
+      summary: Remove a domain tag.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/tracking_due.php:
+    get:
+      tags: [tracking]
+      summary: Due Intelligence tracking entries (`?limit=`, `?domains=`).
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/tracking_enroll.php:
+    post:
+      tags: [tracking]
+      summary: Enroll candidate domains into Intelligence tracking.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/tracking_results.php:
+    post:
+      tags: [tracking]
+      summary: Store Intelligence tracking check results.
+      responses:
+        '200': { description: OK }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }

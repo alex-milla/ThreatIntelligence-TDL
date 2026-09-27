@@ -510,7 +510,10 @@ function checkApiRateLimit(PDO $db, string $ip, string $apiKey = '', string $end
     // Check IP-based limit
     $stmt = $db->prepare("SELECT COUNT(*) FROM api_requests WHERE ip_address = ? AND requested_at > ?");
     $stmt->execute([$ip, $since]);
-    if ((int)$stmt->fetchColumn() >= $maxRequests) {
+    $count = (int)$stmt->fetchColumn();
+
+    if ($count >= $maxRequests) {
+        apiSendRateLimitHeaders(apiRateLimitMeta($count, $maxRequests, $windowSeconds), true);
         return true;
     }
 
@@ -520,7 +523,37 @@ function checkApiRateLimit(PDO $db, string $ip, string $apiKey = '', string $end
     $stmt = $db->prepare("INSERT INTO api_requests (ip_address, api_key, endpoint, requested_at) VALUES (?, ?, ?, datetime('now'))");
     $stmt->execute([$ip, $apiKey === '' ? '' : hash('sha256', $apiKey), $endpoint]);
 
+    apiSendRateLimitHeaders(apiRateLimitMeta($count, $maxRequests, $windowSeconds));
+
     return false;
+}
+
+/**
+ * Compute the values advertised in the X-RateLimit-* headers. Pure so it can be
+ * unit-tested; $priorCount is the number of requests already in the window
+ * (before the current one is logged).
+ *
+ * @return array{limit:int,remaining:int,reset:int}
+ */
+function apiRateLimitMeta(int $priorCount, int $max, int $windowSeconds, ?int $now = null): array {
+    $now = $now ?? time();
+    return [
+        'limit'     => $max,
+        'remaining' => max(0, $max - $priorCount - 1),
+        'reset'     => $now + $windowSeconds,
+    ];
+}
+
+function apiSendRateLimitHeaders(array $meta, bool $exceeded = false): void {
+    if (headers_sent()) {
+        return;
+    }
+    header('X-RateLimit-Limit: ' . (int)$meta['limit']);
+    header('X-RateLimit-Remaining: ' . (int)$meta['remaining']);
+    header('X-RateLimit-Reset: ' . (int)$meta['reset']);
+    if ($exceeded) {
+        header('Retry-After: ' . max(1, (int)$meta['reset'] - time()));
+    }
 }
 
 /**
