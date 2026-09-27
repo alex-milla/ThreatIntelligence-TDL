@@ -101,6 +101,24 @@ test.describe('Notifications v2 layout', () => {
     await expect(page.locator('body')).not.toHaveClass(/selection-mode/);
   });
 
+  test('clicking a domain during selection mode opens the drawer and drops the other rows', async ({ page }) => {
+    await page.goto('/notifications.php?ui=v2');
+
+    const checks = page.locator('tr[data-domain] .row-check');
+    await checks.nth(0).check();
+    await checks.nth(1).check();
+    await expect(page.locator('body')).toHaveClass(/selection-mode/);
+    await expect(page.locator('.drawer-panel.open')).toHaveCount(0);
+
+    // Clicking a domain takes over the selection instead of being closed by it.
+    await page.locator('a.domain-link').first().click();
+    await expect(page.locator('.drawer-panel.open')).toBeVisible();
+    await expect(page.locator('body')).not.toHaveClass(/selection-mode/);
+    // The clicked row keeps its check; the rest are cleared.
+    await expect(checks.nth(0)).toBeChecked();
+    await expect(checks.nth(1)).not.toBeChecked();
+  });
+
   test('the classic layout still expands the detail inline', async ({ page }) => {
     await page.goto('/notifications.php?ui=classic');
     await page.locator('a.domain-link').first().click();

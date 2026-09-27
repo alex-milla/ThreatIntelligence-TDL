@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.19.9] - 2026-09-27
+
+### Fixed - v2 Notifications: clicking a domain while in selection mode
+
+- With **2 or more** notifications selected the layout is in selection mode and the detail drawer is closed. Clicking a domain then opened the drawer and immediately closed it again: the deferred selection sync still saw 2+ checked rows and re-closed the panel. Now inspecting a domain takes over the selection (the clicked row becomes the only selected one, the rest are cleared), so selection mode exits and the detail drawer stays open. CSS/JS only, scoped to v2.
+
+### Tests
+
+- Playwright: after selecting two rows, clicking a domain opens the drawer, drops `body.selection-mode` and clears every row except the clicked one.
+
 ## [v1.19.8] - 2026-09-27
 
 ### Fixed - v2 Notifications selection mode targeted the wrong sidebar

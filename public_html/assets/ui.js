@@ -50,6 +50,17 @@
         if (row) { row.classList.add('dd-active'); }
     }
 
+    // Inspecting a domain takes over any multi-selection: the clicked row
+    // becomes the only selected one. Otherwise the deferred syncSelection would
+    // still see 2+ checked, keep selection mode on and close the drawer again.
+    function selectOnlyRow(row) {
+        var own = row ? row.querySelector('.row-check') : null;
+        $all('.row-check').forEach(function (cb) { cb.checked = (own !== null && cb === own); });
+        var bulkAll = document.getElementById('select-all');
+        if (bulkAll) { bulkAll.checked = false; }
+        syncSelection();
+    }
+
     function openDrawer(domain, detailNode, row) {
         buildDrawer();
         // Clicking the domain that is already open closes the drawer.
@@ -57,6 +68,7 @@
             closeDrawer();
             return;
         }
+        selectOnlyRow(row || null);
         drawer.querySelector('.drawer-title').textContent = domain;
         var body = drawer.querySelector('.drawer-body');
         body.innerHTML = '';
