@@ -664,47 +664,6 @@ require __DIR__ . '/templates/header.php';
             </ul>
         </div>
 
-        <script>
-        document.getElementById('select-all').addEventListener('change', function(e) {
-            document.querySelectorAll('.row-check').forEach(cb => cb.checked = e.target.checked);
-        });
-
-        function closeActionMenus() {
-            document.querySelectorAll('.action-menu-dropdown.active').forEach(function (d) {
-                d.classList.remove('active');
-                d.style.position = '';
-                d.style.top = '';
-                d.style.left = '';
-            });
-        }
-        function toggleMenu(btn) {
-            const dropdown = btn.nextElementSibling;
-            const isOpen = dropdown.classList.contains('active');
-            closeActionMenus();
-            if (isOpen) return;
-            // Fixed positioning escapes the table's overflow clipping on small screens.
-            dropdown.classList.add('active');
-            const r = btn.getBoundingClientRect();
-            const w = dropdown.offsetWidth || 200;
-            let left = r.right - w;
-            if (left < 8) left = 8;
-            const maxLeft = window.innerWidth - w - 8;
-            if (left > maxLeft) left = Math.max(8, maxLeft);
-            let top = r.bottom + 4;
-            const h = dropdown.offsetHeight || 0;
-            if (top + h > window.innerHeight - 8) {
-                top = Math.max(8, r.top - h - 4);
-            }
-            dropdown.style.position = 'fixed';
-            dropdown.style.top = top + 'px';
-            dropdown.style.left = left + 'px';
-        }
-        document.addEventListener('click', function(e) {
-            if (!e.target.closest('.action-menu')) closeActionMenus();
-        });
-        window.addEventListener('scroll', closeActionMenus, true);
-        window.addEventListener('resize', closeActionMenus);
-        </script>
     <?php endif; ?>
 </div>
 

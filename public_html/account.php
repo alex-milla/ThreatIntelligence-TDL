@@ -31,9 +31,9 @@ require __DIR__ . '/templates/header.php';
 <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= htmlspecialchars($message) ?></div>
 <?php endif; ?>
 
-<div class="card account-card">
-    <div class="card-head">
-        <h2>Email notifications</h2>
+<div class="card account-card settings-card">
+    <div class="page-header">
+        <h1>Email notifications</h1>
     </div>
     <p class="muted">
         When enabled, you will receive an email summary each time new domains match your keywords.

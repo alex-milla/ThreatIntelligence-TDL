@@ -2135,19 +2135,26 @@ def resolve_update_ref(cfg: configparser.ConfigParser | None) -> tuple[str, str]
     return (ref, pin)
 
 
-def perform_worker_update(cfg: configparser.ConfigParser | None = None) -> tuple[str, str]:
-    """Update the worker checkout to origin/main (or a pinned tag).
+def perform_worker_update(cfg: configparser.ConfigParser | None = None, target_ref: str | None = None) -> tuple[str, str]:
+    """Update the worker checkout to origin/main (or a pinned tag / target_ref).
 
     Untracked files (config.ini, data/, zones/) are never touched. A hard reset
     is used so a deployment checkout always matches the chosen ref. When a pin
     is configured (TDL_WORKER_PIN / [worker] update_pin) the checkout is reset
-    to that tag instead of main.
+    to that tag instead of main. An explicit ``target_ref`` (e.g. a release tag
+    ``v1.20.1`` sent by the web UI to revert the worker to the app version)
+    overrides the pin. Git keeps the objects in the repo, so no file backup is
+    needed and the disk does not grow with each revert.
     """
     repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if not os.path.isdir(os.path.join(repo_dir, ".git")):
         return ("This worker is not a git checkout; cannot self-update. Run update.sh on the server.", "failed")
 
-    ref, label = resolve_update_ref(cfg)
+    if target_ref and target_ref.strip():
+        pin = target_ref.strip()
+        ref, label = (pin, pin) if pin.startswith("refs/") else (f"refs/tags/{pin}", pin)
+    else:
+        ref, label = resolve_update_ref(cfg)
 
     env = dict(os.environ)
     env["GIT_TERMINAL_PROMPT"] = "0"
@@ -2552,7 +2559,17 @@ def handle_commands(db: sqlite3.Connection, cfg: configparser.ConfigParser, host
                 logs.append({"level": "info", "message": result})
 
             elif command == "update_worker":
-                result, status = perform_worker_update(cfg)
+                # Optional payload {"ref": "vX.Y.Z"} reverts the checkout to a
+                # specific release tag (used to sync with the web app version).
+                target_ref = None
+                if payload:
+                    try:
+                        opts = json.loads(payload) if isinstance(payload, str) else {}
+                    except (ValueError, TypeError):
+                        opts = {}
+                    if isinstance(opts, dict):
+                        target_ref = (str(opts.get("ref") or "")).strip() or None
+                result, status = perform_worker_update(cfg, target_ref)
                 logs.append({"level": "info" if status == "completed" else "error", "message": result})
                 if status == "completed":
                     restart_requested = True

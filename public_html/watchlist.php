@@ -210,36 +210,35 @@ require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="card">
-    <div class="card-head">
-        <h2><i class="material-icons left">star</i>Watchlist</h2>
-        <span class="muted"><?= $totalAll ?> domain(s)</span>
+    <div class="page-header">
+        <h1>Watchlist</h1>
+        <span class="count-chip"><i class="material-icons" style="font-size:16px;">star</i><?= (int)$totalAll ?> domain<?= $totalAll === 1 ? '' : 's' ?></span>
+        <span class="spacer"></span>
+        <p class="subtitle">Private list of domains you monitor over time. Notes are personal and not shared with other users.</p>
     </div>
-    <p class="muted">Private list of domains you are tracking for monitoring over time. Notes are personal and not shared with other users.</p>
 
     <?php if (empty($items) && empty($groups)): ?>
         <p class="muted">Your watchlist is empty. Add domains from the <a href="/notifications.php">Notifications</a> page or from any domain modal.</p>
     <?php else: ?>
 
-        <!-- Group tabs -->
-        <div class="group-tabs">
-            <a href="/watchlist.php" class="group-tab <?= $groupFilter === '' || $groupFilter === '0' ? 'active' : '' ?>">Ungrouped (<?= $ungroupedCount ?>)</a>
-            <?php foreach ($groups as $g): 
+        <div class="chip-tabs">
+            <a href="/watchlist.php" class="chip<?= $groupFilter === '' || $groupFilter === '0' ? ' active' : '' ?>">Ungrouped <span class="chip-count"><?= (int)$ungroupedCount ?></span></a>
+            <?php foreach ($groups as $g):
                 $gCount = $groupCounts[(string)$g['id']] ?? 0;
                 $isActive = $groupFilter === (string)$g['id'];
             ?>
-                <span class="group-chip">
-                    <a href="/watchlist.php?group=<?= (int)$g['id'] ?>" class="group-tab <?= $isActive ? 'active' : '' ?>"><?= htmlspecialchars($g['name']) ?> (<?= $gCount ?>)</a>
-                    <form method="POST" style="margin: 0; display: inline-flex;" onsubmit="return confirm('Delete group &quot;<?= htmlspecialchars(addslashes($g['name'])) ?>&quot;? Domains will become ungrouped.')">
-                        <?php csrfField(); ?>
-                        <input type="hidden" name="action" value="delete_group">
-                        <input type="hidden" name="group_id" value="<?= (int)$g['id'] ?>">
-                        <button type="submit" class="group-tab group-delete" title="Delete group"><i class="material-icons tiny">close</i></button>
-                    </form>
-                </span>
+            <span class="chip<?= $isActive ? ' active' : '' ?>">
+                <a href="/watchlist.php?group=<?= (int)$g['id'] ?>"><?= htmlspecialchars($g['name']) ?> <span class="chip-count"><?= $gCount ?></span></a>
+                <form method="POST" onsubmit="return confirm('Delete group &quot;<?= htmlspecialchars(addslashes($g['name'])) ?>&quot;? Domains will become ungrouped.')">
+                    <?php csrfField(); ?>
+                    <input type="hidden" name="action" value="delete_group">
+                    <input type="hidden" name="group_id" value="<?= (int)$g['id'] ?>">
+                    <button type="submit" class="chip-x" title="Delete group" aria-label="Delete group"><i class="material-icons">close</i></button>
+                </form>
+            </span>
             <?php endforeach; ?>
         </div>
 
-        <!-- Create group form -->
         <form method="POST" class="group-create-form">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="create_group">
@@ -326,8 +325,9 @@ require __DIR__ . '/templates/header.php';
                     $domainArg = htmlspecialchars(addslashes($item['domain']));
                 ?>
                 <tr data-domain="<?= htmlspecialchars($item['domain']) ?>">
-                    <td>
-                        <a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= $domainArg ?>')" aria-expanded="false"><?= htmlspecialchars($item['domain']) ?></a><?= $tagBadge ?>
+                    <td class="domain-cell">
+                        <a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= $domainArg ?>')"><?= htmlspecialchars($item['domain']) ?></a><?= $tagBadge ?><?php if ($isNew): ?> <span class="badge-new">NEW</span><?php endif; ?>
+                        <div class="kwm-sub">.<?= htmlspecialchars($tld) ?></div>
                     </td>
                     <td><?= htmlspecialchars($creationDisplay) ?></td>
                     <td>
@@ -344,26 +344,28 @@ require __DIR__ . '/templates/header.php';
                         </form>
                     </td>
                     <td>
-                        <form method="POST" style="margin: 0; display: flex; gap: 6px; align-items: center;">
+                        <form method="POST" class="wl-note-form">
                             <?php csrfField(); ?>
                             <input type="hidden" name="action" value="update_note">
                             <input type="hidden" name="watch_id" value="<?= (int)$item['id'] ?>">
-                            <input type="text" name="note" value="<?= htmlspecialchars($item['note'] ?? '') ?>" placeholder="Add a note..." class="browser-default compact" style="flex: 1; min-width: 120px;">
-                            <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">save</i>Save</button>
+                            <input type="text" name="note" value="<?= htmlspecialchars($item['note'] ?? '') ?>" placeholder="Add a note..." class="browser-default compact">
+                            <button type="submit" class="icon-btn" title="Save note" aria-label="Save note"><i class="material-icons">save</i></button>
                         </form>
                     </td>
                     <td><?= htmlspecialchars(fmt_date($item['created_at'])) ?></td>
                     <td>
-                        <form method="POST" style="margin: 0;" onsubmit="return confirm('Remove this domain from your watchlist?')">
-                            <?php csrfField(); ?>
-                            <input type="hidden" name="action" value="remove">
-                            <input type="hidden" name="watch_id" value="<?= (int)$item['id'] ?>">
-                            <button type="submit" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">delete</i>Remove</button>
-                        </form>
+                        <div class="row-actions">
+                            <form method="POST" onsubmit="return confirm('Remove this domain from your watchlist?')">
+                                <?php csrfField(); ?>
+                                <input type="hidden" name="action" value="remove">
+                                <input type="hidden" name="watch_id" value="<?= (int)$item['id'] ?>">
+                                <button type="submit" class="icon-btn danger" title="Remove" aria-label="Remove"><i class="material-icons">delete</i></button>
+                            </form>
+                        </div>
                     </td>
                 </tr>
                 <tr class="domain-detail-row" data-domain="<?= htmlspecialchars($item['domain']) ?>" style="display:none;">
-                    <td colspan="6"><?= renderDomainDetail($present, $keywordsList, $rules) ?></td>
+                    <td colspan="6"><?= renderDomainDetail($present, $keywordsList, $rules, true) ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>

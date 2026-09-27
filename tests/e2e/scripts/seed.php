@@ -35,6 +35,21 @@ $db->prepare("INSERT OR REPLACE INTO keywords (id, user_id, keyword, is_active, 
 $db->prepare("INSERT OR REPLACE INTO keywords (id, user_id, keyword, is_active, match_count, tracking_enabled) VALUES (2, 1, 'beta', 1, 0, 1)")->execute();
 $db->prepare("INSERT OR REPLACE INTO keywords (id, user_id, keyword, is_active, match_count, tracking_enabled) VALUES (3, 1, 'gamma', 1, 5, 0)")->execute();
 
+$db->prepare("INSERT OR REPLACE INTO domain_tracking (id, domain, keyword_id, user_id, first_seen, enrolled_at, expires_at, status, check_count) VALUES (1, 'track-demo.test', 1, 1, datetime('now'), datetime('now'), datetime('now','+30 days'), 'tracking', 2)")->execute();
+
+// Twelve dummy backups so the Backups page's 10-item retention can be asserted.
+$backupBase = $docroot . '/data/backups';
+@mkdir($backupBase, 0777, true);
+for ($i = 1; $i <= 12; $i++) {
+    $d = $backupBase . '/backup_202601' . str_pad((string)$i, 2, '0', STR_PAD_LEFT) . '_000000';
+    @mkdir($d . '/public_html', 0777, true);
+    @file_put_contents($d . '/public_html/marker.txt', 'seed ' . $i);
+}
+
+$db->prepare("INSERT OR REPLACE INTO watchlist_groups (id, user_id, name) VALUES (1, 1, 'Clients')")->execute();
+$db->prepare("INSERT OR REPLACE INTO watchlist (id, user_id, domain, note, group_id) VALUES (1, 1, 'watch-demo.test', 'Seeded watch', NULL)")->execute();
+$db->prepare("INSERT OR REPLACE INTO watchlist (id, user_id, domain, note, group_id) VALUES (2, 1, 'watch-clients.test', NULL, 1)")->execute();
+
 $db->prepare(
     "INSERT OR REPLACE INTO matches
         (id, keyword_id, domain, tld, discovered_at, first_seen, is_historical, source)

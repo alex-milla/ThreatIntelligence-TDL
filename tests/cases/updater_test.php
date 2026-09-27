@@ -129,3 +129,41 @@ test('tdl_restore_backup reverts files and prunes post-backup additions', functi
         tdl_test_rmdir($base);
     }
 });
+
+test('tdl_prune_backups keeps the newest N and deletes the rest', function () {
+    $base = tdl_test_tmpdir();
+    try {
+        for ($i = 1; $i <= 12; $i++) {
+            $d = sprintf('%s/backup_202601%02d_000000', $base, $i);
+            @mkdir($d, 0777, true);
+            file_put_contents($d . '/marker.txt', (string)$i);
+        }
+        $removed = tdl_prune_backups($base, 10);
+        assert_same(2, $removed, 'two oldest backups removed');
+        assert_same(10, count(glob($base . '/backup_*')), 'ten kept');
+        assert_false(is_dir($base . '/backup_20260101_000000'));
+        assert_false(is_dir($base . '/backup_20260102_000000'));
+        assert_true(is_dir($base . '/backup_20260112_000000'));
+
+        // Nothing to do when under the cap.
+        assert_same(0, tdl_prune_backups($base, 10));
+    } finally {
+        tdl_test_rmdir($base);
+    }
+});
+
+test('tdl_dir_size sums files and reports truncation', function () {
+    $base = tdl_test_tmpdir();
+    try {
+        file_put_contents($base . '/a', str_repeat('x', 100));
+        file_put_contents($base . '/b', str_repeat('y', 50));
+        $s = tdl_dir_size($base);
+        assert_same(150, $s['bytes']);
+        assert_false($s['truncated']);
+
+        $s2 = tdl_dir_size($base, 1);
+        assert_true($s2['truncated'], 'cap triggers the truncated flag');
+    } finally {
+        tdl_test_rmdir($base);
+    }
+});

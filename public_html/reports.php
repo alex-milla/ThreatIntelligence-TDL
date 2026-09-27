@@ -176,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
     $name = trim($_POST['group_name'] ?? '');
     if ($name === '') {
         $_SESSION['flash_error'] = 'Group name cannot be empty.';
-    } elseif (mb_strlen($name) > 60) {
+    } elseif (tdl_strlen($name) > 60) {
         $_SESSION['flash_error'] = 'Group name is too long (max 60 characters).';
     } else {
         $db->prepare("INSERT INTO keyword_groups (user_id, name) VALUES (?, ?)")->execute([$userId, $name]);
@@ -202,7 +202,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'rename_group') {
     $groupId = (int)($_POST['group_id'] ?? 0);
     $name = trim($_POST['name'] ?? '');
-    if ($name === '' || mb_strlen($name) > 60) {
+    if ($name === '' || tdl_strlen($name) > 60) {
         $_SESSION['flash_error'] = 'Invalid group name.';
     } else {
         $db->prepare("UPDATE keyword_groups SET name = ? WHERE id = ? AND user_id = ?")->execute([$name, $groupId, $userId]);
@@ -384,15 +384,11 @@ require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="card">
-    <div class="card-head">
-        <h2><i class="material-icons left">assessment</i>Reports</h2>
-        <span class="muted">
-            <?php if ($tab === 'builder'): ?>
-                <?= $queueCount ?> domain(s) pending in the report queue
-            <?php else: ?>
-                <?= $histTotal ?> saved report(s)
-            <?php endif; ?>
-        </span>
+    <div class="page-header">
+        <h1>Reports</h1>
+        <span class="count-chip"><i class="material-icons" style="font-size:16px;">assessment</i><?= $tab === 'builder' ? ((int)$queueCount . ' queued') : ((int)$histTotal . ' saved') ?></span>
+        <span class="spacer"></span>
+        <p class="subtitle">Generate immutable domain threat reports from the queue, or browse the saved history.</p>
     </div>
 
     <?php if ($message): ?>
@@ -402,32 +398,32 @@ require __DIR__ . '/templates/header.php';
         <div class="alert alert-error"><i class="material-icons left">error</i><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
-    <!-- Sub-tabs: Builder / History -->
-    <div class="report-tabs">
-        <a href="/reports.php?tab=builder" class="report-tab <?= $tab === 'builder' ? 'active' : '' ?>"><i class="material-icons tiny left">playlist_add_check</i>Queue</a>
-        <a href="/reports.php?tab=history" class="report-tab <?= $tab === 'history' ? 'active' : '' ?>"><i class="material-icons tiny left">history</i>History (<?= $histTotal ?>)</a>
+    <!-- Sub-tabs: Queue / History -->
+    <div class="chip-tabs">
+        <a href="/reports.php?tab=builder" class="chip<?= $tab === 'builder' ? ' active' : '' ?>"><i class="material-icons tiny">playlist_add_check</i>Queue</a>
+        <a href="/reports.php?tab=history" class="chip<?= $tab === 'history' ? ' active' : '' ?>"><i class="material-icons tiny">history</i>History <span class="chip-count"><?= (int)$histTotal ?></span></a>
     </div>
 
-    <!-- Group filter tabs -->
-    <div class="group-tabs">
-        <a href="<?= htmlspecialchars($tabBase) ?>" class="group-tab <?= $groupFilter === 'all' ? 'active' : '' ?>">All (<?= $tabTotal ?>)</a>
+    <!-- Group filter chips -->
+    <div class="chip-tabs">
+        <a href="<?= htmlspecialchars($tabBase) ?>" class="chip<?= $groupFilter === 'all' ? ' active' : '' ?>">All <span class="chip-count"><?= (int)$tabTotal ?></span></a>
         <?php foreach ($groups as $g):
             $gCount = $tabCounts[(string)$g['id']] ?? 0;
             $isActive = $groupFilter === (string)$g['id'];
         ?>
-            <span class="group-chip">
-                <a href="<?= htmlspecialchars($tabBase . '&group=' . (int)$g['id']) ?>" class="group-tab <?= $isActive ? 'active' : '' ?>"><?= htmlspecialchars($g['name']) ?> (<?= $gCount ?>)</a>
+            <span class="chip<?= $isActive ? ' active' : '' ?>">
+                <a href="<?= htmlspecialchars($tabBase . '&group=' . (int)$g['id']) ?>"><?= htmlspecialchars($g['name']) ?> <span class="chip-count"><?= $gCount ?></span></a>
                 <?php if ($tab === 'builder'): ?>
-                <form method="POST" style="margin: 0; display: inline-flex;" onsubmit="return confirm('Delete group &quot;<?= htmlspecialchars(addslashes($g['name'])) ?>&quot;? Its keywords will become ungrouped.')">
+                <form method="POST" onsubmit="return confirm('Delete group &quot;<?= htmlspecialchars(addslashes($g['name'])) ?>&quot;? Its keywords will become ungrouped.')">
                     <?php csrfField(); ?>
                     <input type="hidden" name="action" value="delete_group">
                     <input type="hidden" name="group_id" value="<?= (int)$g['id'] ?>">
-                    <button type="submit" class="group-tab group-delete" title="Delete group"><i class="material-icons tiny">close</i></button>
+                    <button type="submit" class="chip-x" title="Delete group" aria-label="Delete group"><i class="material-icons">close</i></button>
                 </form>
                 <?php endif; ?>
             </span>
         <?php endforeach; ?>
-        <a href="<?= htmlspecialchars($tabBase . '&group=ungrouped') ?>" class="group-tab <?= $groupFilter === 'ungrouped' ? 'active' : '' ?>">Ungrouped (<?= $tabUngrouped ?>)</a>
+        <a href="<?= htmlspecialchars($tabBase . '&group=ungrouped') ?>" class="chip<?= $groupFilter === 'ungrouped' ? ' active' : '' ?>">Ungrouped <span class="chip-count"><?= (int)$tabUngrouped ?></span></a>
     </div>
 
     <?php if ($tab === 'builder'): ?>

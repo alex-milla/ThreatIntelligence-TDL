@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.21.1] - 2026-09-27
+
+### Added - Backups page + worker version sync
+
+- New **Admin → Backups** page (`/admin/backups.php`): lists the snapshots taken before each update/restore (created time, contents App/Worker, real size) with a per-row **Restore**. Only the **10 most recent** are kept; older ones are pruned automatically. Restoring never touches `data/` or `config.ini` and takes a pre-restore snapshot first.
+- `admin/update.php` now only handles the update; the backup listing/restore moved to the new page. The helpers moved to `includes/updater.php` (`tdl_backup_app`, `tdl_prune_backups`, `tdl_copy_tree`, `tdl_rrmdir`, `tdl_dir_size`).
+- Admin → Worker: new **Sync worker to web version (vX.Y.Z)** action. It queues an `update_worker` command with a tag payload, so the worker runs `git fetch --tags` + `git reset --hard vX.Y.Z`: it reverts to the version the web app runs on with **no file backups** (does not fill the disk). `worker/scheduler.py`: `perform_worker_update()` now accepts an optional target ref and the `update_worker` command parses `{"ref": "..."}`.
+
+### Fixed
+
+- `mb_substr`/`mb_strlen` had no fallback on hosts without the mbstring extension (the admin commands/logs/keyword-group tables could fatal). Added `tdl_substr()`/`tdl_strlen()` in `includes/auth.php` and used them where unguarded.
+
+### Tests
+
+- Unit: `tdl_prune_backups` keeps the newest 10 and deletes the rest; `tdl_dir_size` truncation flag. **23 PHP tests**.
+- E2E: new `backups-v2` spec (page + retention + worker sync) and a seeded 12-backup set. Full suite: **51 green**.
+
+## [v1.21.0] - 2026-09-27
+
+### Changed - remaining screens unified with the v2 pattern
+
+- **Shared**: the row action menu (⋮) moved from `notifications.php` into `assets/ui.js`, so it now works everywhere (this also **fixes the broken action menu on Intelligence**) and is reused by every list. New shared CSS primitives: `.row-actions`, `.kv-table`, `.settings-card` and chips with an inline delete (`.chip > a` + `.chip-x`).
+- **Watchlist**: page header + group chips (with counts and inline delete), dense table, per-row note/remove icon actions, and the domain detail in the side drawer with compact actions.
+- **Intelligence**: page header, status chips (All / Tracking / Activated / Dormant with counts), standard search row and the now-working row action menu.
+- **IOCs**: page header with the unique-domain chip and the export actions, filters moved into the standard filter row.
+- **Reports**: page header and Queue/History + group chips. `report_view.php` keeps its print-document layout.
+- **Dashboard**: page header and KPI strip (`.stat-strip`) while preserving the `#live-stats`/`#live-sparkline`/`#live-worker-health` auto-refresh sections.
+- **Admin / TLDs / System Update / Cleanup / Account**: unified page headers; Account uses the settings card.
+
+### Tests
+
+- E2E: new `watchlist`, `intelligence`, `iocs`, `reports`, `dashboard` and `admin` specs; the seed now creates watchlist, tracking and group rows. Full suite: **48 green**.
+
 ## [v1.20.1] - 2026-09-27
 
 ### Added - Keyword matches (v2 per-keyword list)

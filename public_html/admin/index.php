@@ -4,6 +4,7 @@ require_once __DIR__ . '/../includes/auth.php';
 requireAdmin();
 
 $db = Database::get();
+$appVersion = is_file(__DIR__ . '/../VERSION') ? trim((string)file_get_contents(__DIR__ . '/../VERSION')) : '';
 $message = $_SESSION['flash_message'] ?? '';
 unset($_SESSION['flash_message']);
 
@@ -189,6 +190,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: /admin/');
         exit;
     }
+
+    // Revert the worker checkout to the git tag that matches this web app's
+    // version (no file backup involved, so it does not fill the disk).
+    if ($action === 'sync_worker_version') {
+        if (hasPendingCommand($db, 'update_worker')) {
+            $_SESSION['flash_message'] = 'A worker update is already queued.';
+        } elseif ($appVersion === '') {
+            $_SESSION['flash_message'] = 'Could not read the web app version.';
+        } else {
+            $payload = json_encode(['ref' => 'v' . $appVersion]);
+            $db->prepare("INSERT INTO commands (command, payload) VALUES (?, ?)")->execute(['update_worker', $payload]);
+            $_SESSION['flash_message'] = "Worker sync to web version (v{$appVersion}) queued. It will reset to the matching tag and restart.";
+        }
+        header('Location: /admin/');
+        exit;
+    }
     
     if ($action === 'toggle_registration') {
         $current = isRegistrationOpen($db);
@@ -302,6 +319,11 @@ $pageTitle = 'Admin Panel';
 require __DIR__ . '/../templates/header.php';
 ?>
 
+<div class="page-header">
+    <h1>Administration</h1>
+    <p class="subtitle">Worker, commands, users, sync and system maintenance.</p>
+</div>
+
 <?php if ($message): ?>
 <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= htmlspecialchars($message) ?></div>
 <?php endif; ?>
@@ -318,6 +340,13 @@ require __DIR__ . '/../templates/header.php';
         <input type="hidden" name="action" value="update_worker">
         <button type="submit" class="btn btn-small waves-effect">Update Worker Now</button>
     </form>
+    <?php if ($appVersion !== ''): ?>
+    <form method="POST" style="display: inline; margin-left: 8px;">
+        <?php csrfField(); ?>
+        <input type="hidden" name="action" value="sync_worker_version">
+        <button type="submit" class="btn btn-small btn-outline waves-effect">Sync worker to web version (v<?= htmlspecialchars($appVersion) ?>)</button>
+    </form>
+    <?php endif; ?>
 </div>
 <?php endif; ?>
 
@@ -361,6 +390,7 @@ require __DIR__ . '/../templates/header.php';
     <a href="#users" data-tab="users">Users</a>
     <a href="#sync" data-tab="sync">Sync</a>
     <a href="#storage" data-tab="storage">Storage</a>
+    <a href="/admin/backups.php">Backups</a>
     <a href="#system" data-tab="system">System</a>
 </nav>
 
@@ -382,7 +412,7 @@ require __DIR__ . '/../templates/header.php';
                 <td class="<?= (int)($st['failed'] ?? 0) > 0 ? 'text-danger' : 'muted' ?>"><?= (int)($st['failed'] ?? 0) ?></td>
                 <td><?= $log ? htmlspecialchars(fmt_date($log['created_at'])) : '<span class="muted">No report yet</span>' ?></td>
                 <td><?= $log ? number_format((int)$log['records_received']) . ' / ' . number_format((int)$log['records_inserted']) : '<span class="muted">&mdash;</span>' ?></td>
-                <td class="mono-sm"><?= $log && !empty($log['error']) ? '<span class="text-danger">' . htmlspecialchars(mb_substr((string)$log['error'], 0, 160)) . '</span>' : '<span class="muted">&mdash;</span>' ?></td>
+                <td class="mono-sm"><?= $log && !empty($log['error']) ? '<span class="text-danger">' . htmlspecialchars(tdl_substr((string)$log['error'], 0, 160)) . '</span>' : '<span class="muted">&mdash;</span>' ?></td>
             </tr>
             <?php endforeach; ?>
         </tbody>
@@ -680,6 +710,21 @@ if (!empty($workerStatus['last_heartbeat'])) {
             <tr><td>Version</td><td><?= htmlspecialchars($workerStatus['version'] ?? 'Unknown') ?></td></tr>
             <tr><td>Pending Commands</td><td><?= (int)$pendingCommands ?></td></tr>
         </table>
+
+        <div class="section-actions">
+            <form method="POST" style="margin:0;">
+                <?php csrfField(); ?>
+                <input type="hidden" name="action" value="update_worker">
+                <button type="submit" class="btn btn-small waves-effect" onclick="return confirm('Update the worker to the latest main?')"><i class="material-icons left">system_update</i>Update worker (latest)</button>
+            </form>
+            <?php if ($appVersion !== ''): ?>
+            <form method="POST" style="margin:0;">
+                <?php csrfField(); ?>
+                <input type="hidden" name="action" value="sync_worker_version">
+                <button type="submit" class="btn btn-small btn-outline waves-effect" onclick="return confirm('Revert the worker to the web version (v<?= htmlspecialchars($appVersion, ENT_QUOTES) ?>)? No file backups are created.')"><i class="material-icons left">restore</i>Sync to web version (v<?= htmlspecialchars($appVersion) ?>)</button>
+            </form>
+            <?php endif; ?>
+        </div>
     <?php else: ?>
         <p>No worker status received yet. Is the worker running?</p>
     <?php endif; ?>
@@ -703,7 +748,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
                     <td><?= htmlspecialchars(fmt_date($cmd['created_at'])) ?></td>
                     <td><?= htmlspecialchars(fmt_date($cmd['executed_at'])) ?></td>
                     <td><?= humanDuration($cmd['executed_at'], $cmd['finished_at']) ?></td>
-                    <td style="font-size:0.82rem; max-width:340px; word-break:break-word;"><?= htmlspecialchars(mb_substr((string)($cmd['result'] ?? ''), 0, 300)) ?></td>
+                    <td style="font-size:0.82rem; max-width:340px; word-break:break-word;"><?= htmlspecialchars(tdl_substr((string)($cmd['result'] ?? ''), 0, 300)) ?></td>
                     <td>
                         <?php if (in_array($cmd['status'], ['pending', 'running'], true)): ?>
                         <form method="POST" style="display:inline; margin:0;">
@@ -873,6 +918,7 @@ if (!empty($workerStatus['last_heartbeat'])) {
     <h5>Maintenance</h5>
     <div class="section-actions">
         <a href="/admin/update.php" class="btn waves-effect"><i class="material-icons left">system_update</i>Check for Updates / Update Web App</a>
+        <a href="/admin/backups.php" class="btn waves-effect"><i class="material-icons left">inventory_2</i>Backups</a>
         <a href="/admin/cleanup.php" class="btn btn-danger waves-effect"><i class="material-icons left">cleaning_services</i>Cleanup False Matches</a>
     </div>
 

@@ -165,6 +165,45 @@
         }, 50);
     }
 
+    /* ---------------- Row action menus (⋮) ---------------- */
+    // Shared by every list: the dropdown escapes the table overflow with fixed
+    // positioning and closes on any outside click / scroll / resize.
+    function closeActionMenus() {
+        $all('.action-menu-dropdown.active').forEach(function (d) {
+            d.classList.remove('active');
+            d.style.position = '';
+            d.style.top = '';
+            d.style.left = '';
+        });
+    }
+    window.toggleMenu = function (btn) {
+        var dropdown = btn.nextElementSibling;
+        if (!dropdown) return;
+        var isOpen = dropdown.classList.contains('active');
+        closeActionMenus();
+        if (isOpen) return;
+        dropdown.classList.add('active');
+        var r = btn.getBoundingClientRect();
+        var w = dropdown.offsetWidth || 200;
+        var left = r.right - w;
+        if (left < 8) left = 8;
+        var maxLeft = window.innerWidth - w - 8;
+        if (left > maxLeft) left = Math.max(8, maxLeft);
+        var top = r.bottom + 4;
+        var h = dropdown.offsetHeight || 0;
+        if (top + h > window.innerHeight - 8) {
+            top = Math.max(8, r.top - h - 4);
+        }
+        dropdown.style.position = 'fixed';
+        dropdown.style.top = top + 'px';
+        dropdown.style.left = left + 'px';
+    };
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest || !e.target.closest('.action-menu')) { closeActionMenus(); }
+    });
+    window.addEventListener('scroll', closeActionMenus, true);
+    window.addEventListener('resize', closeActionMenus);
+
     /* ---------------- Search shortcut (Cmd/Ctrl+K) ---------------- */
     document.addEventListener('keydown', function (e) {
         if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {

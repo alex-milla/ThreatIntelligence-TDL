@@ -83,96 +83,15 @@ function githubApiGet(string $url, string $token = ''): array {
     return $result;
 }
 
-function rrmdir(string $dir): void {
-    if (!is_dir($dir)) return;
-    $files = array_diff(scandir($dir), ['.', '..']);
-    foreach ($files as $file) {
-        $path = $dir . '/' . $file;
-        is_dir($path) ? rrmdir($path) : @unlink($path);
-    }
-    @rmdir($dir);
-}
-
-function copyDir(string $src, string $dst): int {
-    $copied = 0;
-    $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($src));
-    foreach ($rii as $file) {
-        if ($file->isDir()) continue;
-        $relative = substr($file->getPathname(), strlen($src) + 1);
-        $target = $dst . '/' . $relative;
-        @mkdir(dirname($target), 0755, true);
-        copy($file->getPathname(), $target);
-        $copied++;
-    }
-    return $copied;
-}
-
-/**
- * Copy a directory tree, skipping excluded top-level entries and file names.
- */
-function copyTree(string $src, string $dst, array $excludeTop = [], array $excludeNames = []): int {
-    $copied = 0;
-    if (!is_dir($src)) {
-        return 0;
-    }
-    $rii = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($src, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::LEAVES_ONLY
-    );
-    foreach ($rii as $file) {
-        if (!$file->isFile()) {
-            continue;
-        }
-        $relative = str_replace('\\', '/', substr($file->getPathname(), strlen($src) + 1));
-        $top = explode('/', $relative)[0];
-        if (in_array($top, $excludeTop, true)) {
-            continue;
-        }
-        if (in_array(basename($relative), $excludeNames, true)) {
-            continue;
-        }
-        $target = rtrim($dst, '/\\') . '/' . $relative;
-        @mkdir(dirname($target), 0755, true);
-        if (@copy($file->getPathname(), $target)) {
-            $copied++;
-        }
-    }
-    return $copied;
-}
-
-function backupApp(string $backupBase): string {
-    $timestamp = date('Ymd_His');
-    $backupDir = $backupBase . '/backup_' . $timestamp;
-    @mkdir($backupDir, 0755, true);
-
-    $appRoot  = dirname(__DIR__);   // public_html (web root)
-    $repoRoot = dirname($appRoot);  // repository root (holds worker/)
-
-    // Back up the whole web root, excluding runtime data.
-    copyTree($appRoot, $backupDir . '/public_html', ['data', '.git', '.github']);
-
-    // Back up the worker source, never secrets/config/logs/zones/data.
-    $workerDir = $repoRoot . '/worker';
-    if (is_dir($workerDir)) {
-        copyTree(
-            $workerDir,
-            $backupDir . '/worker',
-            ['data', 'logs', 'zones', '__pycache__'],
-            ['config.ini']
-        );
-    }
-
-    return $backupDir;
-}
-
 function doUpdate(string $zipUrl, string $versionFile, string $backupBase): array {
     $appRoot = dirname(__DIR__);
 
-    // 1. Backup current installation
+    // 1. Backup current installation (helpers live in includes/updater.php).
     if (!is_dir($backupBase)) {
         @mkdir($backupBase, 0755, true);
     }
-    $backupDir = backupApp($backupBase);
+    $backupDir = tdl_backup_app($backupBase);
+    tdl_prune_backups($backupBase, 10);
 
     // 2. Download ZIP to temp (prefer cURL for proper redirect handling)
     $tempZip = sys_get_temp_dir() . '/tdl_update_' . time() . '.zip';
@@ -260,7 +179,7 @@ function doUpdate(string $zipUrl, string $versionFile, string $backupBase): arra
     $hasFlatApp    = is_dir($sourceDir . '/admin') || is_dir($sourceDir . '/includes');
 
     if (!$hasPublicHtml && !$hasLegacyWeb && !$hasFlatApp && !$hasWorker) {
-        rrmdir($extractDir);
+        tdl_rrmdir($extractDir);
         @unlink($tempZip);
         return ['success' => false, 'error' => 'Release ZIP does not contain recognizable application files. Aborting.', 'backup' => $backupDir];
     }
@@ -353,7 +272,7 @@ function doUpdate(string $zipUrl, string $versionFile, string $backupBase): arra
 
     // 7. Cleanup
     @unlink($tempZip);
-    rrmdir($extractDir);
+    tdl_rrmdir($extractDir);
 
     return [
         'success'   => true,
@@ -405,27 +324,6 @@ if (!$release && empty($error)) {
 
 $forceUpdate = isset($_POST['force']) && $_POST['force'] === '1';
 
-// Restore a backup (admin + CSRF). A snapshot of the current state is taken
-// first, so the restore itself is reversible.
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'restore') {
-    validateCsrf();
-    $name = basename((string)($_POST['backup'] ?? ''));
-    $dir  = $backupBase . '/' . $name;
-    if ($name === '' || strpos($name, 'backup_') !== 0 || !is_dir($dir)) {
-        $error = 'Invalid backup selected.';
-    } else {
-        $safety = backupApp($backupBase);
-        $res = tdl_restore_backup($dir, dirname(__DIR__), dirname(dirname(__DIR__)), dirname(__DIR__) . '/data');
-        if (!empty($res['success'])) {
-            $_SESSION['flash_message'] = "Restored <code>" . htmlspecialchars($name) . "</code>. Files restored: {$res['changed']}, removed: {$res['removed']}. "
-                . "Pre-restore snapshot: <code>" . htmlspecialchars(basename($safety)) . "</code>.";
-            header('Location: /admin/update.php');
-            exit;
-        }
-        $error = $res['error'] ?? 'Restore failed.';
-    }
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $release && empty($error)) {
     validateCsrf();
 
@@ -455,26 +353,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $release && empty($error)) {
     }
 }
 
-// List available backups
-$backups = [];
-if (is_dir($backupBase)) {
-    foreach (glob($backupBase . '/backup_*') as $b) {
-        $backups[] = basename($b);
-    }
-    rsort($backups);
-}
-
 $pageTitle = 'System Update';
 require __DIR__ . '/../templates/header.php';
 ?>
 
 <div class="card">
-    <div class="card-head"><h2>System Update</h2></div>
+    <div class="page-header">
+        <h1>System Update</h1>
+        <p class="subtitle">Check the latest GitHub Release and update the application files. Repository: <strong><?= htmlspecialchars("{$repoOwner}/{$repoName}") ?></strong></p>
+    </div>
     <?php if ($message): ?>
         <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= $message ?></div>
     <?php endif; ?>
-    <p>This checks the latest <strong>GitHub Release</strong> and updates the application files.</p>
-    <p><strong>Repository:</strong> <?= htmlspecialchars("{$repoOwner}/{$repoName}") ?></p>
 
     <table class="striped">
         <tbody>
@@ -519,44 +409,15 @@ require __DIR__ . '/../templates/header.php';
             <input type="hidden" name="force" value="1">
             <button type="submit" class="btn btn-danger waves-effect"><i class="material-icons left">restart_alt</i>Force Reinstall Latest Release</button>
         </form>
+
+        <a href="/admin/backups.php" class="btn btn-outline waves-effect"><i class="material-icons left">inventory_2</i>Backups</a>
     </div>
 
     <p class="muted">
         <strong>Note:</strong> Your database (<code>data/app.db</code>) and config files will not be overwritten.<br>
-        A full backup of application files and <code>worker/</code> is created automatically before every update.<br>
+        A snapshot of the application files is created automatically before every update; manage and restore them from <a href="/admin/backups.php">Backups</a>.<br>
         <?php if ($release === null): ?><strong>Diagnosis:</strong> No GitHub release found. Create one at <code>https://github.com/alex-milla/ThreatIntelligence-TDL/releases</code> or check your token if the repo is private.<?php endif; ?>
     </p>
 </div>
-
-<?php if (!empty($backups)): ?>
-<div class="card">
-    <div class="card-head"><h2>Backups</h2></div>
-    <p>Stored in <code>data/backups/</code>. Restoring copies the backed-up files back over the app (your <code>data/</code> and <code>config.ini</code> are never touched) and takes a fresh snapshot first.</p>
-    <table class="striped highlight">
-        <thead>
-            <tr><th>Backup</th><th>Size</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-            <?php foreach (array_slice($backups, 0, 10) as $b):
-                $bPath = $backupBase . '/' . $b;
-                $size = is_dir($bPath) ? 'Dir' : 'File';
-            ?>
-            <tr>
-                <td><?= htmlspecialchars($b) ?></td>
-                <td><?= htmlspecialchars($size) ?></td>
-                <td>
-                    <form method="POST" class="inline" onsubmit="return confirm('Restore <?= htmlspecialchars($b, ENT_QUOTES) ?>? The current files will be snapshotted first.');">
-                        <?php csrfField(); ?>
-                        <input type="hidden" name="action" value="restore">
-                        <input type="hidden" name="backup" value="<?= htmlspecialchars($b) ?>">
-                        <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">restore</i>Restore</button>
-                    </form>
-                </td>
-            </tr>
-            <?php endforeach; ?>
-        </tbody>
-    </table>
-</div>
-<?php endif; ?>
 
 <?php require __DIR__ . '/../templates/footer.php'; ?>

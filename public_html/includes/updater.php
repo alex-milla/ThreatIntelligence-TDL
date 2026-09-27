@@ -189,3 +189,138 @@ function tdl_restore_backup(string $backupDir, string $appRoot, string $repoRoot
 
     return ['success' => true, 'changed' => $changed, 'removed' => $removed];
 }
+
+/** Recursively delete a directory (best effort). */
+function tdl_rrmdir(string $dir): void {
+    if (!is_dir($dir)) {
+        return;
+    }
+    $files = array_diff(scandir($dir) ?: [], ['.', '..']);
+    foreach ($files as $file) {
+        $path = $dir . '/' . $file;
+        is_dir($path) ? tdl_rrmdir($path) : @unlink($path);
+    }
+    @rmdir($dir);
+}
+
+/**
+ * Copy a directory tree, skipping excluded top-level entries and file names.
+ * Returns the number of files copied.
+ *
+ * @param array<int,string> $excludeTop
+ * @param array<int,string> $excludeNames
+ */
+function tdl_copy_tree(string $src, string $dst, array $excludeTop = [], array $excludeNames = []): int {
+    $copied = 0;
+    if (!is_dir($src)) {
+        return 0;
+    }
+    $rii = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($src, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::LEAVES_ONLY
+    );
+    foreach ($rii as $file) {
+        if (!$file->isFile()) {
+            continue;
+        }
+        $relative = str_replace('\\', '/', substr($file->getPathname(), strlen($src) + 1));
+        $top = explode('/', $relative)[0];
+        if (in_array($top, $excludeTop, true)) {
+            continue;
+        }
+        if (in_array(basename($relative), $excludeNames, true)) {
+            continue;
+        }
+        $target = rtrim($dst, '/\\') . '/' . $relative;
+        @mkdir(dirname($target), 0755, true);
+        if (@copy($file->getPathname(), $target)) {
+            $copied++;
+        }
+    }
+    return $copied;
+}
+
+/**
+ * Snapshot the app + worker source into a new timestamped directory under
+ * $backupBase and return its path. Runtime data (data/, config.ini), VCS and
+ * logs are never included.
+ */
+function tdl_backup_app(string $backupBase): string {
+    $backupDir = rtrim($backupBase, '/\\') . '/backup_' . date('Ymd_His');
+    @mkdir($backupDir, 0755, true);
+
+    $appRoot  = dirname(__DIR__);   // public_html (web root)
+    $repoRoot = dirname($appRoot);  // repository root (holds worker/)
+
+    // Back up the whole web root, excluding runtime data.
+    tdl_copy_tree($appRoot, $backupDir . '/public_html', ['data', '.git', '.github']);
+
+    // Back up the worker source, never secrets/config/logs/zones/data.
+    $workerDir = $repoRoot . '/worker';
+    if (is_dir($workerDir)) {
+        tdl_copy_tree(
+            $workerDir,
+            $backupDir . '/worker',
+            ['data', 'logs', 'zones', '__pycache__'],
+            ['config.ini']
+        );
+    }
+
+    return $backupDir;
+}
+
+/**
+ * Keep only the newest $keep backup directories, deleting the rest.
+ * Returns the number of directories removed.
+ */
+function tdl_prune_backups(string $backupBase, int $keep = 10): int {
+    if (!is_dir($backupBase)) {
+        return 0;
+    }
+    $dirs = [];
+    foreach (glob(rtrim($backupBase, '/\\') . '/backup_*') ?: [] as $b) {
+        if (is_dir($b)) {
+            $dirs[] = $b;
+        }
+    }
+    if (count($dirs) <= $keep) {
+        return 0;
+    }
+    rsort($dirs);
+    $removed = 0;
+    foreach (array_slice($dirs, $keep) as $old) {
+        tdl_rrmdir($old);
+        $removed++;
+    }
+    return $removed;
+}
+
+/**
+ * Approximate recursive size of a directory. Stops after $maxEntries to avoid
+ * scanning a huge tree; the 'truncated' flag reports that the value is partial.
+ *
+ * @return array{bytes:int,truncated:bool}
+ */
+function tdl_dir_size(string $dir, int $maxEntries = 20000): array {
+    $bytes = 0;
+    $count = 0;
+    $truncated = false;
+    if (!is_dir($dir)) {
+        return ['bytes' => 0, 'truncated' => false];
+    }
+    $rii = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::LEAVES_ONLY
+    );
+    foreach ($rii as $file) {
+        if (!$file->isFile()) {
+            continue;
+        }
+        $bytes += (int)$file->getSize();
+        if (++$count >= $maxEntries) {
+            $truncated = true;
+            break;
+        }
+    }
+    return ['bytes' => $bytes, 'truncated' => $truncated];
+}

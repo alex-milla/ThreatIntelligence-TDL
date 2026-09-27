@@ -33,6 +33,7 @@ $isReports       = in_array($current, ['reports.php', 'report_view.php'], true);
 $isIntelligence  = ($current === 'intelligence.php');
 $isIocs          = ($current === 'iocs.php');
 $isTlds          = ($current === 'tlds.php');
+$isBackups       = ($current === 'backups.php');
 $isAdminPanel    = ($isAdminArea && !$isTlds);
 $tldSource       = (string)($_GET['source'] ?? 'czds');
 if (!in_array($tldSource, ['czds', 'openintel'], true)) {
@@ -119,6 +120,7 @@ if (!in_array($tldSource, ['czds', 'openintel'], true)) {
                     <a href="/admin/#users" class="sidebar-sublink" data-admin-tab="users">Users</a>
                     <a href="/admin/#sync" class="sidebar-sublink" data-admin-tab="sync">Sync</a>
                     <a href="/admin/#storage" class="sidebar-sublink" data-admin-tab="storage">Storage</a>
+                    <a href="/admin/backups.php" class="sidebar-sublink<?= $isBackups ? ' active' : '' ?>">Backups</a>
                     <a href="/admin/#system" class="sidebar-sublink" data-admin-tab="system">System</a>
                 </div>
             </div>
@@ -195,6 +197,7 @@ if (!in_array($tldSource, ['czds', 'openintel'], true)) {
                         <li><a href="/admin/#users" data-admin-tab="users">Users</a></li>
                         <li><a href="/admin/#sync" data-admin-tab="sync">Sync</a></li>
                         <li><a href="/admin/#storage" data-admin-tab="storage">Storage</a></li>
+                        <li><a href="/admin/backups.php" class="<?= $isBackups ? 'active' : '' ?>">Backups</a></li>
                         <li><a href="/admin/#system" data-admin-tab="system">System</a></li>
                     </ul>
                 </li>

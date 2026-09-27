@@ -67,31 +67,35 @@ require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="card">
-    <div class="card-head">
-        <h2>Intelligence &mdash; dormant domain tracking</h2>
-        <span class="muted"><?= count($rows) ?> shown</span>
-    </div>
-
-    <p class="muted">
-        Recently registered keyword matches that are still clean are followed for a while.
-        If they show an activation signal (reputation, WHOIS/NS changes) you get a notification.
-        Configure the window and cadence per keyword in <a href="/keywords.php">Keywords</a>.
-    </p>
-
-    <div class="section-actions">
-        <a class="btn btn-small waves-effect <?= $status === 'all' ? '' : 'btn-outline' ?>" href="/intelligence.php?status=all<?= $search !== '' ? '&q=' . urlencode($search) : '' ?>">All</a>
-        <a class="btn btn-small waves-effect <?= $status === 'tracking' ? '' : 'btn-outline' ?>" href="/intelligence.php?status=tracking<?= $search !== '' ? '&q=' . urlencode($search) : '' ?>">Tracking (<?= $counts['tracking'] ?>)</a>
-        <a class="btn btn-small waves-effect <?= $status === 'activated' ? '' : 'btn-outline' ?>" href="/intelligence.php?status=activated<?= $search !== '' ? '&q=' . urlencode($search) : '' ?>">Activated (<?= $counts['activated'] ?>)</a>
-        <a class="btn btn-small waves-effect <?= $status === 'dormant' ? '' : 'btn-outline' ?>" href="/intelligence.php?status=dormant<?= $search !== '' ? '&q=' . urlencode($search) : '' ?>">Dormant (<?= $counts['dormant'] ?>)</a>
-        <form method="GET" action="/intelligence.php" style="display:inline-flex; gap:6px; margin-left:8px;">
-            <input type="hidden" name="status" value="<?= htmlspecialchars($status) ?>">
-            <input type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="Domain or keyword" class="browser-default compact">
-            <button type="submit" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">search</i>Filter</button>
-        </form>
+    <div class="page-header">
+        <h1>Intelligence</h1>
+        <span class="count-chip"><i class="material-icons" style="font-size:16px;">travel_explore</i><?= count($rows) ?> shown</span>
+        <span class="spacer"></span>
         <?php if ($isAdmin): ?>
         <button type="button" class="btn btn-small waves-effect" onclick="intelCheckAll()"><i class="material-icons left">refresh</i>Check all due</button>
         <?php endif; ?>
+        <p class="subtitle">Recently registered keyword matches that are still clean are followed for a while; if they show an activation signal you get a notification. Configure the window and cadence per keyword in <a href="/keywords.php">Keywords</a>.</p>
     </div>
+
+    <div class="chip-tabs">
+        <a class="chip<?= $status === 'all' ? ' active' : '' ?>" href="/intelligence.php?status=all<?= $search !== '' ? '&q=' . urlencode($search) : '' ?>">All <span class="chip-count"><?= $counts['tracking'] + $counts['activated'] + $counts['dormant'] ?></span></a>
+        <a class="chip<?= $status === 'tracking' ? ' active' : '' ?>" href="/intelligence.php?status=tracking<?= $search !== '' ? '&q=' . urlencode($search) : '' ?>">Tracking <span class="chip-count"><?= $counts['tracking'] ?></span></a>
+        <a class="chip<?= $status === 'activated' ? ' active' : '' ?>" href="/intelligence.php?status=activated<?= $search !== '' ? '&q=' . urlencode($search) : '' ?>">Activated <span class="chip-count"><?= $counts['activated'] ?></span></a>
+        <a class="chip<?= $status === 'dormant' ? ' active' : '' ?>" href="/intelligence.php?status=dormant<?= $search !== '' ? '&q=' . urlencode($search) : '' ?>">Dormant <span class="chip-count"><?= $counts['dormant'] ?></span></a>
+    </div>
+
+    <form method="GET" action="/intelligence.php" class="filter-form">
+        <input type="hidden" name="status" value="<?= htmlspecialchars($status) ?>">
+        <div class="input-field">
+            <i class="material-icons prefix">search</i>
+            <input id="q" type="search" name="q" value="<?= htmlspecialchars($search) ?>" placeholder=" " autocomplete="off">
+            <label for="q">Domain or keyword</label>
+        </div>
+        <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">search</i>Search</button>
+        <?php if ($search !== ''): ?>
+        <a href="/intelligence.php?status=<?= urlencode($status) ?>" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">clear</i>Clear</a>
+        <?php endif; ?>
+    </form>
 
     <?php if (empty($rows)): ?>
         <p class="muted">Nothing here yet. Tracked domains appear when a keyword has tracking enabled and a recent clean match is found.</p>

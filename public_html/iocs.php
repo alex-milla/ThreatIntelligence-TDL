@@ -82,17 +82,17 @@ require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="card">
-    <div class="card-head">
-        <h2>IOCs &mdash; indicators of compromise</h2>
-        <span class="muted"><?= number_format($uniqueTotal) ?> unique domain(s)</span>
+    <div class="page-header">
+        <h1>IOCs</h1>
+        <span class="count-chip"><i class="material-icons" style="font-size:16px;">bug_report</i><?= number_format($uniqueTotal) ?> unique domain(s)</span>
+        <span class="spacer"></span>
+        <a class="btn btn-small waves-effect" href="/iocs.php?<?= $qs(['export' => 'txt']) ?>"><i class="material-icons left">download</i>Download TXT</a>
+        <a class="btn btn-small waves-effect" href="/iocs.php?<?= $qs(['export' => 'mispjson']) ?>"><i class="material-icons left">download</i>MISP JSON</a>
+        <button type="button" class="btn btn-small btn-outline waves-effect" data-ioc-copy data-url="/iocs.php?<?= $qs(['export' => 'txt']) ?>"><i class="material-icons left">content_copy</i>Copy TXT</button>
+        <p class="subtitle">Malicious/suspicious domains per keyword, ready to export as a plain-text list (EDL / MISP freetext) or as a MISP event JSON. A domain that matches several keywords appears in each list; the "all" view deduplicates.</p>
     </div>
 
-    <p class="muted">
-        Malicious/suspicious domains per keyword, ready to export as a plain-text list (EDL / MISP freetext)
-        or as a MISP event JSON. A domain that matches several keywords appears in each list; the "all" view deduplicates.
-    </p>
-
-    <form method="GET" action="/iocs.php" class="section-actions" style="flex-wrap: wrap;">
+    <form method="GET" action="/iocs.php" class="filter-form">
         <label class="muted">Source
             <select name="source" class="browser-default compact" onchange="this.form.submit()">
                 <option value="live" <?= $source === 'live' ? 'selected' : '' ?>>Live (current)</option>
@@ -119,16 +119,10 @@ require __DIR__ . '/templates/header.php';
                 &middot; <strong><?= number_format($counts['suspicious']) ?></strong> suspicious
             <?php endif; ?>
         </span>
-    </form>
-
-    <div class="section-actions">
-        <a class="btn btn-small waves-effect" href="/iocs.php?<?= $qs(['export' => 'txt']) ?>"><i class="material-icons left">download</i>Download TXT</a>
-        <a class="btn btn-small waves-effect" href="/iocs.php?<?= $qs(['export' => 'mispjson']) ?>"><i class="material-icons left">download</i>Download MISP JSON</a>
-        <button type="button" class="btn btn-small btn-outline waves-effect" data-ioc-copy data-url="/iocs.php?<?= $qs(['export' => 'txt']) ?>"><i class="material-icons left">content_copy</i>Copy TXT</button>
         <?php if ($keywordName !== ''): ?>
             <span class="muted">Filtered to keyword <strong><?= htmlspecialchars($keywordName) ?></strong></span>
         <?php endif; ?>
-    </div>
+    </form>
 
     <?php if (empty($rows)): ?>
         <p class="muted">No indicators for this filter. Mark domains <strong>Bad</strong> or run VirusTotal / abuse.ch on them (or generate a report) to populate this list.</p>

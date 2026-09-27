@@ -50,8 +50,10 @@ require __DIR__ . '/../templates/header.php';
 ?>
 
 <div class="card">
-    <div class="card-head"><h2>Cleanup False-Positive Matches</h2></div>
-    <p>This tool removes matches where the keyword only appeared in the TLD (e.g. <code>abcd1234.life</code> matching keyword <code>life</code>).</p>
+    <div class="page-header">
+        <h1>Cleanup False-Positive Matches</h1>
+        <p class="subtitle">This tool removes matches where the keyword only appeared in the TLD (e.g. <code>abcd1234.life</code> matching keyword <code>life</code>).</p>
+    </div>
 
     <?php if ($message): ?>
     <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= htmlspecialchars($message) ?></div>

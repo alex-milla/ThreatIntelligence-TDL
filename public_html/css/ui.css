@@ -396,6 +396,70 @@
     border-radius: 10px;
 }
 
+/* ---------- Shared list primitives ---------- */
+.ui-v2 .row-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+.ui-v2 .row-actions .icon-btn {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.ui-v2 .row-actions .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.ui-v2 .row-actions .icon-btn.danger:hover { color: var(--danger, #dc2626); }
+.ui-v2 .row-actions .material-icons { font-size: 18px; }
+
+.ui-v2 .settings-card { max-width: 640px; }
+.ui-v2 .kv-table { width: 100%; border-collapse: collapse; }
+.ui-v2 .kv-table td {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+.ui-v2 .kv-table tr:last-child td { border-bottom: 0; }
+.ui-v2 .kv-table td:first-child { color: var(--text-muted); width: 40%; }
+
+.ui-v2 .stat-strip.cols-2 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+/* Chips that embed a link + an inline delete form (Watchlist groups). */
+.ui-v2 .chip > a {
+    color: inherit;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.ui-v2 .chip .chip-x {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    padding: 0;
+    opacity: .7;
+}
+.ui-v2 .chip .chip-x:hover { opacity: 1; }
+.ui-v2 .chip .material-icons { font-size: 15px; }
+
+.ui-v2 .wl-note-form {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin: 0;
+}
+.ui-v2 .wl-note-form input { flex: 1; min-width: 120px; }
+
 /* ---------- Keyword matches (v2 per-keyword list) ---------- */
 .ui-v2 .breadcrumb {
     display: flex;

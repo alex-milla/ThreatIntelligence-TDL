@@ -75,6 +75,11 @@ $pageTitle = 'Dashboard';
 require __DIR__ . '/templates/header.php';
 ?>
 
+<div class="page-header">
+    <h1>Dashboard</h1>
+    <p class="subtitle">Overview of your monitored keywords, matches and notifications.</p>
+</div>
+
 <?php if ($message): ?>
 <div class="alert alert-success"><i class="material-icons left">check_circle</i><?= htmlspecialchars($message) ?></div>
 <?php endif; ?>
@@ -130,35 +135,11 @@ require __DIR__ . '/templates/header.php';
 </a>
 <?php endif; ?>
 
-<div class="row" id="live-stats" data-live-section>
-    <div class="col s6 m6 l3">
-        <div class="card stat-card">
-            <i class="material-icons stat-icon">vpn_key</i>
-            <div class="number"><?= $keywordCount ?></div>
-            <div class="label">Active keywords</div>
-        </div>
-    </div>
-    <div class="col s6 m6 l3">
-        <div class="card stat-card">
-            <i class="material-icons stat-icon tone-info">find_in_page</i>
-            <div class="number"><?= $matchCount ?></div>
-            <div class="label">Matches (all time)</div>
-        </div>
-    </div>
-    <div class="col s6 m6 l3">
-        <div class="card stat-card">
-            <i class="material-icons stat-icon tone-warning">notifications</i>
-            <div class="number"><?= $unreadCount ?></div>
-            <div class="label">Unread notifications</div>
-        </div>
-    </div>
-    <div class="col s6 m6 l3">
-        <div class="card stat-card">
-            <i class="material-icons stat-icon tone-success">fiber_new</i>
-            <div class="number"><?= $new24h ?></div>
-            <div class="label">New in last 24h</div>
-        </div>
-    </div>
+<div class="stat-strip" id="live-stats" data-live-section>
+    <div class="stat"><span class="stat-ico"><i class="material-icons">vpn_key</i></span><div><div class="stat-num"><?= $keywordCount ?></div><div class="stat-label">Active keywords</div></div></div>
+    <div class="stat"><span class="stat-ico info"><i class="material-icons">find_in_page</i></span><div><div class="stat-num"><?= $matchCount ?></div><div class="stat-label">Matches (all time)</div></div></div>
+    <div class="stat"><span class="stat-ico warn"><i class="material-icons">notifications</i></span><div><div class="stat-num"><?= $unreadCount ?></div><div class="stat-label">Unread notifications</div></div></div>
+    <div class="stat"><span class="stat-ico ok"><i class="material-icons">fiber_new</i></span><div><div class="stat-num"><?= $new24h ?></div><div class="stat-label">New in last 24h</div></div></div>
 </div>
 
 <?php

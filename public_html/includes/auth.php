@@ -3,6 +3,16 @@
  * Authentication helpers + CSRF protection
  */
 
+/** UTF-8 aware substring with a fallback for hosts without mbstring. */
+function tdl_substr(string $value, int $start, ?int $length = null): string {
+    return function_exists('mb_substr') ? mb_substr($value, $start, $length) : substr($value, $start, $length);
+}
+
+/** UTF-8 aware string length with a fallback for hosts without mbstring. */
+function tdl_strlen(string $value): int {
+    return function_exists('mb_strlen') ? mb_strlen($value) : strlen($value);
+}
+
 /**
  * Whether the current request reached the app over HTTPS (directly or via a
  * reverse proxy / Cloudflare). Used for cookie flags and log decisions only.

@@ -197,6 +197,11 @@ require __DIR__ . '/../templates/header.php';
 </div>
 <?php endif; ?>
 
+<div class="page-header">
+    <h1>TLDs</h1>
+    <p class="subtitle">Check the TLDs the worker should monitor per source. Unchecked TLDs are ignored.</p>
+</div>
+
 <span id="activity-watcher" hidden
       data-url="/ajax_worker_activity.php"
       data-interval="5000"
@@ -273,7 +278,7 @@ require __DIR__ . '/../templates/header.php';
                         <br><span class="muted"><?= htmlspecialchars((string)$runData['message']) ?></span>
                     <?php endif; ?>
                 <?php elseif ($runResult !== ''): ?>
-                    <br><code><?= htmlspecialchars(mb_substr($runResult, 0, 300)) ?></code>
+                    <br><code><?= htmlspecialchars(tdl_substr($runResult, 0, 300)) ?></code>
                 <?php endif; ?>
                 <br><span class="muted">Detailed log on the worker: <code>data/openintel/logs/run-*.log</code>.</span>
             </div>
