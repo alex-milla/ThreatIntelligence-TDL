@@ -153,27 +153,28 @@
 .ui-v2 .signals-cell > * { vertical-align: middle; margin-right: 4px; }
 
 /* ---------- Side drawer (domain detail) ---------- */
-.ui-v2 .drawer-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(15, 15, 15, .5);
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity .2s ease;
-    z-index: 80;
-}
-.ui-v2 .drawer-backdrop.open { opacity: 1; visibility: visible; }
+.ui-v2 { --drawer-w: 480px; }
+
+/* Desktop: split layout - the panel pushes the content instead of covering it,
+   and there is no click-blocking backdrop, so the list stays usable and you can
+   move to the next domain with a single click. */
+.ui-v2 .drawer-backdrop { display: none; }
+.ui-v2 .app-body,
+.ui-v2 .page-footer { transition: margin-right .22s ease; }
+.ui-v2.drawer-open .app-body,
+.ui-v2.drawer-open .page-footer { margin-right: var(--drawer-w); }
+
 .ui-v2 .drawer-panel {
     position: fixed;
     top: 0;
     right: 0;
     height: 100%;
-    width: min(560px, 96vw);
+    width: var(--drawer-w);
     display: flex;
     flex-direction: column;
     background: var(--surface);
     border-left: 1px solid var(--border);
-    box-shadow: -10px 0 34px rgba(0, 0, 0, .28);
+    box-shadow: -10px 0 34px rgba(0, 0, 0, .22);
     transform: translateX(102%);
     transition: transform .22s ease;
     z-index: 81;
@@ -201,9 +202,74 @@
     border-radius: 8px;
 }
 .ui-v2 .drawer-close:hover { background: var(--surface-2); color: var(--text); }
-.ui-v2 .drawer-body { padding: 16px; overflow: auto; }
+.ui-v2 .drawer-body { padding: 16px 16px 24px; overflow: auto; }
 .ui-v2 .drawer-panel .dd-grid { grid-template-columns: 1fr; }
-.ui-v2 .drawer-panel .dd-actions { position: sticky; bottom: 0; background: var(--surface); }
+
+/* Highlight the row whose detail is open in the drawer. */
+.ui-v2 tr.dd-active > td { background: var(--primary-soft) !important; }
+
+/* ---------- Compact grouped actions (v2 drawer) ---------- */
+.ui-v2 .dd-actions-compact {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+}
+.ui-v2 .dd-actions-compact .dac-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.ui-v2 .dd-actions-compact .btn {
+    height: 28px;
+    line-height: 28px;
+    padding: 0 10px;
+    font-size: .78rem;
+}
+.ui-v2 .dd-actions-compact .btn .material-icons.left {
+    font-size: 15px;
+    margin-right: 4px;
+}
+.ui-v2 .dd-actions-compact .dac-classify {
+    gap: 0;
+    width: fit-content;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.ui-v2 .dd-actions-compact .dac-classify .btn {
+    border-radius: 0;
+    border: 0;
+    margin: 0;
+}
+.ui-v2 .dd-actions-compact .dac-links { gap: 14px; }
+.ui-v2 .dd-actions-compact .dac-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: .78rem;
+    color: var(--link);
+    text-decoration: none;
+}
+.ui-v2 .dd-actions-compact .dac-link .material-icons { font-size: 15px; }
+
+/* Mobile/tablet: modal overlay (no split) with a dismissible backdrop. */
+@media (max-width: 1000px) {
+    .ui-v2.drawer-open .app-body,
+    .ui-v2.drawer-open .page-footer { margin-right: 0; }
+    .ui-v2 .drawer-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 15, 15, .5);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity .2s ease;
+        z-index: 80;
+    }
+    .ui-v2 .drawer-backdrop.open { opacity: 1; visibility: visible; }
+    .ui-v2 .drawer-panel { width: min(560px, 96vw); }
+}
 
 /* ---------- Keyboard shortcut hint ---------- */
 .ui-v2 .kbd {

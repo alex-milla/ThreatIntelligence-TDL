@@ -27,8 +27,27 @@ test.describe('Notifications v2 layout', () => {
     const drawer = page.locator('.drawer-panel.open');
     await expect(drawer).toBeVisible();
     await expect(drawer.locator('.domain-detail')).toBeVisible();
+    // v2 uses the compact grouped actions, not the classic big button row.
+    await expect(drawer.locator('.dd-actions-compact')).toBeVisible();
+    await expect(drawer.locator('.dd-actions:not(.dd-actions-compact)')).toHaveCount(0);
     await page.locator('.drawer-close').click();
     await expect(page.locator('.drawer-panel.open')).toHaveCount(0);
+  });
+
+  test('the drawer swaps to the next domain without closing', async ({ page }) => {
+    await page.goto('/notifications.php?ui=v2');
+    const links = page.locator('a.domain-link');
+    const first = (await links.nth(0).textContent())?.trim() || '';
+    const second = (await links.nth(1).textContent())?.trim() || '';
+
+    await links.nth(0).click();
+    await expect(page.locator('.drawer-panel.open .drawer-title')).toHaveText(first);
+    await expect(page.locator('body')).toHaveClass(/drawer-open/);
+
+    // Clicking another domain updates the drawer in place (no close needed).
+    await links.nth(1).click();
+    await expect(page.locator('.drawer-panel.open .drawer-title')).toHaveText(second);
+    await expect(page.locator('.drawer-panel.open')).toBeVisible();
   });
 
   test('selecting a row reveals the contextual toolbar', async ({ page }) => {

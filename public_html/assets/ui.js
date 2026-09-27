@@ -11,10 +11,12 @@
     function $(sel, root) { return (root || document).querySelector(sel); }
     function $all(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
 
-    /* ---------------- Side drawer ---------------- */
+    /* ---------------- Side drawer (split, non-modal on desktop) ---------------- */
     var drawer = null;
     var backdrop = null;
     var lastFocus = null;
+    var currentDomain = null;
+    var currentRow = null;
 
     function buildDrawer() {
         if (drawer) return;
@@ -25,7 +27,6 @@
         drawer = document.createElement('aside');
         drawer.className = 'drawer-panel';
         drawer.setAttribute('role', 'dialog');
-        drawer.setAttribute('aria-modal', 'true');
         drawer.setAttribute('aria-label', 'Domain detail');
         drawer.innerHTML =
             '<div class="drawer-head">' +
@@ -42,28 +43,35 @@
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape' && drawer.classList.contains('open')) { closeDrawer(); }
         });
-        // Basic focus trap.
-        drawer.addEventListener('keydown', function (e) {
-            if (e.key !== 'Tab') return;
-            var focusables = $all('a[href], button:not([disabled]), input, select, textarea', drawer);
-            if (!focusables.length) return;
-            var first = focusables[0];
-            var last = focusables[focusables.length - 1];
-            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-        });
     }
 
-    function openDrawer(domain, detailNode) {
+    function setActiveRow(row) {
+        $all('tr.dd-active').forEach(function (tr) { tr.classList.remove('dd-active'); });
+        if (row) { row.classList.add('dd-active'); }
+    }
+
+    function openDrawer(domain, detailNode, row) {
         buildDrawer();
+        // Clicking the domain that is already open closes the drawer.
+        if (drawer.classList.contains('open') && currentDomain === domain) {
+            closeDrawer();
+            return;
+        }
         drawer.querySelector('.drawer-title').textContent = domain;
         var body = drawer.querySelector('.drawer-body');
         body.innerHTML = '';
         if (detailNode) { body.appendChild(detailNode.cloneNode(true)); }
+        body.scrollTop = 0;
         lastFocus = document.activeElement;
+        currentDomain = domain;
+        currentRow = row || null;
+        setActiveRow(currentRow);
         backdrop.classList.add('open');
         drawer.classList.add('open');
-        document.body.style.overflow = 'hidden';
+        document.body.classList.add('drawer-open');
+        if (currentRow && typeof currentRow.scrollIntoView === 'function') {
+            currentRow.scrollIntoView({ block: 'nearest' });
+        }
         var closeBtn = drawer.querySelector('.drawer-close');
         if (closeBtn) { closeBtn.focus(); }
     }
@@ -72,7 +80,9 @@
         if (!drawer) return;
         drawer.classList.remove('open');
         backdrop.classList.remove('open');
-        document.body.style.overflow = '';
+        document.body.classList.remove('drawer-open');
+        currentDomain = null;
+        setActiveRow(null);
         if (lastFocus && typeof lastFocus.focus === 'function') { lastFocus.focus(); }
     }
 
@@ -84,7 +94,7 @@
         if (!detailRow || !detailRow.classList.contains('domain-detail-row')) return;
         var detail = detailRow.querySelector('.domain-detail');
         if (!detail) return;
-        openDrawer(domain || detailRow.getAttribute('data-domain') || '', detail);
+        openDrawer(domain || detailRow.getAttribute('data-domain') || '', detail, row);
     };
 
     /* ---------------- Contextual selection toolbar ---------------- */

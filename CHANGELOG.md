@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.19.1] - 2026-09-27
+
+### Changed - v2 Notifications: split drawer and compact detail actions
+
+Follow-up on the v2 layout after review feedback:
+
+- **The drawer no longer covers the list (split layout).** On desktop the panel pushes the content (`margin-right`) instead of overlaying it, and the full-screen backdrop is gone, so the domain list stays fully usable: clicking another domain **swaps the detail in place with a single click** (no need to close first). The active row is highlighted. On tablet/mobile it stays a modal overlay with a dismissible backdrop. Esc / the close button (or clicking the same domain) still close it.
+- **Compact, grouped actions in the drawer.** The ~13 vertical buttons become a compact toolbar: a segmented **Good / Bad / Insufficient / Clear**, a small **checks** row (WHOIS · VirusTotal · Abuse.ch · Cloudflare · DNS), ghost **external** links (VirusTotal / URLhaus / URL Scanner) and a small utility row (Watchlist / Cache). The previous sticky footer that overlapped the Detection block is removed (no more cut-off content). The classic one-row actions and the report/print detail are unchanged.
+- Subtitle wording fixed ("N visibles" instead of "N detectadas hoy").
+
+### Tests
+
+- New/updated Playwright specs: the drawer swaps domains without closing, and the v2 drawer renders `.dd-actions-compact` (not the classic big row).
+
 ## [v1.19.0] - 2026-09-27
 
 ### Added - Opt-in `v2` UI layout (foundation + Notifications)

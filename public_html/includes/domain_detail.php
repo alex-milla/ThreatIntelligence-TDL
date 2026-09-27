@@ -134,13 +134,88 @@ function domainDetailPresent(PDO $db, int $userId, string $domain): ?array {
 }
 
 /**
- * Render the `.domain-detail` block (grid + `.dd-actions` footer + raw data).
+ * Render the action footer of the domain detail.
+ *
+ * @param bool $compact When true, render a compact grouped toolbar for the v2
+ *                      side drawer (shorter labels, sections). When false, the
+ *                      classic one-row button list used by Watchlist, the
+ *                      Dashboard and reports/print.
+ */
+function renderDomainActions(array $present, string $domain, bool $compact = false): string {
+    $domainArg   = htmlspecialchars(addslashes($domain));
+    $vtUrl       = 'https://www.virustotal.com/gui/domain/' . rawurlencode($domain);
+    $urlhausUrl  = 'https://urlhaus.abuse.ch/host/' . rawurlencode($domain) . '/';
+    $isAdmin     = !empty($_SESSION['is_admin']);
+    $inWatchlist = !empty($present['in_watchlist']);
+
+    ob_start();
+    if (!$compact) {
+        ?>
+    <div class="dd-actions">
+        <button type="button" class="btn btn-small btn-good waves-effect" onclick="ddTag('<?= $domainArg ?>', 'good')">Mark Good</button>
+        <button type="button" class="btn btn-small btn-bad waves-effect" onclick="ddTag('<?= $domainArg ?>', 'bad')">Mark Bad</button>
+        <button type="button" class="btn btn-small btn-warning waves-effect" onclick="ddTag('<?= $domainArg ?>', 'observing')"><i class="material-icons left">help_outline</i>Insufficient info</button>
+        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="ddTag('<?= $domainArg ?>', '')">Clear</button>
+        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="ddWatchlist('<?= $domainArg ?>')"><i class="material-icons left">star</i><?= $inWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist' ?></button>
+        <button type="button" class="btn btn-small waves-effect" onclick="ddFetchWhois('<?= $domainArg ?>')"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="ddCheckVt('<?= $domainArg ?>')"><i class="material-icons left">verified_user</i>Check VirusTotal</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="ddCheckAbusech('<?= $domainArg ?>')"><i class="material-icons left">gpp_maybe</i>Check Abuse.ch</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="ddCheckCf('<?= $domainArg ?>')"><i class="material-icons left">cloud</i>Scan with Cloudflare</button>
+        <button type="button" class="btn btn-small waves-effect" onclick="ddCheckCfdns('<?= $domainArg ?>')"><i class="material-icons left">public</i>Cloudflare DNS</button>
+        <a class="btn btn-small btn-info waves-effect" href="<?= htmlspecialchars($vtUrl) ?>" target="_blank" rel="noopener"><i class="material-icons left">shield</i>Open in VirusTotal</a>
+        <a class="btn btn-small btn-info waves-effect" href="<?= htmlspecialchars($urlhausUrl) ?>" target="_blank" rel="noopener"><i class="material-icons left">bug_report</i>Open in URLhaus</a>
+        <?php if (!empty($present['cf_report_url'])): ?>
+        <a class="btn btn-small btn-info waves-effect" href="<?= htmlspecialchars((string)$present['cf_report_url']) ?>" target="_blank" rel="noopener"><i class="material-icons left">radar</i>Open in URL Scanner</a>
+        <?php endif; ?>
+        <?php if ($isAdmin): ?>
+        <button type="button" class="btn btn-small btn-danger waves-effect" onclick="ddDeleteFicha('<?= $domainArg ?>')" title="Delete the cached WHOIS/VirusTotal/abuse.ch/Cloudflare data for this domain. Tags, watchlist, reports and Intelligence are kept."><i class="material-icons left">delete_sweep</i>Delete cache</button>
+        <?php endif; ?>
+    </div>
+        <?php
+        return (string)ob_get_clean();
+    }
+    ?>
+    <div class="dd-actions dd-actions-compact">
+        <div class="dac-group dac-classify" role="group" aria-label="Classification">
+            <button type="button" class="btn btn-small btn-good waves-effect" onclick="ddTag('<?= $domainArg ?>', 'good')" title="Mark as good">Good</button>
+            <button type="button" class="btn btn-small btn-bad waves-effect" onclick="ddTag('<?= $domainArg ?>', 'bad')" title="Mark as bad">Bad</button>
+            <button type="button" class="btn btn-small btn-warning waves-effect" onclick="ddTag('<?= $domainArg ?>', 'observing')" title="Insufficient information">Insufficient</button>
+            <button type="button" class="btn btn-small btn-outline waves-effect" onclick="ddTag('<?= $domainArg ?>', '')" title="Clear classification">Clear</button>
+        </div>
+        <div class="dac-group dac-checks" role="group" aria-label="Run checks">
+            <button type="button" class="btn btn-small waves-effect" onclick="ddFetchWhois('<?= $domainArg ?>')" title="Fetch WHOIS (worker)"><i class="material-icons left">cloud_download</i>WHOIS</button>
+            <button type="button" class="btn btn-small waves-effect" onclick="ddCheckVt('<?= $domainArg ?>')" title="Check VirusTotal"><i class="material-icons left">verified_user</i>VirusTotal</button>
+            <button type="button" class="btn btn-small waves-effect" onclick="ddCheckAbusech('<?= $domainArg ?>')" title="Check Abuse.ch"><i class="material-icons left">gpp_maybe</i>Abuse.ch</button>
+            <button type="button" class="btn btn-small waves-effect" onclick="ddCheckCf('<?= $domainArg ?>')" title="Scan with Cloudflare"><i class="material-icons left">cloud</i>Cloudflare</button>
+            <button type="button" class="btn btn-small waves-effect" onclick="ddCheckCfdns('<?= $domainArg ?>')" title="Cloudflare DNS locations"><i class="material-icons left">public</i>DNS</button>
+        </div>
+        <div class="dac-group dac-links" role="group" aria-label="External reports">
+            <a class="dac-link" href="<?= htmlspecialchars($vtUrl) ?>" target="_blank" rel="noopener" title="Open in VirusTotal"><i class="material-icons">shield</i>VirusTotal</a>
+            <a class="dac-link" href="<?= htmlspecialchars($urlhausUrl) ?>" target="_blank" rel="noopener" title="Open in URLhaus"><i class="material-icons">bug_report</i>URLhaus</a>
+            <?php if (!empty($present['cf_report_url'])): ?>
+            <a class="dac-link" href="<?= htmlspecialchars((string)$present['cf_report_url']) ?>" target="_blank" rel="noopener" title="Open in Cloudflare URL Scanner"><i class="material-icons">radar</i>URL Scanner</a>
+            <?php endif; ?>
+        </div>
+        <div class="dac-group dac-utility">
+            <button type="button" class="btn btn-small btn-outline waves-effect" onclick="ddWatchlist('<?= $domainArg ?>')" title="<?= $inWatchlist ? 'Remove from watchlist' : 'Add to watchlist' ?>"><i class="material-icons left"><?= $inWatchlist ? 'star' : 'star_border' ?></i>Watchlist</button>
+            <?php if ($isAdmin): ?>
+            <button type="button" class="btn btn-small btn-danger waves-effect" onclick="ddDeleteFicha('<?= $domainArg ?>')" title="Delete cached enrichment (tags, watchlist, reports and Intelligence are kept)"><i class="material-icons left">delete_sweep</i>Cache</button>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php
+    return (string)ob_get_clean();
+}
+
+/**
+ * Render the `.domain-detail` block (grid + actions footer + raw data).
  *
  * @param array $present  Row built by domainDetailPresent() (or an equivalent).
  * @param array $keywords Keywords that matched the domain (may be empty).
  * @param array $rules    reportReviewRules() result.
+ * @param bool  $compactActions Use the compact grouped action toolbar (v2 drawer).
  */
-function renderDomainDetail(array $present, array $keywords, array $rules): string {
+function renderDomainDetail(array $present, array $keywords, array $rules, bool $compactActions = false): string {
     $repSymbol = ['malicious' => '●', 'suspicious' => '⚠', 'dga' => '⚠', 'clean' => '✓', 'not_checked' => '○', 'unproven' => '○'];
 
     $domain = (string)($present['domain'] ?? '');
@@ -285,26 +360,7 @@ function renderDomainDetail(array $present, array $keywords, array $rules): stri
             </ul>
         </div>
     </div>
-    <div class="dd-actions">
-        <button type="button" class="btn btn-small btn-good waves-effect" onclick="ddTag('<?= $domainArg ?>', 'good')">Mark Good</button>
-        <button type="button" class="btn btn-small btn-bad waves-effect" onclick="ddTag('<?= $domainArg ?>', 'bad')">Mark Bad</button>
-        <button type="button" class="btn btn-small btn-warning waves-effect" onclick="ddTag('<?= $domainArg ?>', 'observing')"><i class="material-icons left">help_outline</i>Insufficient info</button>
-        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="ddTag('<?= $domainArg ?>', '')">Clear</button>
-        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="ddWatchlist('<?= $domainArg ?>')"><i class="material-icons left">star</i><?= !empty($present['in_watchlist']) ? 'Remove from Watchlist' : 'Add to Watchlist' ?></button>
-        <button type="button" class="btn btn-small waves-effect" onclick="ddFetchWhois('<?= $domainArg ?>')"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
-        <button type="button" class="btn btn-small waves-effect" onclick="ddCheckVt('<?= $domainArg ?>')"><i class="material-icons left">verified_user</i>Check VirusTotal</button>
-        <button type="button" class="btn btn-small waves-effect" onclick="ddCheckAbusech('<?= $domainArg ?>')"><i class="material-icons left">gpp_maybe</i>Check Abuse.ch</button>
-        <button type="button" class="btn btn-small waves-effect" onclick="ddCheckCf('<?= $domainArg ?>')"><i class="material-icons left">cloud</i>Scan with Cloudflare</button>
-        <button type="button" class="btn btn-small waves-effect" onclick="ddCheckCfdns('<?= $domainArg ?>')"><i class="material-icons left">public</i>Cloudflare DNS</button>
-        <a class="btn btn-small btn-info waves-effect" href="https://www.virustotal.com/gui/domain/<?= rawurlencode($domain) ?>" target="_blank" rel="noopener"><i class="material-icons left">shield</i>Open in VirusTotal</a>
-        <a class="btn btn-small btn-info waves-effect" href="https://urlhaus.abuse.ch/host/<?= rawurlencode($domain) ?>/" target="_blank" rel="noopener"><i class="material-icons left">bug_report</i>Open in URLhaus</a>
-        <?php if (!empty($present['cf_report_url'])): ?>
-        <a class="btn btn-small btn-info waves-effect" href="<?= htmlspecialchars((string)$present['cf_report_url']) ?>" target="_blank" rel="noopener"><i class="material-icons left">radar</i>Open in URL Scanner</a>
-        <?php endif; ?>
-        <?php if (!empty($_SESSION['is_admin'])): ?>
-        <button type="button" class="btn btn-small btn-danger waves-effect" onclick="ddDeleteFicha('<?= $domainArg ?>')" title="Delete the cached WHOIS/VirusTotal/abuse.ch/Cloudflare data for this domain. Tags, watchlist, reports and Intelligence are kept."><i class="material-icons left">delete_sweep</i>Delete cache</button>
-        <?php endif; ?>
-    </div>
+    <?= renderDomainActions($present, $domain, $compactActions) ?>
     <details class="dd-raw">
         <summary>Raw data</summary>
         <pre><?= $rawJson ?></pre>

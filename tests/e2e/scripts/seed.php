@@ -31,7 +31,7 @@ $db->prepare(
 $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('registration_open', '0')")->execute();
 $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('new_domain_days', '1')")->execute();
 
-$db->prepare("INSERT OR REPLACE INTO keywords (id, user_id, keyword, is_active, match_count) VALUES (1, 1, 'acme', 1, 1)")->execute();
+$db->prepare("INSERT OR REPLACE INTO keywords (id, user_id, keyword, is_active, match_count) VALUES (1, 1, 'acme', 1, 2)")->execute();
 
 $db->prepare(
     "INSERT OR REPLACE INTO matches
@@ -39,7 +39,14 @@ $db->prepare(
      VALUES (1, 1, 'acme-phishing.test', 'test', datetime('now'), datetime('now'), 0, 'czds')"
 )->execute();
 
+$db->prepare(
+    "INSERT OR REPLACE INTO matches
+        (id, keyword_id, domain, tld, discovered_at, first_seen, is_historical, source)
+     VALUES (2, 1, 'acme-login.test', 'test', datetime('now'), datetime('now'), 0, 'czds')"
+)->execute();
+
 $db->prepare("INSERT OR REPLACE INTO notifications (id, user_id, match_id, is_read, kind) VALUES (1, 1, 1, 0, 'match')")->execute();
+$db->prepare("INSERT OR REPLACE INTO notifications (id, user_id, match_id, is_read, kind) VALUES (2, 1, 2, 0, 'match')")->execute();
 
 // Worker status with storage metrics, so the admin Storage tab has data.
 $db->exec(

@@ -398,7 +398,7 @@ require __DIR__ . '/templates/header.php';
             <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">done_all</i>Marcar todo leído</button>
         </form>
         <?php endif; ?>
-        <p class="subtitle"><?= (int)$kpiTotal ?> detectadas hoy · <?= (int)$kpiSignals ?> con señales de seguridad · <?= (int)$kpiObserving ?> en observación</p>
+        <p class="subtitle"><?= (int)$kpiTotal ?> visibles · <?= (int)$kpiSignals ?> con señales de seguridad · <?= (int)$kpiObserving ?> en observación</p>
     </div>
 
     <div class="stat-strip">
@@ -674,7 +674,7 @@ require __DIR__ . '/templates/header.php';
                     </td>
                 </tr>
                 <tr class="domain-detail-row" data-domain="<?= htmlspecialchars($n['domain']) ?>" style="display:none;">
-                    <td colspan="12"><?= renderDomainDetail($present, [$n['keyword']], $rules) ?></td>
+                    <td colspan="12"><?= renderDomainDetail($present, [$n['keyword']], $rules, $uiV2) ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
