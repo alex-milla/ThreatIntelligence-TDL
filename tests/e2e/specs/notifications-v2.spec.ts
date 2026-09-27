@@ -35,6 +35,13 @@ test.describe('Notifications v2 layout', () => {
     await expect(compact).toContainText('CF DNS');
     await expect(compact).toContainText('Delete cache');
     await expect(compact).toContainText('Add to Watchlist');
+
+    // The checks row stretches to the full width (equal buttons).
+    const widths = await compact.locator('.dac-checks .btn').evaluateAll(
+      (els) => els.map((e) => Math.round(e.getBoundingClientRect().width))
+    );
+    expect(widths.length).toBeGreaterThan(1);
+    expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(2);
     await page.locator('.drawer-close').click();
     await expect(page.locator('.drawer-panel.open')).toHaveCount(0);
   });

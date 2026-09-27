@@ -244,6 +244,11 @@
     border: 0;
     margin: 0;
 }
+.ui-v2 .dd-actions-compact .dac-checks .btn,
+.ui-v2 .dd-actions-compact .dac-cf .btn {
+    flex: 1 1 0;
+    text-align: center;
+}
 .ui-v2 .dd-actions-compact .dac-links { gap: 14px; }
 .ui-v2 .dd-actions-compact .dac-link {
     display: inline-flex;

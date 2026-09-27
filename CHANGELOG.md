@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.19.3] - 2026-09-27
+
+### Changed - v2 drawer: checks rows stretch to full width
+
+- The **checks** row (`WHOIS · VirusTotal · Abuse.ch`) and the **Cloudflare** row (`CF Scan · CF DNS`) now distribute across the full drawer width with equal-sized buttons, matching the classification row above. The utility row (`Add/Remove Watchlist` · `Delete cache`) keeps its natural width.
+- CSS-only, scoped to the v2 Notifications drawer; no markup or behaviour changes.
+
+### Tests
+
+- Playwright asserts the checks buttons share the same width.
+
 ## [v1.19.2] - 2026-09-27
 
 ### Changed - v2 drawer: clearer layout of the compact actions
