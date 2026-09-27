@@ -212,6 +212,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message = "New domain threshold updated to {$days} day(s).";
     }
 
+    if ($action === 'toggle_ui_layout') {
+        $current = getSetting($db, 'ui_layout', 'classic');
+        $next = ($current === 'v2') ? 'classic' : 'v2';
+        setSetting($db, 'ui_layout', $next);
+        $message = $next === 'v2'
+            ? 'New UI layout (v2) enabled for everyone.'
+            : 'Classic UI layout restored.';
+    }
+
     if ($action === 'archive_historical') {
         $db->exec("UPDATE matches SET is_historical = 1 WHERE is_historical = 0");
         $message = 'Existing matches archived. They are hidden from the "new" listings until restored.';
@@ -920,6 +929,18 @@ if (!empty($workerStatus['last_heartbeat'])) {
         <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">save</i>Save</button>
     </form>
     <p class="muted">Domains created within this window will show the NEW badge and appear in the "New only" filter.</p>
+
+    <div class="divider"></div>
+
+    <?php $uiV2 = getSetting($db, 'ui_layout', 'classic') === 'v2'; ?>
+    <h5>Interface layout</h5>
+    <p>Current layout: <strong><?= $uiV2 ? 'v2 (new)' : 'Classic' ?></strong></p>
+    <p class="muted">The v2 layout reorganises Notifications, Keywords and Matches (compact header with metrics, filter chips, contextual bulk actions and a side drawer for domain details). It is opt-in while it is being reviewed; the classic layout stays the default until it is finalised.</p>
+    <form method="POST">
+        <?php csrfField(); ?>
+        <input type="hidden" name="action" value="toggle_ui_layout">
+        <button type="submit" class="btn waves-effect <?= $uiV2 ? 'btn-outline' : '' ?>"><i class="material-icons left"><?= $uiV2 ? 'settings_backup_restore' : 'auto_awesome' ?></i><?= $uiV2 ? 'Restore classic layout' : 'Enable v2 layout (review)' ?></button>
+    </form>
 </div>
 
 <?php

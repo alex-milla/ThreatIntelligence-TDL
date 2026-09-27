@@ -357,6 +357,66 @@ require __DIR__ . '/templates/header.php';
         <?php endif; ?>
     </div>
 
+    <?php if ($uiV2):
+        // KPI aggregate over the default (unfiltered) view for this user.
+        $kpiStmt = $db->prepare(
+            "SELECT COUNT(*) AS total,
+                    SUM(CASE WHEN n.is_read = 0 THEN 1 ELSE 0 END) AS unread,
+                    SUM(CASE WHEN dt.tag = 'observing' THEN 1 ELSE 0 END) AS observing,
+                    SUM(CASE WHEN vt.verdict IN ('malicious','dga','suspicious')
+                              OR ac.verdict IN ('malicious','suspicious')
+                              OR cf.verdict IN ('malicious','suspicious')
+                             THEN 1 ELSE 0 END) AS signals
+             FROM notifications n
+             JOIN matches m ON n.match_id = m.id
+             LEFT JOIN domain_tags dt ON dt.domain = m.domain
+             LEFT JOIN domain_vt vt ON vt.domain = m.domain
+             LEFT JOIN domain_abusech ac ON ac.domain = m.domain
+             LEFT JOIN domain_cfscan cf ON cf.domain = m.domain
+             WHERE n.user_id = ? AND (n.kind = 'intelligence' OR NOT EXISTS (
+                 SELECT 1 FROM watchlist w WHERE w.user_id = ? AND w.domain = m.domain))
+               AND (n.kind = 'intelligence' OR NOT (" . $hiddenPredicate . "))"
+        );
+        $kpiStmt->execute([$userId, $userId]);
+        $kpi = $kpiStmt->fetch() ?: ['total' => 0, 'unread' => 0, 'observing' => 0, 'signals' => 0];
+        $kpiTotal = (int)$kpi['total'];
+        $kpiUnread = (int)$kpi['unread'];
+        $kpiSignals = (int)$kpi['signals'];
+        $kpiObserving = (int)$kpi['observing'];
+        $kpiReviewed = max(0, $kpiTotal - $kpiUnread);
+        $v2Base = '/notifications.php';
+        $chipActive = function (bool $on) { return $on ? ' active' : ''; };
+    ?>
+    <div class="page-header">
+        <h1>Notifications</h1>
+        <?php if ($kpiUnread > 0): ?><span class="count-chip"><i class="material-icons" style="font-size:16px;">notifications_active</i><?= (int)$kpiUnread ?> nuevas</span><?php endif; ?>
+        <span class="spacer"></span>
+        <?php if (!empty($notifications) || $hiddenCount > 0): ?>
+        <form method="POST" style="margin: 0;">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="mark_all_read">
+            <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">done_all</i>Marcar todo leído</button>
+        </form>
+        <?php endif; ?>
+        <p class="subtitle"><?= (int)$kpiTotal ?> detectadas hoy · <?= (int)$kpiSignals ?> con señales de seguridad · <?= (int)$kpiObserving ?> en observación</p>
+    </div>
+
+    <div class="stat-strip">
+        <div class="stat"><span class="stat-ico"><i class="material-icons">mark_email_unread</i></span><div><div class="stat-num"><?= (int)$kpiUnread ?></div><div class="stat-label">No leídas</div></div></div>
+        <div class="stat"><span class="stat-ico warn"><i class="material-icons">warning_amber</i></span><div><div class="stat-num"><?= (int)$kpiSignals ?></div><div class="stat-label">Con señales</div></div></div>
+        <div class="stat"><span class="stat-ico info"><i class="material-icons">visibility</i></span><div><div class="stat-num"><?= (int)$kpiObserving ?></div><div class="stat-label">Observando</div></div></div>
+        <div class="stat"><span class="stat-ico ok"><i class="material-icons">task_alt</i></span><div><div class="stat-num"><?= (int)$kpiReviewed ?></div><div class="stat-label">Revisadas</div></div></div>
+    </div>
+
+    <div class="chip-tabs">
+        <a class="chip<?= $chipActive($search === '' && !$unreadOnly && !$observingOnly && !$includeArchived && !$newOnly) ?>" href="<?= $v2Base ?>">Todos <span class="chip-count"><?= (int)$kpiTotal ?></span></a>
+        <a class="chip<?= $chipActive($unreadOnly) ?>" href="<?= $v2Base ?>?unread_only=1">No leídas <span class="chip-count"><?= (int)$kpiUnread ?></span></a>
+        <a class="chip<?= $chipActive($observingOnly) ?>" href="<?= $v2Base ?>?observing=1">Observando <span class="chip-count"><?= (int)$kpiObserving ?></span></a>
+        <a class="chip<?= $chipActive($newOnly) ?>" href="<?= $v2Base ?>?new_days=<?= (int)$defaultNewDays ?>">Nuevas</a>
+        <a class="chip<?= $chipActive($includeArchived) ?>" href="<?= $v2Base ?>?archived=1">Históricas <span class="chip-count"><?= (int)$archivedCount ?></span></a>
+    </div>
+    <?php endif; ?>
+
     <form method="GET" id="filter-form" class="filter-form">
         <div class="input-field">
             <i class="material-icons prefix">search</i>
@@ -405,6 +465,21 @@ require __DIR__ . '/templates/header.php';
     </form>
     <?php endif; ?>
 
+    <?php if ($uiV2): ?>
+        <?php if ($hiddenCount > 0 || $archivedCount > 0 || $observingOnly): ?>
+        <div class="hint-bar">
+            <?php if ($hiddenCount > 0): ?>
+            <span class="hint"><i class="material-icons">star</i><?= number_format((int)$hiddenCount) ?> ocultas por Watchlist · <a href="/watchlist.php">ver</a></span>
+            <?php endif; ?>
+            <?php if ($archivedCount > 0): ?>
+            <span class="hint"><i class="material-icons">inventory_2</i><?= number_format((int)$archivedCount) ?> ocultas (históricas / etiquetadas) · <a href="/notifications.php?archived=1">mostrar</a></span>
+            <?php endif; ?>
+            <?php if ($observingOnly): ?>
+            <span class="hint"><i class="material-icons">help_outline</i>Solo observadas · <a href="/notifications.php">ver todas</a></span>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+    <?php else: ?>
     <?php if ($hiddenCount > 0): ?>
         <div class="notice notice-warning">
             <i class="material-icons">star</i>
@@ -423,13 +498,15 @@ require __DIR__ . '/templates/header.php';
             <div>Showing only domains under observation. <a href="/notifications.php"><strong>Show all</strong></a>.</div>
         </div>
     <?php endif; ?>
+    <?php endif; ?>
     <?php if (empty($notifications)): ?>
         <p class="muted">No notifications to display.<?php if ($hiddenCount > 0): ?> The remaining <?= $hiddenCount ?> are in your <a href="/watchlist.php">Watchlist</a>.<?php endif; ?><?php if ($archivedCount > 0): ?> <?= $archivedCount ?> are hidden (use the toggle above to show them).<?php endif; ?></p>
     <?php else: ?>
         <form method="POST" id="bulk-form">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="delete_selected">
-            <div class="section-actions">
+            <div class="section-actions<?= $uiV2 ? ' context-toolbar' : '' ?>">
+                <?php if ($uiV2): ?><span class="sel-count">0 seleccionados</span><?php endif; ?>
                 <label class="check-inline">
                     <input type="checkbox" id="select-all">
                     <span><strong>Select all visible</strong></span>
@@ -466,17 +543,21 @@ require __DIR__ . '/templates/header.php';
         <table class="striped highlight responsive-table">
             <thead>
                 <tr>
-                    <th style="width: 30px;"></th>
+                    <th style="width: 30px;"><?php if ($uiV2): ?><input type="checkbox" id="select-all-head" aria-label="Select all visible"><?php endif; ?></th>
                     <th><?= notifSortLink('status', 'Status', $sort, $dir, $notifSortDefaults) ?></th>
                     <th><?= notifSortLink('domain', 'Domain', $sort, $dir, $notifSortDefaults) ?></th>
+                    <?php if ($uiV2): ?>
+                    <th colspan="3">Signals</th>
+                    <?php else: ?>
                     <th>VT</th>
                     <th>Abuse.ch</th>
                     <th>CF</th>
-                    <th><?= notifSortLink('tld', 'TLD', $sort, $dir, $notifSortDefaults) ?></th>
+                    <?php endif; ?>
+                    <th class="col-secondary"><?= notifSortLink('tld', 'TLD', $sort, $dir, $notifSortDefaults) ?></th>
                     <th><?= notifSortLink('keyword', 'Keyword', $sort, $dir, $notifSortDefaults) ?></th>
-                    <th><?= notifSortLink('first_seen', 'First Seen', $sort, $dir, $notifSortDefaults) ?></th>
-                    <th><?= notifSortLink('created', 'Created', $sort, $dir, $notifSortDefaults) ?></th>
-                    <th><?= notifSortLink('discovered', 'Discovered', $sort, $dir, $notifSortDefaults) ?></th>
+                    <th class="col-secondary"><?= notifSortLink('first_seen', 'First Seen', $sort, $dir, $notifSortDefaults) ?></th>
+                    <th class="col-secondary"><?= notifSortLink('created', 'Created', $sort, $dir, $notifSortDefaults) ?></th>
+                    <th><?= notifSortLink('discovered', 'Detected', $sort, $dir, $notifSortDefaults) ?></th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -553,13 +634,17 @@ require __DIR__ . '/templates/header.php';
                     <td><label><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form" aria-label="Select <?= htmlspecialchars($n['domain']) ?>"><span></span></label></td>
                     <td><?= $n['is_read'] ? '<span class="status-badge status-cancelled">Read</span>' : '<span class="status-badge status-pending">Unread</span>' ?></td>
                     <td><a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><?= htmlspecialchars($n['domain']) ?></a><?= $intelBadge ?><?= $tagBadge ?><?= $queueBadge ?></td>
+                    <?php if ($uiV2): ?>
+                    <td colspan="3" class="signals-cell"><?= $vtCell ?> <?= $abuseCell ?> <?= $cfCell ?></td>
+                    <?php else: ?>
                     <td><?= $vtCell ?></td>
                     <td><?= $abuseCell ?></td>
                     <td><?= $cfCell ?></td>
-                    <td><?= htmlspecialchars($n['tld']) ?></td>
+                    <?php endif; ?>
+                    <td class="col-secondary"><?= htmlspecialchars($n['tld']) ?></td>
                     <td><?= htmlspecialchars($n['keyword']) ?></td>
-                    <td><?= htmlspecialchars(fmt_date($n['first_seen'])) ?></td>
-                    <td><?= htmlspecialchars($creationDisplay) ?><?php if ($isNew): ?> <span class="badge-new">NEW</span><?php endif; ?></td>
+                    <td class="col-secondary"><?= htmlspecialchars(fmt_date($n['first_seen'])) ?></td>
+                    <td class="col-secondary"><?= htmlspecialchars($creationDisplay) ?><?php if ($isNew): ?> <span class="badge-new">NEW</span><?php endif; ?></td>
                     <td><?= htmlspecialchars(fmt_date($n['discovered_at'])) ?></td>
                     <td>
                         <div class="action-menu">

@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.19.0] - 2026-09-27
+
+### Added - Opt-in `v2` UI layout (foundation + Notifications)
+
+A redesign of the analyst screens aimed at less visual noise and a clear two-layer flow (detect → investigate). It is **opt-in and non-destructive**: the classic layout stays the default until the new one is finalised.
+
+- **Global switch:** `Admin → System → Interface layout` toggles `ui_layout` between `classic` and `v2`. Admins can also preview either layout for a single request with `?ui=v2` / `?ui=classic`, so it can be reviewed against real data before enabling it for everyone.
+- **`v2` foundation:** new `css/ui.css` (page header, stat strip / KPIs, filter chips, contextual toolbar, side drawer, compact hint bars, dense tables) and `assets/ui.js` (drawer with focus trap + Esc, contextual selection toolbar, ⌘/Ctrl+K search focus). Both load only when the layout is `v2`.
+- **Notifications (first screen) under `v2`:**
+  - Compact page header with the unread count and the primary action, plus a KPI strip (unread / with signals / observing / reviewed) and quick **filter chips**.
+  - The two large "hidden notifications" banners collapse into compact hint bars.
+  - A single **Signals** column (VT / Abuse.ch / Cloudflare) and the secondary columns (TLD, First Seen, Created) move out of the table (they remain in the drawer detail).
+  - The always-visible bulk actions become a **contextual toolbar** that appears only when rows are selected.
+  - Clicking a domain opens the existing rich detail in a **side drawer** (the inline detail is kept for the classic layout and for reports/printing).
+- No form field, action name or API contract changed; the drawer reuses the server-rendered detail and every bulk action keeps working.
+
+### Tests
+
+- New Playwright specs for the v2 layout: KPIs/chips render, drawer opens, contextual toolbar appears on selection, and the classic layout still expands the detail inline.
+
 ## [v1.18.23] - 2026-09-27
 
 ### Added - Storage admin tab (database occupancy + disk usage, web and worker)
