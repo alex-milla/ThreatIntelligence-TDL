@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.20.0] - 2026-09-27
+
+### Changed - v2 is now the only UI layout
+
+- The `classic` layout and the `ui_layout` opt-in are gone. `css/ui.css` + `assets/ui.js` load on every page, `<body>` always carries `.ui-v2`, and the Admin → System "Interface layout" toggle was removed. The `?ui=classic` / `?ui=v2` preview is no longer honoured.
+- `notifications.php` dropped its classic branches (single header/card path, v2 signals column, hint bar instead of the big notice banners).
+
+### Added - Keywords (v2 list)
+
+- `keywords.php` was redesigned with the v2 pattern: compact header (title + count chip + **Add Keyword**), three KPIs (Keywords / Matches total / Tracking), a client-side search box and a tracking filter, a compact admin recheck bar (state + **Recheck cached domains** + **Refresh**), a contextual selection bar (**Recheck selected**) and a dense table with a per-keyword tracking switch and grouped row actions (matches / edit / tracking settings / delete).
+- All existing forms and actions are preserved (`add`, `update_keyword`, `delete`, `update_tracking`, `recheck_keywords`, `stop_recheck`); the admin live-refresh sections (`#live-recheck`, `#live-keywords`) still work.
+
+### Tests
+
+- E2E: rewritten Notifications spec (single layout) and a new `keywords-v2` spec (header/KPIs, add form, search, tracking filter, bulk selection). The seed now creates three keywords.
+
 ## [v1.19.9] - 2026-09-27
 
 ### Fixed - v2 Notifications: clicking a domain while in selection mode

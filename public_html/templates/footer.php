@@ -33,8 +33,6 @@
     <script src="/assets/iocs.js?v=<?= urlencode($assetVersion) ?>"></script>
     <script src="/assets/domain-detail.js?v=<?= urlencode($assetVersion) ?>"></script>
     <script src="/js/app.js?v=<?= urlencode($assetVersion) ?>"></script>
-    <?php if (!empty($uiV2)): ?>
     <script src="/assets/ui.js?v=<?= urlencode($assetVersion) ?>"></script>
-    <?php endif; ?>
 </body>
 </html>

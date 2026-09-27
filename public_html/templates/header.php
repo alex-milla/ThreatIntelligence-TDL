@@ -12,14 +12,9 @@ if (is_file(__DIR__ . '/../VERSION')) {
     $assetVersion = trim((string)file_get_contents(__DIR__ . '/../VERSION'));
 }
 
-// Global UI layout: 'classic' (default) or 'v2'. Read from settings when the
-// page has a database handle; falls back to classic otherwise. An admin can
-// preview either layout for a single request with ?ui=v2 / ?ui=classic.
-$uiLayout = (isset($db) && $db instanceof PDO) ? getSetting($db, 'ui_layout', 'classic') : 'classic';
-if (!empty($_SESSION['is_admin']) && isset($_GET['ui']) && in_array($_GET['ui'], ['classic', 'v2'], true)) {
-    $uiLayout = $_GET['ui'];
-}
-$uiV2 = ($uiLayout === 'v2');
+// Layout v2 is the only UI now: css/ui.css + assets/ui.js are always loaded and
+// the body carries .ui-v2. Kept as a variable because the page components use it.
+$uiV2 = true;
 
 // Current page (for active nav state)
 $curPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
@@ -57,11 +52,9 @@ if (!in_array($tldSource, ['czds', 'openintel'], true)) {
     <link rel="stylesheet" href="/css/materialize.min.css?v=<?= urlencode($assetVersion) ?>">
     <link rel="stylesheet" href="/css/materialize.colors.min.css?v=<?= urlencode($assetVersion) ?>">
     <link rel="stylesheet" href="/css/app.css?v=<?= urlencode($assetVersion) ?>">
-    <?php if ($uiV2): ?>
     <link rel="stylesheet" href="/css/ui.css?v=<?= urlencode($assetVersion) ?>">
-    <?php endif; ?>
 </head>
-<body<?= $uiV2 ? ' class="ui-v2"' : '' ?>>
+<body class="ui-v2">
 <div class="app-shell">
 
     <?php if ($loggedIn): ?>

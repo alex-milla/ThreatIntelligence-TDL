@@ -1,34 +1,27 @@
 import { test, expect } from '@playwright/test';
 import { login } from '../helpers';
 
-// The opt-in v2 layout is previewable per request with ?ui=v2 (admin only).
-test.describe('Notifications v2 layout', () => {
+// v2 is the only layout: css/ui.css + assets/ui.js load on every page and
+// <body> always carries .ui-v2.
+test.describe('Notifications layout', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
   });
 
-  test('classic layout has no v2 components', async ({ page }) => {
-    await page.goto('/notifications.php?ui=classic');
-    await expect(page.locator('body')).not.toHaveClass(/ui-v2/);
-    await expect(page.locator('.stat-strip')).toHaveCount(0);
-    await expect(page.locator('.page-header')).toHaveCount(0);
-    await expect(page.locator('.card-head')).toHaveCount(1);
-  });
-
-  test('v2 layout renders the header, KPIs and filter chips', async ({ page }) => {
-    await page.goto('/notifications.php?ui=v2');
+  test('renders the header, KPIs and filter chips', async ({ page }) => {
+    await page.goto('/notifications.php');
     await expect(page.locator('body')).toHaveClass(/ui-v2/);
     await expect(page.locator('.stat-strip .stat')).toHaveCount(4);
     await expect(page.locator('.chip-tabs .chip').first()).toBeVisible();
     await expect(page.locator('.page-header h1')).toContainText('Notifications');
-    // The classic card header is not rendered in v2 (no duplicated title/action).
+    // No duplicated classic card title.
     await expect(page.locator('.page-header')).toHaveCount(1);
     await expect(page.locator('.card-head')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Mark All Read|Marcar todo leído/i })).toHaveCount(1);
   });
 
   test('clicking a domain opens the side drawer', async ({ page }) => {
-    await page.goto('/notifications.php?ui=v2');
+    await page.goto('/notifications.php');
     await page.locator('a.domain-link').first().click();
     const drawer = page.locator('.drawer-panel.open');
     await expect(drawer).toBeVisible();
@@ -53,7 +46,7 @@ test.describe('Notifications v2 layout', () => {
   });
 
   test('the drawer swaps to the next domain without closing', async ({ page }) => {
-    await page.goto('/notifications.php?ui=v2');
+    await page.goto('/notifications.php');
     const links = page.locator('a.domain-link');
     const first = (await links.nth(0).textContent())?.trim() || '';
     const second = (await links.nth(1).textContent())?.trim() || '';
@@ -69,7 +62,7 @@ test.describe('Notifications v2 layout', () => {
   });
 
   test('selecting a row reveals the contextual toolbar', async ({ page }) => {
-    await page.goto('/notifications.php?ui=v2');
+    await page.goto('/notifications.php');
     await page.locator('tr[data-domain] .row-check').first().check();
     await expect(page.locator('#bulk-form')).toHaveClass(/has-selection/);
     await expect(page.locator('.context-toolbar')).toBeVisible();
@@ -80,7 +73,7 @@ test.describe('Notifications v2 layout', () => {
   });
 
   test('selecting two rows enters selection mode and closes the detail drawer', async ({ page }) => {
-    await page.goto('/notifications.php?ui=v2');
+    await page.goto('/notifications.php');
 
     // Open the detail drawer first.
     await page.locator('a.domain-link').first().click();
@@ -102,7 +95,7 @@ test.describe('Notifications v2 layout', () => {
   });
 
   test('clicking a domain during selection mode opens the drawer and drops the other rows', async ({ page }) => {
-    await page.goto('/notifications.php?ui=v2');
+    await page.goto('/notifications.php');
 
     const checks = page.locator('tr[data-domain] .row-check');
     await checks.nth(0).check();
@@ -117,13 +110,5 @@ test.describe('Notifications v2 layout', () => {
     // The clicked row keeps its check; the rest are cleared.
     await expect(checks.nth(0)).toBeChecked();
     await expect(checks.nth(1)).not.toBeChecked();
-  });
-
-  test('the classic layout still expands the detail inline', async ({ page }) => {
-    await page.goto('/notifications.php?ui=classic');
-    await page.locator('a.domain-link').first().click();
-    // No drawer in classic; the inline detail row becomes visible instead.
-    await expect(page.locator('.drawer-panel.open')).toHaveCount(0);
-    await expect(page.locator('.domain-detail-row .domain-detail').first()).toBeVisible();
   });
 });

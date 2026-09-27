@@ -1,4 +1,4 @@
-// UI layout v2 behaviours (loaded only under body.ui-v2).
+// UI layout v2 behaviours (loaded on every page; <body> carries .ui-v2).
 //
 // Reinterprets the server-rendered markup instead of duplicating it:
 //  - the domain detail rows already rendered inline are shown in a side drawer;

@@ -1,7 +1,6 @@
 /* ============================================================
-   ThreatIntelligence-TDL - UI layout v2 (opt-in)
-   Loaded only when the `ui_layout` setting is "v2" and the body
-   carries `.ui-v2`, so the classic layout is never affected.
+   ThreatIntelligence-TDL - UI layout v2 (the only layout)
+   Loaded on every page; the body carries `.ui-v2`.
    Built on the CSS tokens defined in app.css (light + dark).
    ============================================================ */
 
@@ -310,4 +309,89 @@
 @media (max-width: 640px) {
     .ui-v2 .drawer-panel { width: 100vw; }
     .ui-v2 .page-header h1 { font-size: 1.3rem; }
+}
+
+/* ---------- Keywords (v2 list) ---------- */
+.ui-v2 .kw-add-panel {
+    margin: 0 0 14px;
+    padding: 12px 12px 4px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-2);
+}
+.ui-v2 .kw-add-panel[hidden] { display: none; }
+.ui-v2 .kw-filterbar { margin-bottom: 12px; }
+
+.ui-v2 .kw-selection {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    margin: 0 0 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+}
+.ui-v2 .kw-selection[hidden] { display: none; }
+.ui-v2 .kw-selection .sel-count { font-weight: 700; min-width: 120px; }
+
+.ui-v2 .recheck-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    margin: 0 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+}
+.ui-v2 .recheck-bar .spacer { flex: 1 1 auto; }
+.ui-v2 .recheck-bar .btn {
+    height: 28px;
+    line-height: 28px;
+    padding: 0 10px;
+    font-size: .78rem;
+}
+.ui-v2 .recheck-bar .btn .material-icons.left { font-size: 15px; margin-right: 4px; }
+.ui-v2 .recheck-state { display: inline-flex; align-items: center; gap: 6px; font-size: .84rem; }
+.ui-v2 .recheck-state .material-icons { font-size: 16px; }
+
+.ui-v2 .kw-switch { margin: 0; }
+
+.ui-v2 .kw-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+.ui-v2 .kw-actions .icon-btn {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.ui-v2 .kw-actions .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.ui-v2 .kw-actions .icon-btn.danger:hover { color: var(--danger, #dc2626); }
+.ui-v2 .kw-actions .material-icons { font-size: 18px; }
+.ui-v2 .kw-actions details { display: inline-block; }
+.ui-v2 .kw-actions details[open] { width: 100%; }
+.ui-v2 .kw-actions summary { list-style: none; cursor: pointer; }
+.ui-v2 .kw-actions summary::-webkit-details-marker { display: none; }
+.ui-v2 .kw-edit-form,
+.ui-v2 .kw-actions .kw-tracking-form {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
 }

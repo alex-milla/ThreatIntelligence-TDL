@@ -231,6 +231,17 @@ if ($isAdmin) {
     $activity = getWorkerActivity($db);
 }
 
+// KPI aggregates for the v2 header strip.
+$kwCount = count($keywords);
+$kwMatchesTotal = 0;
+$kwTrackingCount = 0;
+foreach ($keywords as $k) {
+    $kwMatchesTotal += (int)$k['match_count'];
+    if (!empty($k['tracking_enabled'])) {
+        $kwTrackingCount++;
+    }
+}
+
 $pageTitle = 'My Keywords';
 require __DIR__ . '/templates/header.php';
 ?>
@@ -245,9 +256,12 @@ require __DIR__ . '/templates/header.php';
 <?php endif; ?>
 
 <div class="card">
-    <div class="card-head">
-        <h2>My Keywords</h2>
-        <span class="muted"><?= count($keywords) ?> keyword(s)</span>
+    <div class="page-header">
+        <h1>Keywords</h1>
+        <span class="count-chip"><i class="material-icons" style="font-size:16px;">search</i><?= (int)$kwCount ?> keyword<?= $kwCount === 1 ? '' : 's' ?></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn waves-effect" onclick="kwToggleAdd()" aria-controls="kw-add" aria-expanded="false"><i class="material-icons left">add</i>Add Keyword</button>
+        <p class="subtitle">Track and monitor domains related to specific keywords.</p>
     </div>
 
     <?php if ($message): ?>
@@ -257,67 +271,92 @@ require __DIR__ . '/templates/header.php';
         <div class="alert alert-error"><i class="material-icons left">error</i><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
-    <form method="POST" class="keyword-add-form">
-        <?php csrfField(); ?>
-        <input type="hidden" name="action" value="add">
+    <div id="kw-add" class="kw-add-panel" hidden>
+        <form method="POST" class="keyword-add-form">
+            <?php csrfField(); ?>
+            <input type="hidden" name="action" value="add">
+            <div class="input-field">
+                <i class="material-icons prefix">search</i>
+                <input id="keyword" type="text" name="keyword" class="validate" placeholder=" " maxlength="100" required>
+                <label for="keyword">Keyword</label>
+                <span class="helper-text">Plain text or a pattern: e.g. <code>santander</code>, <code>micro*soft</code>, <code>microsoft[0-9]</code> — wildcards <code>* ? [ ] {n,m}</code> are applied automatically</span>
+            </div>
+            <button type="submit" class="btn waves-effect"><i class="material-icons left">add</i>Add Keyword</button>
+        </form>
+    </div>
+
+    <div class="filter-form kw-filterbar">
         <div class="input-field">
             <i class="material-icons prefix">search</i>
-            <input id="keyword" type="text" name="keyword" class="validate" placeholder=" " maxlength="100" required>
-            <label for="keyword">Keyword</label>
-            <span class="helper-text">Plain text or a pattern: e.g. <code>santander</code>, <code>micro*soft</code>, <code>microsoft[0-9]</code> — wildcards <code>* ? [ ] {n,m}</code> are applied automatically</span>
+            <input id="q" type="search" placeholder=" " autocomplete="off" aria-label="Search keyword">
+            <label for="q">Search keyword</label>
         </div>
-        <button type="submit" class="btn waves-effect"><i class="material-icons left">add</i>Add Keyword</button>
-    </form>
+        <select id="kw-filter" class="browser-default compact" aria-label="Filter keywords">
+            <option value="all">All keywords</option>
+            <option value="on">Tracking on</option>
+            <option value="off">Tracking off</option>
+            <option value="matches">With matches</option>
+        </select>
+    </div>
 
     <?php if ($isAdmin): ?>
     <div id="live-recheck" data-live-section>
-        <div class="section-actions">
+        <div class="recheck-bar">
+            <?php if ($recheckRunning): ?>
+            <span class="recheck-state"><i class="material-icons" style="color:var(--warning)">autorenew</i>Running · <?= number_format($recheckChecked) ?>/<?= number_format($recheckTotal) ?> (<?= $recheckPct ?>%) · <?= number_format($recheckMatches) ?> matches</span>
+            <?php elseif ($recheckPending > 0): ?>
+            <span class="recheck-state"><i class="material-icons">schedule</i>Queued — waiting for the worker</span>
+            <?php elseif ($recheckStatus && $recheckStatus['completed_at']): ?>
+            <span class="recheck-state"><i class="material-icons" style="color:var(--success)">check_circle</i>Completed · <?= number_format($recheckChecked) ?> checked · <?= number_format($recheckMatches) ?> matches <span class="muted">· Last recheck: <?= htmlspecialchars(fmt_date($recheckStatus['completed_at'])) ?></span></span>
+            <?php else: ?>
+            <span class="recheck-state"><i class="material-icons muted">info</i>Idle</span>
+            <?php endif; ?>
+            <span class="spacer"></span>
             <form method="POST" id="recheck-form" onsubmit="return prepareRecheck()">
                 <?php csrfField(); ?>
                 <input type="hidden" name="action" value="recheck_keywords">
                 <input type="hidden" name="payload" id="recheck-payload" value="">
-                <button type="submit" id="recheck-btn" class="btn btn-outline waves-effect" <?= ($recheckRunning || $recheckPending > 0) ? 'disabled' : '' ?>>
-                    <i class="material-icons left">search</i><span id="recheck-label"><?= $recheckRunning ? 'Recheck in progress...' : 'Recheck Cached Domains (ccTLD + ICANN)' ?></span>
+                <button type="submit" id="recheck-btn" class="btn btn-small waves-effect" <?= ($recheckRunning || $recheckPending > 0) ? 'disabled' : '' ?>>
+                    <i class="material-icons left">search</i><span id="recheck-label">Recheck cached domains</span>
                 </button>
             </form>
             <?php if ($recheckRunning): ?>
             <form method="POST">
                 <?php csrfField(); ?>
                 <input type="hidden" name="action" value="stop_recheck">
-                <button type="submit" class="btn waves-effect btn-danger"><i class="material-icons left">stop</i>Stop Recheck</button>
+                <button type="submit" class="btn btn-small btn-danger waves-effect"><i class="material-icons left">stop</i>Stop</button>
             </form>
             <?php endif; ?>
-            <button type="button" class="btn btn-outline waves-effect" data-refresh-live title="Check the recheck status now">
-                <i class="material-icons left">refresh</i>Refresh
-            </button>
-            <span class="muted">Scans all previously downloaded domains against current keywords (admin only)</span>
+            <button type="button" class="btn btn-small btn-outline waves-effect" data-refresh-live title="Check the recheck status now"><i class="material-icons left">refresh</i>Refresh</button>
         </div>
-        <div class="recheck-status">
-            <?php if ($recheckRunning): ?>
-                <p><strong>Status:</strong> <span class="status-badge status-running">Running</span></p>
-                <div class="progress"><div class="determinate" style="width: <?= $recheckPct ?>%;"></div></div>
-                <p>Checked <strong><?= number_format($recheckChecked) ?></strong> of <strong><?= number_format($recheckTotal) ?></strong> domains (<?= $recheckPct ?>%) — <strong><?= number_format($recheckMatches) ?></strong> matches found</p>
-            <?php elseif ($recheckPending > 0): ?>
-                <p><strong>Status:</strong> <span class="status-badge status-running">Queued</span> — waiting for the worker to start.</p>
-            <?php elseif ($recheckStatus && $recheckStatus['completed_at']): ?>
-                <p><strong>Status:</strong> <span class="status-badge status-completed">Completed</span> at <?= htmlspecialchars(fmt_date($recheckStatus['completed_at'])) ?></p>
-                <p>Checked <strong><?= number_format($recheckChecked) ?></strong> domains — <strong><?= number_format($recheckMatches) ?></strong> matches found</p>
-            <?php else: ?>
-                <p><strong>Status:</strong> <span class="status-badge status-cancelled">Idle</span></p>
-            <?php endif; ?>
-        </div>
+        <?php if ($recheckRunning): ?>
+        <div class="progress" style="margin:0 0 12px;"><div class="determinate" style="width: <?= $recheckPct ?>%;"></div></div>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
 
     <div id="live-keywords" data-live-section>
+        <div class="stat-strip">
+            <div class="stat"><span class="stat-ico"><i class="material-icons">search</i></span><div><div class="stat-num"><?= (int)$kwCount ?></div><div class="stat-label">Keywords</div></div></div>
+            <div class="stat"><span class="stat-ico info"><i class="material-icons">travel_explore</i></span><div><div class="stat-num"><?= number_format($kwMatchesTotal) ?></div><div class="stat-label">Matches (total)</div></div></div>
+            <div class="stat"><span class="stat-ico ok"><i class="material-icons">track_changes</i></span><div><div class="stat-num"><?= (int)$kwTrackingCount ?></div><div class="stat-label">Tracking</div></div></div>
+        </div>
+
     <?php if (empty($keywords)): ?>
         <p class="muted">No keywords yet. Add your first keyword above.</p>
     <?php else: ?>
+        <?php if ($isAdmin): ?>
+        <div id="kw-selection" class="kw-selection" hidden>
+            <span class="sel-count">0 seleccionadas</span>
+            <button type="submit" form="recheck-form" class="btn btn-small waves-effect" <?= ($recheckRunning || $recheckPending > 0) ? 'disabled' : '' ?>><i class="material-icons left">search</i>Recheck selected</button>
+            <button type="button" class="btn btn-small btn-outline waves-effect" onclick="kwClearSelection()">Clear</button>
+        </div>
+        <?php endif; ?>
         <table class="striped highlight responsive-table">
             <thead>
                 <tr>
                     <?php if ($isAdmin): ?>
-                    <th style="width: 30px;"><label><input type="checkbox" id="select-all" aria-label="Select all keywords"><span></span></label></th>
+                    <th style="width: 30px;"><input type="checkbox" id="select-all" aria-label="Select all keywords"></th>
                     <?php endif; ?>
                     <th><?= kwSortLink('keyword', 'Keyword', $kwSort, $kwDir, $kwSortDefaults) ?></th>
                     <th><?= kwSortLink('matches', 'Matches', $kwSort, $kwDir, $kwSortDefaults) ?></th>
@@ -328,48 +367,60 @@ require __DIR__ . '/templates/header.php';
             </thead>
             <tbody>
                 <?php foreach ($keywords as $k): ?>
-                <tr>
+                <tr data-keyword="<?= htmlspecialchars(strtolower((string)$k['keyword'])) ?>" data-tracking="<?= !empty($k['tracking_enabled']) ? '1' : '0' ?>" data-matches="<?= (int)$k['match_count'] ?>">
                     <?php if ($isAdmin): ?>
-                    <td><label><input type="checkbox" class="row-check kw-check" value="<?= (int)$k['id'] ?>" aria-label="Select <?= htmlspecialchars($k['keyword']) ?>"><span></span></label></td>
+                    <td><input type="checkbox" class="row-check kw-check" value="<?= (int)$k['id'] ?>" aria-label="Select <?= htmlspecialchars($k['keyword']) ?>"></td>
                     <?php endif; ?>
-                    <td><strong><?= htmlspecialchars($k['keyword']) ?></strong><?php if (strpbrk((string)$k['keyword'], '*?[]{}') !== false): ?> <span class="tag-chip report" title="Contains wildcards (matched as a glob too)">GLOB</span><?php endif; ?></td>
+                    <td class="kw-name"><strong><?= htmlspecialchars($k['keyword']) ?></strong><?php if (strpbrk((string)$k['keyword'], '*?[]{}') !== false): ?> <span class="tag-chip report" title="Contains wildcards (matched as a glob too)">GLOB</span><?php endif; ?></td>
                     <td>
                         <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" title="Review all matched domains"><?= (int)$k['visible_count'] ?></a><?php if ((int)$k['visible_count'] !== (int)$k['match_count']): ?> <a href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" class="muted" title="Review all matched domains">(<?= (int)$k['match_count'] ?> total)</a><?php endif; ?>
                         <a href="/notifications.php?q=<?= urlencode($k['keyword']) ?>" class="muted" title="View notifications for this keyword" aria-label="View notifications for this keyword"><i class="material-icons tiny">notifications</i></a>
                     </td>
                     <td>
-                        <details class="kw-tracking">
-                            <summary><?= !empty($k['tracking_enabled']) ? 'On &middot; ' . (int)$k['tracking_days'] . 'd window' : 'Off' ?></summary>
-                            <form method="POST" class="kw-tracking-form">
-                                <?php csrfField(); ?>
-                                <input type="hidden" name="action" value="update_tracking">
-                                <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
-                                <label class="check-inline"><input type="checkbox" name="tracking_enabled" value="1" <?= !empty($k['tracking_enabled']) ? 'checked' : '' ?>><span></span>Enabled</label>
-                                <label class="muted">Window (days) <input type="number" name="tracking_days" min="1" max="3650" value="<?= (int)$k['tracking_days'] ?>" class="browser-default compact"></label>
-                                <label class="muted">Enroll if &le; (days old) <input type="number" name="tracking_enroll_max_age_days" min="1" max="3650" value="<?= (int)$k['tracking_enroll_max_age_days'] ?>" class="browser-default compact"></label>
-                                <button type="submit" class="btn btn-small waves-effect">Save</button>
-                            </form>
-                            <p class="muted" style="margin:4px 0 0; font-size:.72rem;">Checks run weekly (Sunday night).</p>
-                        </details>
+                        <form method="POST" class="kw-tracking-form">
+                            <?php csrfField(); ?>
+                            <input type="hidden" name="action" value="update_tracking">
+                            <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
+                            <input type="hidden" name="tracking_days" value="<?= (int)$k['tracking_days'] ?>">
+                            <input type="hidden" name="tracking_enroll_max_age_days" value="<?= (int)$k['tracking_enroll_max_age_days'] ?>">
+                            <div class="switch kw-switch">
+                                <label>Off<input type="checkbox" name="tracking_enabled" value="1" <?= !empty($k['tracking_enabled']) ? 'checked' : '' ?> onchange="this.form.submit()"><span class="lever"></span>On</label>
+                            </div>
+                        </form>
                     </td>
                     <td><?= htmlspecialchars(fmt_date($k['created_at'])) ?></td>
                     <td>
-                        <details class="kw-edit">
-                            <summary class="muted" style="cursor:pointer;">Edit</summary>
-                            <form method="POST" class="kw-edit-form">
+                        <div class="kw-actions">
+                            <a class="icon-btn" href="/keyword_matches.php?id=<?= (int)$k['id'] ?>" title="Review matched domains" aria-label="Review matched domains"><i class="material-icons">list_alt</i></a>
+                            <details class="kw-edit">
+                                <summary class="icon-btn" title="Edit keyword" role="button" tabindex="0"><i class="material-icons">edit</i></summary>
+                                <form method="POST" class="kw-edit-form">
+                                    <?php csrfField(); ?>
+                                    <input type="hidden" name="action" value="update_keyword">
+                                    <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
+                                    <input type="text" name="keyword" value="<?= htmlspecialchars($k['keyword']) ?>" maxlength="100" required class="browser-default compact">
+                                    <button type="submit" class="btn btn-small waves-effect">Save</button>
+                                </form>
+                            </details>
+                            <details class="kw-tracking-settings">
+                                <summary class="icon-btn" title="Tracking settings" role="button" tabindex="0"><i class="material-icons">tune</i></summary>
+                                <form method="POST" class="kw-tracking-form">
+                                    <?php csrfField(); ?>
+                                    <input type="hidden" name="action" value="update_tracking">
+                                    <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
+                                    <label class="check-inline"><input type="checkbox" name="tracking_enabled" value="1" <?= !empty($k['tracking_enabled']) ? 'checked' : '' ?>><span></span>Enabled</label>
+                                    <label class="muted">Window (days) <input type="number" name="tracking_days" min="1" max="3650" value="<?= (int)$k['tracking_days'] ?>" class="browser-default compact"></label>
+                                    <label class="muted">Enroll if &le; (days old) <input type="number" name="tracking_enroll_max_age_days" min="1" max="3650" value="<?= (int)$k['tracking_enroll_max_age_days'] ?>" class="browser-default compact"></label>
+                                    <button type="submit" class="btn btn-small waves-effect">Save</button>
+                                </form>
+                            </details>
+                            <form method="POST" style="display: inline-flex;" onsubmit="return confirm('Delete this keyword?')">
                                 <?php csrfField(); ?>
-                                <input type="hidden" name="action" value="update_keyword">
+                                <input type="hidden" name="action" value="delete">
                                 <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
-                                <input type="text" name="keyword" value="<?= htmlspecialchars($k['keyword']) ?>" maxlength="100" required class="browser-default compact">
-                                <button type="submit" class="btn btn-small waves-effect">Save</button>
+                                <button type="submit" class="icon-btn danger" title="Delete keyword" aria-label="Delete keyword"><i class="material-icons">delete</i></button>
                             </form>
-                        </details>
-                        <form method="POST" style="display: inline;">
-                            <?php csrfField(); ?>
-                            <input type="hidden" name="action" value="delete">
-                            <input type="hidden" name="keyword_id" value="<?= (int)$k['id'] ?>">
-                            <button type="submit" class="btn btn-small btn-danger waves-effect" onclick="return confirm('Delete this keyword?')"><i class="material-icons left">delete</i>Delete</button>
-                        </form>
+                        </div>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -379,8 +430,20 @@ require __DIR__ . '/templates/header.php';
     </div>
 </div>
 
-<?php if ($isAdmin): ?>
 <script>
+// Reveal the add-keyword form on demand (keeps the list header clean in v2).
+function kwToggleAdd() {
+    var panel = document.getElementById('kw-add');
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    var btn = document.querySelector('[aria-controls="kw-add"]');
+    if (btn) btn.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
+    if (!panel.hidden) {
+        var input = document.getElementById('keyword');
+        if (input) input.focus();
+    }
+}
+
 // Recheck the selected keywords (or all when none is checked). The selected ids
 // are sent as a JSON payload; the server keeps only the admin's own keywords.
 function updateRecheckLabel() {
@@ -388,7 +451,7 @@ function updateRecheckLabel() {
     var btn = document.getElementById('recheck-btn');
     if (!label || (btn && btn.disabled)) return;
     var checked = document.querySelectorAll('.kw-check:checked').length;
-    label.textContent = checked ? ('Recheck ' + checked + ' selected') : 'Recheck Cached Domains (ccTLD + ICANN)';
+    label.textContent = checked ? ('Recheck ' + checked + ' selected') : 'Recheck cached domains';
 }
 function prepareRecheck() {
     var ids = Array.prototype.map.call(document.querySelectorAll('.kw-check:checked'), function (cb) { return cb.value; });
@@ -399,13 +462,60 @@ function prepareRecheck() {
         : 'Recheck the ccTLD + ICANN cached domains against ALL keywords?\n\nThe ICANN scan can take a while.';
     return confirm(msg);
 }
+
+// Contextual selection bar for the admin bulk recheck.
+function kwSelectionSync() {
+    var checks = document.querySelectorAll('.kw-check');
+    var n = document.querySelectorAll('.kw-check:checked').length;
+    var bar = document.getElementById('kw-selection');
+    if (bar) {
+        bar.hidden = n === 0;
+        var out = bar.querySelector('.sel-count');
+        if (out) out.textContent = n + ' seleccionada' + (n === 1 ? '' : 's');
+    }
+    var all = document.getElementById('select-all');
+    if (all) {
+        all.checked = checks.length > 0 && n === checks.length;
+        all.indeterminate = n > 0 && n < checks.length;
+    }
+    updateRecheckLabel();
+}
+function kwClearSelection() {
+    document.querySelectorAll('.kw-check').forEach(function (cb) { cb.checked = false; });
+    kwSelectionSync();
+}
+
 document.addEventListener('change', function (e) {
     if (!e.target) return;
-    if (e.target.id === 'select-all' || (e.target.classList && e.target.classList.contains('kw-check'))) {
-        updateRecheckLabel();
+    if (e.target.id === 'select-all') {
+        document.querySelectorAll('.kw-check').forEach(function (cb) { cb.checked = e.target.checked; });
+        kwSelectionSync();
+    } else if (e.target.classList && e.target.classList.contains('kw-check')) {
+        kwSelectionSync();
     }
 });
+
+// Client-side search + filter over the keyword rows (the list has no pagination).
+(function () {
+    var q = document.getElementById('q');
+    var filter = document.getElementById('kw-filter');
+    function apply() {
+        var term = (q && q.value ? q.value : '').trim().toLowerCase();
+        var mode = filter ? filter.value : 'all';
+        document.querySelectorAll('tr[data-keyword]').forEach(function (tr) {
+            var kw = tr.getAttribute('data-keyword') || '';
+            var on = tr.getAttribute('data-tracking') === '1';
+            var m = parseInt(tr.getAttribute('data-matches') || '0', 10) || 0;
+            var ok = term === '' || kw.indexOf(term) !== -1;
+            if (ok && mode === 'on') ok = on;
+            else if (ok && mode === 'off') ok = !on;
+            else if (ok && mode === 'matches') ok = m > 0;
+            tr.hidden = !ok;
+        });
+    }
+    if (q) q.addEventListener('input', apply);
+    if (filter) filter.addEventListener('change', apply);
+})();
 </script>
-<?php endif; ?>
 
 <?php require __DIR__ . '/templates/footer.php'; ?>

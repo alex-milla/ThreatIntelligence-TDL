@@ -32,6 +32,8 @@ $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('registration
 $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('new_domain_days', '1')")->execute();
 
 $db->prepare("INSERT OR REPLACE INTO keywords (id, user_id, keyword, is_active, match_count) VALUES (1, 1, 'acme', 1, 2)")->execute();
+$db->prepare("INSERT OR REPLACE INTO keywords (id, user_id, keyword, is_active, match_count, tracking_enabled) VALUES (2, 1, 'beta', 1, 0, 1)")->execute();
+$db->prepare("INSERT OR REPLACE INTO keywords (id, user_id, keyword, is_active, match_count, tracking_enabled) VALUES (3, 1, 'gamma', 1, 5, 0)")->execute();
 
 $db->prepare(
     "INSERT OR REPLACE INTO matches

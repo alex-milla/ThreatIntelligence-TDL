@@ -346,20 +346,7 @@ require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="card">
-    <?php if (!$uiV2): ?>
-    <div class="card-head">
-        <h2>Notifications</h2>
-        <?php if (!empty($notifications) || $hiddenCount > 0): ?>
-        <form method="POST" style="margin: 0;">
-            <?php csrfField(); ?>
-            <input type="hidden" name="action" value="mark_all_read">
-            <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">done_all</i>Mark All Read</button>
-        </form>
-        <?php endif; ?>
-    </div>
-    <?php endif; ?>
-
-    <?php if ($uiV2):
+    <?php
         // KPI aggregate over the default (unfiltered) view for this user.
         $kpiStmt = $db->prepare(
             "SELECT COUNT(*) AS total,
@@ -417,7 +404,6 @@ require __DIR__ . '/templates/header.php';
         <a class="chip<?= $chipActive($newOnly) ?>" href="<?= $v2Base ?>?new_days=<?= (int)$defaultNewDays ?>">Nuevas</a>
         <a class="chip<?= $chipActive($includeArchived) ?>" href="<?= $v2Base ?>?archived=1">Históricas <span class="chip-count"><?= (int)$archivedCount ?></span></a>
     </div>
-    <?php endif; ?>
 
     <form method="GET" id="filter-form" class="filter-form">
         <div class="input-field">
@@ -467,39 +453,18 @@ require __DIR__ . '/templates/header.php';
     </form>
     <?php endif; ?>
 
-    <?php if ($uiV2): ?>
-        <?php if ($hiddenCount > 0 || $archivedCount > 0 || $observingOnly): ?>
-        <div class="hint-bar">
-            <?php if ($hiddenCount > 0): ?>
-            <span class="hint"><i class="material-icons">star</i><?= number_format((int)$hiddenCount) ?> ocultas por Watchlist · <a href="/watchlist.php">ver</a></span>
-            <?php endif; ?>
-            <?php if ($archivedCount > 0): ?>
-            <span class="hint"><i class="material-icons">inventory_2</i><?= number_format((int)$archivedCount) ?> ocultas (históricas / etiquetadas) · <a href="/notifications.php?archived=1">mostrar</a></span>
-            <?php endif; ?>
-            <?php if ($observingOnly): ?>
-            <span class="hint"><i class="material-icons">help_outline</i>Solo observadas · <a href="/notifications.php">ver todas</a></span>
-            <?php endif; ?>
-        </div>
+    <?php if ($hiddenCount > 0 || $archivedCount > 0 || $observingOnly): ?>
+    <div class="hint-bar">
+        <?php if ($hiddenCount > 0): ?>
+        <span class="hint"><i class="material-icons">star</i><?= number_format((int)$hiddenCount) ?> ocultas por Watchlist · <a href="/watchlist.php">ver</a></span>
         <?php endif; ?>
-    <?php else: ?>
-    <?php if ($hiddenCount > 0): ?>
-        <div class="notice notice-warning">
-            <i class="material-icons">star</i>
-            <div><?= $hiddenCount ?> notification(s) hidden because the domain(s) are in your <a href="/watchlist.php"><strong>Watchlist</strong></a>.</div>
-        </div>
-    <?php endif; ?>
-    <?php if ($archivedCount > 0): ?>
-        <div class="notice notice-info">
-            <i class="material-icons">inventory_2</i>
-            <div><?= $archivedCount ?> notification(s) hidden because they were tagged good/bad, come from a historical recheck, or were registered before the last scan. <a href="/notifications.php?archived=1"><strong>Show them</strong></a>.</div>
-        </div>
-    <?php endif; ?>
-    <?php if ($observingOnly): ?>
-        <div class="notice notice-warning">
-            <i class="material-icons">help_outline</i>
-            <div>Showing only domains under observation. <a href="/notifications.php"><strong>Show all</strong></a>.</div>
-        </div>
-    <?php endif; ?>
+        <?php if ($archivedCount > 0): ?>
+        <span class="hint"><i class="material-icons">inventory_2</i><?= number_format((int)$archivedCount) ?> ocultas (históricas / etiquetadas) · <a href="/notifications.php?archived=1">mostrar</a></span>
+        <?php endif; ?>
+        <?php if ($observingOnly): ?>
+        <span class="hint"><i class="material-icons">help_outline</i>Solo observadas · <a href="/notifications.php">ver todas</a></span>
+        <?php endif; ?>
+    </div>
     <?php endif; ?>
     <?php if (empty($notifications)): ?>
         <p class="muted">No notifications to display.<?php if ($hiddenCount > 0): ?> The remaining <?= $hiddenCount ?> are in your <a href="/watchlist.php">Watchlist</a>.<?php endif; ?><?php if ($archivedCount > 0): ?> <?= $archivedCount ?> are hidden (use the toggle above to show them).<?php endif; ?></p>
@@ -507,8 +472,8 @@ require __DIR__ . '/templates/header.php';
         <form method="POST" id="bulk-form">
             <?php csrfField(); ?>
             <input type="hidden" name="action" value="delete_selected">
-            <div class="section-actions<?= $uiV2 ? ' context-toolbar' : '' ?>">
-                <?php if ($uiV2): ?><span class="sel-count">0 seleccionados</span><?php endif; ?>
+            <div class="section-actions context-toolbar">
+                <span class="sel-count">0 seleccionados</span>
                 <label class="check-inline">
                     <input type="checkbox" id="select-all">
                     <span><strong>Select all visible</strong></span>
@@ -545,16 +510,10 @@ require __DIR__ . '/templates/header.php';
         <table class="striped highlight responsive-table">
             <thead>
                 <tr>
-                    <th style="width: 30px;"><?php if ($uiV2): ?><input type="checkbox" id="select-all-head" aria-label="Select all visible"><?php endif; ?></th>
+                    <th style="width: 30px;"><input type="checkbox" id="select-all-head" aria-label="Select all visible"></th>
                     <th><?= notifSortLink('status', 'Status', $sort, $dir, $notifSortDefaults) ?></th>
                     <th><?= notifSortLink('domain', 'Domain', $sort, $dir, $notifSortDefaults) ?></th>
-                    <?php if ($uiV2): ?>
                     <th colspan="3">Signals</th>
-                    <?php else: ?>
-                    <th>VT</th>
-                    <th>Abuse.ch</th>
-                    <th>CF</th>
-                    <?php endif; ?>
                     <th class="col-secondary"><?= notifSortLink('tld', 'TLD', $sort, $dir, $notifSortDefaults) ?></th>
                     <th><?= notifSortLink('keyword', 'Keyword', $sort, $dir, $notifSortDefaults) ?></th>
                     <th class="col-secondary"><?= notifSortLink('first_seen', 'First Seen', $sort, $dir, $notifSortDefaults) ?></th>
@@ -636,13 +595,7 @@ require __DIR__ . '/templates/header.php';
                     <td><label><input type="checkbox" name="selected[]" value="<?= (int)$n['id'] ?>" class="row-check" form="bulk-form" aria-label="Select <?= htmlspecialchars($n['domain']) ?>"><span></span></label></td>
                     <td><?= $n['is_read'] ? '<span class="status-badge status-cancelled">Read</span>' : '<span class="status-badge status-pending">Unread</span>' ?></td>
                     <td><a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($n['domain'])) ?>')"><?= htmlspecialchars($n['domain']) ?></a><?= $intelBadge ?><?= $tagBadge ?><?= $queueBadge ?></td>
-                    <?php if ($uiV2): ?>
                     <td colspan="3" class="signals-cell"><?= $vtCell ?> <?= $abuseCell ?> <?= $cfCell ?></td>
-                    <?php else: ?>
-                    <td><?= $vtCell ?></td>
-                    <td><?= $abuseCell ?></td>
-                    <td><?= $cfCell ?></td>
-                    <?php endif; ?>
                     <td class="col-secondary"><?= htmlspecialchars($n['tld']) ?></td>
                     <td><?= htmlspecialchars($n['keyword']) ?></td>
                     <td class="col-secondary"><?= htmlspecialchars(fmt_date($n['first_seen'])) ?></td>
@@ -676,7 +629,7 @@ require __DIR__ . '/templates/header.php';
                     </td>
                 </tr>
                 <tr class="domain-detail-row" data-domain="<?= htmlspecialchars($n['domain']) ?>" style="display:none;">
-                    <td colspan="12"><?= renderDomainDetail($present, [$n['keyword']], $rules, $uiV2) ?></td>
+                    <td colspan="12"><?= renderDomainDetail($present, [$n['keyword']], $rules, true) ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>

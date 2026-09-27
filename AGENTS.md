@@ -68,11 +68,10 @@ and the Playwright E2E/axe job.
 - Python: type hints, `configparser` for config, no user data stored server-side.
 - **Backward compatibility matters**: the worker may run an older version than
   the web app. Do not remove or rename API response fields; add new ones.
-- **UI layout v2**: the `ui_layout` setting (`classic` | `v2`) switches the
-  analyst screens. v2 reuses the server-rendered markup and reinterprets it via
-  `css/ui.css` + `assets/ui.js` (loaded only under `body.ui-v2`); it must not
-  change form `name`/`action` values or the inline domain detail used by
-  reports/print. Admins preview with `?ui=v2` / `?ui=classic`.
+- **UI layout**: v2 is the only analyst layout. `css/ui.css` + `assets/ui.js`
+  load on every page and `<body>` always carries `.ui-v2`; the screens reuse the
+  server-rendered markup and reinterpret it via CSS/JS. Do not change form
+  `name`/`action` values or the inline domain detail used by reports/print.
 
 ## Security invariants
 
