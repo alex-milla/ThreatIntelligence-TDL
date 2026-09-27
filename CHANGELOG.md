@@ -2,9 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.19.6] - 2026-09-27
+
+### Restored - v2 Notifications single header (re-applies v1.19.4)
+
+- The v1.19.5 rollback was unnecessary (the regression it addressed was actually a wrong URL/cache). v1.19.6 re-applies the v1.19.4 fix: in the v2 layout the classic `card-head` is rendered only in the classic layout, so Notifications shows a single header (title + one "Mark all read") instead of the duplicated one.
+
+### Tests
+
+- Playwright: v2 Notifications has exactly one `.page-header` and no `.card-head` (and one mark-all button); classic keeps its `.card-head`.
+
 ## [v1.19.5] - 2026-09-27
 
-### Reverted - rollback of the v1.19.4 Notifications header change
+### Reverted - rollback of the v1.19.4 Notifications header change (superseded by v1.19.6)
 
 - Reverts the v1.19.4 change that hid the classic card header in the v2 layout. The v2 Notifications page is back to its v1.19.3 markup/behaviour (the reported regression after v1.19.4 is removed). `public_html/notifications.php` and its E2E spec are restored to the v1.19.3 versions.
 
