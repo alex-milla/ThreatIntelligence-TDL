@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.18.23] - 2026-09-27
+
+### Added - Storage admin tab (database occupancy + disk usage, web and worker)
+
+- **New Admin → Storage tab** in `/admin/` (also in the sidebar submenu, desktop and mobile):
+  - **Database:** `app.db` + WAL/SHM sizes, logical size (`page_count` × `page_size`) with free pages, and a **per-table** breakdown of row counts and (when the SQLite build provides the `dbstat` virtual table) physical size.
+  - **Disk:** free/total/used of the filesystem holding `data/`, plus the data-directory footprint and the number/size of update backups.
+  - **Worker host:** the worker's own disk (total/free/used), `worker.db` (+WAL) size and zone-download footprint, with the reported worker version and heartbeat time. Shows a hint until the worker reports the metrics (older workers are unaffected).
+- **Worker storage reporting (backward compatible):** `worker/scheduler.py` computes `shutil.disk_usage()` for its data directory plus the sizes of `worker.db` and the zones/download directory; `sync_client.set_heartbeat_hook()` attaches them to every heartbeat without touching the existing call sites. `api/v1/worker_status.php` stores the new fields (`disk_total_bytes`, `disk_free_bytes`, `db_size_bytes`, `zones_size_bytes`, `storage_updated_at`) via an additive `worker_status` migration.
+
+### Tests
+
+- Worker: `test_storage_report` (disk/DB/zones metrics and heartbeat merge).
+- E2E: the Storage smoke test now asserts the "Worker host" and "Zone downloads" sections.
+
 ## [v1.18.22] - 2026-09-27
 
 ### Added - API conventions, server-side theme, onboarding and audit cleanup

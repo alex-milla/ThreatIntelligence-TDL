@@ -32,4 +32,14 @@ test.describe('Authenticated smoke test', () => {
     await page.goto('/notifications.php');
     await expect(page.getByText('acme-phishing.test').first()).toBeVisible();
   });
+
+  test('admin Storage tab shows database and disk info', async ({ page }) => {
+    await page.goto('/admin/#storage');
+    const pane = page.locator('.admin-pane[data-tab="storage"]');
+    await expect(pane).toBeVisible();
+    await expect(pane).toContainText('app.db');
+    await expect(pane).toContainText('Disk');
+    await expect(pane).toContainText('Worker host');
+    await expect(pane).toContainText('Zone downloads');
+  });
 });

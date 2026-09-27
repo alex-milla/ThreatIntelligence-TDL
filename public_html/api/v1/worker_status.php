@@ -24,10 +24,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $fields = [];
     $params = [];
-    foreach (['last_run','tlds_processed','domains_processed','matches_found','is_running','version','current_tld','total_tlds','current_action','current_command','current_command_id'] as $col) {
+    foreach (['last_run','tlds_processed','domains_processed','matches_found','is_running','version','current_tld','total_tlds','current_action','current_command','current_command_id','disk_total_bytes','disk_free_bytes','db_size_bytes','zones_size_bytes','storage_updated_at'] as $col) {
         if (array_key_exists($col, $input)) {
             $fields[] = "$col = ?";
-            if (in_array($col, ['tlds_processed','domains_processed','matches_found','is_running','total_tlds','current_command_id'], true)) {
+            if (in_array($col, ['tlds_processed','domains_processed','matches_found','is_running','total_tlds','current_command_id','disk_total_bytes','disk_free_bytes','db_size_bytes','zones_size_bytes'], true)) {
                 $params[] = $input[$col] === null ? null : (int)$input[$col];
             } else {
                 $params[] = $input[$col];

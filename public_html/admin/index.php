@@ -64,6 +64,45 @@ function quotaBar(int $used, int $limit): string {
         . '<div class="determinate ' . $cls . '" style="width:' . $pct . '%"></div></div>';
 }
 
+/** Human-readable byte size (0 shows as an em dash). */
+function storageBytes(int $bytes): string {
+    if ($bytes <= 0) {
+        return '&mdash;';
+    }
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    $i = 0;
+    $value = (float)$bytes;
+    while ($value >= 1024 && $i < count($units) - 1) {
+        $value /= 1024;
+        $i++;
+    }
+    return round($value, $i >= 2 ? 1 : 0) . ' ' . $units[$i];
+}
+
+/** Recursive size + file count of a directory (returns [bytes, files]). */
+function storageDirStats(string $dir): array {
+    if (!is_dir($dir)) {
+        return ['bytes' => 0, 'files' => 0];
+    }
+    $bytes = 0;
+    $files = 0;
+    try {
+        $it = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::LEAVES_ONLY
+        );
+        foreach ($it as $file) {
+            if ($file->isFile()) {
+                $bytes += (int)$file->getSize();
+                $files++;
+            }
+        }
+    } catch (Throwable $e) {
+        // Unreadable subdirectory: report what we have.
+    }
+    return ['bytes' => $bytes, 'files' => $files];
+}
+
 // Actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     validateCsrf();
@@ -321,6 +360,7 @@ require __DIR__ . '/../templates/header.php';
     <a href="/admin/tlds.php" data-tab="tlds">TLDs</a>
     <a href="#users" data-tab="users">Users</a>
     <a href="#sync" data-tab="sync">Sync</a>
+    <a href="#storage" data-tab="storage">Storage</a>
     <a href="#system" data-tab="system">System</a>
 </nav>
 
@@ -882,11 +922,206 @@ if (!empty($workerStatus['last_heartbeat'])) {
     <p class="muted">Domains created within this window will show the NEW badge and appear in the "New only" filter.</p>
 </div>
 
+<?php
+// --- Storage: database occupancy + disk space -----------------------------
+$storageDataDir = tdl_data_dir();
+$dbFile  = $storageDataDir . '/app.db';
+$dbSize  = is_file($dbFile) ? (int)filesize($dbFile) : 0;
+$walSize = is_file($dbFile . '-wal') ? (int)filesize($dbFile . '-wal') : 0;
+$shmSize = is_file($dbFile . '-shm') ? (int)filesize($dbFile . '-shm') : 0;
+
+$pageCount = 0;
+$pageSize  = 0;
+$freelist  = 0;
+try { $pageCount = (int)$db->query("PRAGMA page_count")->fetchColumn(); } catch (Throwable $e) {}
+try { $pageSize  = (int)$db->query("PRAGMA page_size")->fetchColumn(); } catch (Throwable $e) {}
+try { $freelist  = (int)$db->query("PRAGMA freelist_count")->fetchColumn(); } catch (Throwable $e) {}
+$logicalDb = $pageCount * $pageSize;
+
+// Row counts per table, plus physical size when SQLite's dbstat vtab is available.
+$tableStats = [];
+try {
+    $tableNames = $db->query(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+    )->fetchAll(PDO::FETCH_COLUMN);
+} catch (Throwable $e) {
+    $tableNames = [];
+}
+foreach ($tableNames as $tName) {
+    $rows = 0;
+    try {
+        $rows = (int)$db->query('SELECT COUNT(*) FROM "' . str_replace('"', '""', $tName) . '"')->fetchColumn();
+    } catch (Throwable $e) {
+        // Skip tables that cannot be counted.
+    }
+    $tableStats[$tName] = ['rows' => $rows, 'bytes' => null];
+}
+$hasTableSizes = false;
+try {
+    foreach ($db->query("SELECT name, SUM(pgsize) AS bytes FROM dbstat GROUP BY name")->fetchAll() as $r) {
+        if (isset($tableStats[$r['name']])) {
+            $tableStats[$r['name']]['bytes'] = (int)$r['bytes'];
+            $hasTableSizes = true;
+        }
+    }
+} catch (Throwable $e) {
+    // dbstat not compiled in this SQLite build.
+}
+uasort($tableStats, function ($a, $b) use ($hasTableSizes) {
+    if ($hasTableSizes) {
+        return ($b['bytes'] ?? 0) <=> ($a['bytes'] ?? 0);
+    }
+    return $b['rows'] <=> $a['rows'];
+});
+
+// Filesystem free/total for the disk that holds the data directory.
+$diskFree  = function_exists('disk_free_space')  ? @disk_free_space($storageDataDir)  : false;
+$diskTotal = function_exists('disk_total_space') ? @disk_total_space($storageDataDir) : false;
+$diskUsedPct = ($diskFree !== false && $diskTotal) ? round(($diskTotal - $diskFree) / $diskTotal * 100, 1) : null;
+
+$dataFoot   = storageDirStats($storageDataDir);
+$backupDir  = $storageDataDir . '/backups';
+$backupCount = is_dir($backupDir) ? count((array)glob($backupDir . '/backup_*')) : 0;
+$backupFoot = is_dir($backupDir) ? storageDirStats($backupDir) : ['bytes' => 0, 'files' => 0];
+?>
+<div class="card admin-pane" data-tab="storage">
+    <div class="card-head">
+        <h2>Storage</h2>
+        <a href="/admin/#storage" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">refresh</i>Refresh</a>
+    </div>
+    <p class="muted">Database occupancy and disk usage. Values are read live when this page loads.</p>
+
+    <h5>Database</h5>
+    <table class="striped responsive-table">
+        <tbody>
+            <tr><td><strong>Path</strong></td><td class="mono-sm"><?= htmlspecialchars($storageDataDir . '/app.db') ?></td></tr>
+            <tr><td>app.db</td><td><?= storageBytes($dbSize) ?></td></tr>
+            <tr><td>Write-ahead log (app.db-wal)</td><td><?= storageBytes($walSize) ?></td></tr>
+            <tr><td>Shared memory (app.db-shm)</td><td><?= storageBytes($shmSize) ?></td></tr>
+            <tr><td><strong>Total on disk</strong></td><td><strong><?= storageBytes($dbSize + $walSize + $shmSize) ?></strong></td></tr>
+            <tr>
+                <td>Logical size (page_count &times; page_size)</td>
+                <td><?= storageBytes($logicalDb) ?>
+                    <span class="muted">(<?= number_format($pageCount) ?> pages &times; <?= number_format($pageSize) ?> B,
+                    <?= number_format($freelist) ?> free)</span></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="divider"></div>
+
+    <h5>Tables</h5>
+    <?php if (empty($tableStats)): ?>
+        <p class="muted">No tables found.</p>
+    <?php else: ?>
+    <table class="striped highlight responsive-table">
+        <thead>
+            <tr><th>Table</th><th>Rows</th><th<?= $hasTableSizes ? '' : ' class="muted"' ?>>Size</th></tr>
+        </thead>
+        <tbody>
+            <?php foreach ($tableStats as $tName => $st): ?>
+            <tr>
+                <td class="mono-sm"><?= htmlspecialchars($tName) ?></td>
+                <td><?= number_format($st['rows']) ?></td>
+                <td><?= $st['bytes'] !== null ? storageBytes($st['bytes']) : '<span class="muted">&mdash;</span>' ?></td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+    <?php if (!$hasTableSizes): ?>
+        <p class="muted">Per-table sizes are unavailable on this SQLite build (dbstat virtual table not compiled in); row counts are shown instead.</p>
+    <?php endif; ?>
+    <?php endif; ?>
+
+    <div class="divider"></div>
+
+    <h5>Disk</h5>
+    <?php if ($diskFree !== false && $diskTotal): ?>
+        <?php
+        $diskUsed = $diskTotal - $diskFree;
+        $diskPct = (int)min(100, round($diskUsed / $diskTotal * 100));
+        $diskCls = $diskPct >= 90 ? 'red' : ($diskPct >= 75 ? 'orange' : 'green');
+        ?>
+        <table class="striped responsive-table">
+            <tbody>
+                <tr><td>Filesystem total</td><td><?= storageBytes((int)$diskTotal) ?></td></tr>
+                <tr><td>Used</td><td><?= storageBytes((int)$diskUsed) ?> <span class="muted">(<?= $diskUsedPct ?>%)</span></td></tr>
+                <tr><td><strong>Free</strong></td><td><strong><?= storageBytes((int)$diskFree) ?></strong></td></tr>
+            </tbody>
+        </table>
+        <div class="progress" style="height:10px;margin:10px 0;">
+            <div class="determinate <?= $diskCls ?>" style="width:<?= $diskPct ?>%"></div>
+        </div>
+    <?php else: ?>
+        <p class="muted">Disk usage is not available on this host (the <code>disk_free_space()</code> function is disabled).</p>
+    <?php endif; ?>
+
+    <table class="striped responsive-table">
+        <tbody>
+            <tr><td>Data directory footprint (includes backups)</td><td><?= storageBytes($dataFoot['bytes']) ?> <span class="muted">(<?= number_format($dataFoot['files']) ?> files)</span></td></tr>
+            <tr>
+                <td>Backups</td>
+                <td><?= number_format($backupCount) ?> snapshot(s) &middot; <?= storageBytes($backupFoot['bytes']) ?></td>
+            </tr>
+        </tbody>
+    </table>
+    <p class="muted">Backups are stored in <code>data/backups/</code> and can be managed from <a href="/admin/update.php">System Update</a>.</p>
+
+    <div class="divider"></div>
+
+    <h5>Worker host</h5>
+    <?php
+    $wStorage = null;
+    try {
+        $wStorage = $db->query(
+            "SELECT disk_total_bytes, disk_free_bytes, db_size_bytes, zones_size_bytes, "
+            . "storage_updated_at, last_heartbeat, version FROM worker_status WHERE id = 1"
+        )->fetch();
+    } catch (Throwable $e) {
+        // worker_status not migrated yet (older install).
+    }
+    ?>
+    <?php if (!$wStorage || empty($wStorage['storage_updated_at'])): ?>
+        <p class="muted">
+            The worker has not reported storage metrics yet. They arrive with the heartbeat
+            after the worker is updated to a build that sends them (<code>disk_total_bytes</code>,
+            <code>disk_free_bytes</code>, <code>db_size_bytes</code>, <code>zones_size_bytes</code>).
+        </p>
+    <?php else: ?>
+        <?php
+        $wTotal = (int)$wStorage['disk_total_bytes'];
+        $wFree  = (int)$wStorage['disk_free_bytes'];
+        $wUsed  = max(0, $wTotal - $wFree);
+        $wPct   = $wTotal > 0 ? (int)min(100, round($wUsed / $wTotal * 100)) : 0;
+        $wCls   = $wPct >= 90 ? 'red' : ($wPct >= 75 ? 'orange' : 'green');
+        ?>
+        <table class="striped responsive-table">
+            <tbody>
+                <tr><td>Worker version</td><td><?= htmlspecialchars((string)($wStorage['version'] ?: '—')) ?></td></tr>
+                <tr><td>Last heartbeat</td><td><?= fmt_date($wStorage['last_heartbeat']) ?></td></tr>
+                <tr><td>Storage reported</td><td><?= fmt_date($wStorage['storage_updated_at']) ?></td></tr>
+                <?php if ($wTotal > 0): ?>
+                <tr><td>Disk total</td><td><?= storageBytes($wTotal) ?></td></tr>
+                <tr><td>Disk used</td><td><?= storageBytes($wUsed) ?> <span class="muted">(<?= $wPct ?>%)</span></td></tr>
+                <tr><td><strong>Disk free</strong></td><td><strong><?= storageBytes($wFree) ?></strong></td></tr>
+                <?php endif; ?>
+                <tr><td>Worker DB (worker.db + WAL)</td><td><?= storageBytes((int)$wStorage['db_size_bytes']) ?></td></tr>
+                <tr><td>Zone downloads</td><td><?= storageBytes((int)$wStorage['zones_size_bytes']) ?></td></tr>
+            </tbody>
+        </table>
+        <?php if ($wTotal > 0): ?>
+        <div class="progress" style="height:10px;margin:10px 0;">
+            <div class="determinate <?= $wCls ?>" style="width:<?= $wPct ?>%"></div>
+        </div>
+        <?php endif; ?>
+    <?php endif; ?>
+</div>
+
 <script>
 (function() {
     const tabs = document.querySelectorAll('#admin-tabs a[data-tab]');
     const panes = document.querySelectorAll('.admin-pane[data-tab]');
-    const valid = ['overview','worker','commands','recheck','api','users','sync','system'];
+    const valid = ['overview','worker','commands','recheck','api','users','sync','storage','system'];
     function activate(tab) {
         tabs.forEach(a => a.classList.toggle('active', a.dataset.tab === tab));
         panes.forEach(p => p.classList.toggle('active', p.dataset.tab === tab));

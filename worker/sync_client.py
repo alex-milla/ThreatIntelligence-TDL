@@ -6,6 +6,17 @@ import time
 import requests
 from datetime import datetime, timezone
 
+# Optional hook the worker registers at startup to enrich every heartbeat with
+# host metrics (disk/database usage). Kept here so all heartbeat call sites get
+# it without changes.
+_STATS_HOOK = None
+
+
+def set_heartbeat_hook(hook) -> None:
+    """Register a callable(stats) -> stats applied to every heartbeat payload."""
+    global _STATS_HOOK
+    _STATS_HOOK = hook
+
 
 def get_keywords(host_url: str, api_key: str) -> list[dict]:
     """Fetch active keywords from the hosting API."""
@@ -43,6 +54,11 @@ def send_matches(host_url: str, api_key: str, matches: list[dict]) -> bool:
 
 def send_heartbeat(host_url: str, api_key: str, stats: dict) -> bool:
     """Send worker heartbeat/status to hosting."""
+    if _STATS_HOOK is not None:
+        try:
+            stats = _STATS_HOOK(stats)
+        except Exception:
+            pass
     url = f"{host_url}/api/v1/worker_status.php"
     headers = {
         "X-API-Key": api_key,

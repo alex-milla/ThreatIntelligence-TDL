@@ -1370,6 +1370,37 @@ def test_worker_update_pin() -> None:
     print("[PASS] test_worker_update_pin")
 
 
+def test_storage_report() -> None:
+    """storage_report/heartbeat_with_storage collect host disk + DB metrics."""
+    with tempfile.TemporaryDirectory() as tmp:
+        data_dir = os.path.join(tmp, "data")
+        zones_dir = os.path.join(tmp, "zones")
+        os.makedirs(data_dir)
+        os.makedirs(zones_dir)
+        with open(os.path.join(data_dir, "worker.db"), "wb") as f:
+            f.write(b"x" * 1000)
+        with open(os.path.join(data_dir, "worker.db-wal"), "wb") as f:
+            f.write(b"w" * 200)
+        with open(os.path.join(zones_dir, "example.zone.gz"), "wb") as f:
+            f.write(b"y" * 2048)
+
+        cfg = configparser.ConfigParser()
+        cfg.add_section("worker")
+        cfg.set("worker", "data_dir", data_dir)
+        cfg.set("worker", "download_dir", zones_dir)
+
+        report = scheduler.storage_report(cfg)
+        assert report["db_size_bytes"] == 1200, report
+        assert report["zones_size_bytes"] == 2048, report
+        assert report["disk_total_bytes"] > 0 and report["disk_free_bytes"] > 0, report
+        assert report["storage_updated_at"], report
+
+        merged = scheduler.heartbeat_with_storage(cfg, {"is_running": 1})
+        assert merged["is_running"] == 1, merged
+        assert merged["db_size_bytes"] == 1200 and merged["zones_size_bytes"] == 2048, merged
+    print("[PASS] test_storage_report")
+
+
 if __name__ == "__main__":
     test_parser_basic()
     test_parser_origin_relative()
@@ -1419,4 +1450,5 @@ if __name__ == "__main__":
     test_cloudflare_dns_batch()
     test_cloudflare_usage_headers()
     test_worker_update_pin()
+    test_storage_report()
     print("\nAll tests passed.")

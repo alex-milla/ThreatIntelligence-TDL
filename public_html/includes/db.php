@@ -480,6 +480,24 @@ class Database {
             $db->exec("ALTER TABLE worker_status ADD COLUMN current_command_id INTEGER");
         } catch (PDOException $e) { }
 
+        // Safe migration: worker-host storage metrics reported in the heartbeat
+        // (disk free/total, local DB size, zone download size).
+        try {
+            $db->exec("ALTER TABLE worker_status ADD COLUMN disk_total_bytes INTEGER");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE worker_status ADD COLUMN disk_free_bytes INTEGER");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE worker_status ADD COLUMN db_size_bytes INTEGER");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE worker_status ADD COLUMN zones_size_bytes INTEGER");
+        } catch (PDOException $e) { }
+        try {
+            $db->exec("ALTER TABLE worker_status ADD COLUMN storage_updated_at TEXT");
+        } catch (PDOException $e) { }
+
         // Safe migration: command lifecycle finished_at timestamp
         try {
             $db->exec("ALTER TABLE commands ADD COLUMN finished_at TEXT");

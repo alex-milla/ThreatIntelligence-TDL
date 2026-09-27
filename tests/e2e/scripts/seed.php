@@ -41,4 +41,13 @@ $db->prepare(
 
 $db->prepare("INSERT OR REPLACE INTO notifications (id, user_id, match_id, is_read, kind) VALUES (1, 1, 1, 0, 'match')")->execute();
 
+// Worker status with storage metrics, so the admin Storage tab has data.
+$db->exec(
+    "INSERT OR REPLACE INTO worker_status
+        (id, is_running, version, last_heartbeat, storage_updated_at,
+         disk_total_bytes, disk_free_bytes, db_size_bytes, zones_size_bytes)
+     VALUES (1, 0, 'e2e', datetime('now'), datetime('now'),
+             100000000000, 40000000000, 524288000, 1073741824)"
+);
+
 echo "Seeded E2E database at {$docroot}/data/app.db\n";

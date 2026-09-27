@@ -39,6 +39,59 @@ import whois
 log = logging.getLogger("tdl_worker")
 
 
+def _dir_size(path: str) -> int:
+    """Recursive size of a directory in bytes (0 when missing/unreadable)."""
+    if not path or not os.path.isdir(path):
+        return 0
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(root, name))
+            except OSError:
+                pass
+    return total
+
+
+def storage_report(cfg: configparser.ConfigParser) -> dict:
+    """Disk/database metrics of the worker host, sent with every heartbeat.
+
+    Cheap for the poll loop: ``statvfs`` (O(1)) for the disk plus a file-size sum
+    over the local DB and the zone download directory.
+    """
+    data_dir = cfg.get("worker", "data_dir", fallback="./data")
+    download_dir = cfg.get("worker", "download_dir", fallback="./zones")
+    db_path = os.path.join(data_dir, "worker.db")
+
+    report = {"storage_updated_at": datetime.now(timezone.utc).isoformat()}
+    try:
+        usage = shutil.disk_usage(data_dir if os.path.isdir(data_dir) else ".")
+        report["disk_total_bytes"] = int(usage.total)
+        report["disk_free_bytes"] = int(usage.free)
+    except OSError:
+        pass
+
+    db_size = 0
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            db_size += os.path.getsize(db_path + suffix)
+        except OSError:
+            pass
+    report["db_size_bytes"] = db_size
+    report["zones_size_bytes"] = _dir_size(download_dir)
+    return report
+
+
+def heartbeat_with_storage(cfg: configparser.ConfigParser, stats: dict) -> dict:
+    """Heartbeat payload with the worker-host storage metrics attached."""
+    payload = dict(stats)
+    try:
+        payload.update(storage_report(cfg))
+    except Exception:
+        pass
+    return payload
+
+
 def init_local_db(db_path: str, cache_mb: int = 2048) -> sqlite3.Connection:
     """Create local worker SQLite database if not exists.
 
@@ -3000,6 +3053,9 @@ def main() -> int:
 
     cfg = configparser.ConfigParser()
     cfg.read(config_path)
+
+    # Attach host storage metrics to every heartbeat (disk/db/zones usage).
+    sync_client.set_heartbeat_hook(lambda stats: heartbeat_with_storage(cfg, stats))
 
     host_url = cfg.get("hosting", "url").rstrip("/")
     api_key = cfg.get("hosting", "api_key")

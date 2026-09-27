@@ -113,6 +113,7 @@ if (!in_array($tldSource, ['czds', 'openintel'], true)) {
                     <a href="/admin/#api" class="sidebar-sublink" data-admin-tab="api">API quotas</a>
                     <a href="/admin/#users" class="sidebar-sublink" data-admin-tab="users">Users</a>
                     <a href="/admin/#sync" class="sidebar-sublink" data-admin-tab="sync">Sync</a>
+                    <a href="/admin/#storage" class="sidebar-sublink" data-admin-tab="storage">Storage</a>
                     <a href="/admin/#system" class="sidebar-sublink" data-admin-tab="system">System</a>
                 </div>
             </div>
@@ -188,6 +189,7 @@ if (!in_array($tldSource, ['czds', 'openintel'], true)) {
                         <li><a href="/admin/#api" data-admin-tab="api">API quotas</a></li>
                         <li><a href="/admin/#users" data-admin-tab="users">Users</a></li>
                         <li><a href="/admin/#sync" data-admin-tab="sync">Sync</a></li>
+                        <li><a href="/admin/#storage" data-admin-tab="storage">Storage</a></li>
                         <li><a href="/admin/#system" data-admin-tab="system">System</a></li>
                     </ul>
                 </li>
