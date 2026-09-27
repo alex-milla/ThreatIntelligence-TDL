@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.19.4] - 2026-09-27
+
+### Fixed - v2 Notifications duplicated header
+
+- In the v2 layout the classic `card-head` (title + "Mark All Read") was still rendered alongside the new `page-header`, so the title and the mark-all button appeared twice. The classic header is now rendered only in the classic layout; v2 shows a single header with one primary action.
+
+### Tests
+
+- Playwright: v2 has exactly one `.page-header` and no `.card-head` (and one mark-all button); classic keeps its `.card-head`.
+
 ## [v1.19.3] - 2026-09-27
 
 ### Changed - v2 drawer: checks rows stretch to full width
