@@ -148,6 +148,35 @@ $countStmt = $db->prepare("SELECT COUNT(*) $from $where");
 $countStmt->execute($queryParams);
 $total = (int)$countStmt->fetchColumn();
 $totalPages = max(1, (int)ceil($total / $perPage));
+
+// Quick-filter chip counts under the current search/source (state-based).
+$countState = function (string $stateSql, array $stateParams = [], bool $queuedFlag = false) use ($db, $from, $userId, $keywordId, $search, $source) {
+    $w = "WHERE m.keyword_id = ?";
+    $p = [$keywordId];
+    if ($search !== '') {
+        $w .= " AND (m.domain LIKE ? OR m.tld LIKE ?)";
+        $p[] = '%' . $search . '%';
+        $p[] = '%' . $search . '%';
+    }
+    if ($stateSql !== '') {
+        $w .= ' ' . $stateSql;
+        $p = array_merge($p, $stateParams);
+    }
+    if ($source !== 'all') {
+        $w .= " AND m.source = ?";
+        $p[] = $source;
+    }
+    if ($queuedFlag) {
+        $w .= " AND EXISTS (SELECT 1 FROM report_queue rq WHERE rq.user_id = ? AND rq.domain = m.domain AND rq.reported_at IS NULL)";
+        $p[] = $userId;
+    }
+    $st = $db->prepare("SELECT COUNT(*) $from $w");
+    $st->execute(array_merge([$userId], $p));
+    return (int)$st->fetchColumn();
+};
+$chipBad = $countState("AND dt.tag = 'bad'");
+$chipGood = $countState("AND dt.tag = 'good'");
+$chipQueued = $countState('', [], true);
 $page = min($page, $totalPages);
 $offset = ($page - 1) * $perPage;
 
@@ -244,57 +273,88 @@ function kwmPageUrl(int $p): string {
     return '/keyword_matches.php?' . http_build_query($q);
 }
 
+/** Quick-filter chip URL: merges overrides onto the current query (null removes). */
+function kwmChipUrl(array $overrides): string {
+    $q = $_GET;
+    unset($q['page']);
+    foreach ($overrides as $k => $v) {
+        if ($v === null) {
+            unset($q[$k]);
+        } else {
+            $q[$k] = $v;
+        }
+    }
+    return '/keyword_matches.php?' . http_build_query($q);
+}
+
 $pageTitle = 'Matches: ' . $keyword['keyword'];
 require __DIR__ . '/templates/header.php';
 ?>
 
 <div class="card">
-    <div class="card-head">
-        <h2>Matches: <?= htmlspecialchars($keyword['keyword']) ?><?php if (strpbrk((string)$keyword['keyword'], '*?[]{}') !== false): ?> <span class="tag-chip report" title="Contains wildcards (matched as a glob too)">GLOB</span><?php endif; ?></h2>
-        <a href="/keywords.php" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">arrow_back</i>Back to Keywords</a>
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="/keywords.php">Keywords</a>
+        <i class="material-icons">chevron_right</i>
+        <span><?= htmlspecialchars($keyword['keyword']) ?></span>
+    </nav>
+
+    <div class="page-header">
+        <h1><?= htmlspecialchars($keyword['keyword']) ?><?php if (strpbrk((string)$keyword['keyword'], '*?[]{}') !== false): ?> <span class="tag-chip report" title="Contains wildcards (matched as a glob too)">GLOB</span><?php endif; ?></h1>
+        <span class="spacer"></span>
+        <a href="/keywords.php" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">arrow_back</i>Volver a Keywords</a>
+        <p class="subtitle"><?= number_format($total) ?> dominio(s) encontrado(s) · Excluidos y ya reportados ocultos salvo que uses los filtros.</p>
     </div>
 
-    <p class="muted">
-        Every domain ever matched by this keyword (<?= number_format((int)$keyword['match_count']) ?> total),
-        including those tagged good/bad, in the watchlist or from a historical recheck.
-        Excluded domains are hidden by default &mdash; tick <strong>Include excluded</strong> or pick the
-        <strong>Excluded</strong> state to see them.
-    </p>
+    <div class="chip-tabs">
+        <a class="chip<?= ($state === 'all' && !$queuedOnly) ? ' active' : '' ?>" href="<?= htmlspecialchars(kwmChipUrl(['state' => null, 'queued' => null])) ?>">Todos <span class="chip-count"><?= (int)$total ?></span></a>
+        <a class="chip<?= $state === 'bad' ? ' active' : '' ?>" href="<?= htmlspecialchars(kwmChipUrl(['state' => 'bad', 'queued' => null])) ?>">Malicious <span class="chip-count"><?= (int)$chipBad ?></span></a>
+        <a class="chip<?= $state === 'good' ? ' active' : '' ?>" href="<?= htmlspecialchars(kwmChipUrl(['state' => 'good', 'queued' => null])) ?>">Clean <span class="chip-count"><?= (int)$chipGood ?></span></a>
+        <a class="chip<?= $queuedOnly ? ' active' : '' ?>" href="<?= htmlspecialchars(kwmChipUrl(['queued' => '1', 'state' => null])) ?>">Reportados <span class="chip-count"><?= (int)$chipQueued ?></span></a>
+    </div>
 
     <form method="GET" class="filter-form">
         <input type="hidden" name="id" value="<?= $keywordId ?>">
         <div class="input-field">
             <i class="material-icons prefix">search</i>
-            <input id="q" type="text" name="q" value="<?= htmlspecialchars($search) ?>" placeholder=" ">
+            <input id="q" type="search" name="q" value="<?= htmlspecialchars($search) ?>" placeholder=" " autocomplete="off">
             <label for="q">Search domain or TLD</label>
         </div>
-        <select name="state" class="browser-default compact">
-            <option value="all" <?= $state === 'all' ? 'selected' : '' ?>>All states</option>
-            <option value="good" <?= $state === 'good' ? 'selected' : '' ?>>Good</option>
-            <option value="bad" <?= $state === 'bad' ? 'selected' : '' ?>>Bad</option>
-            <option value="observing" <?= $state === 'observing' ? 'selected' : '' ?>>Observing</option>
-            <option value="excluded" <?= $state === 'excluded' ? 'selected' : '' ?>>Excluded</option>
-            <option value="watchlist" <?= $state === 'watchlist' ? 'selected' : '' ?>>In watchlist</option>
-            <option value="historical" <?= $state === 'historical' ? 'selected' : '' ?>>Historical</option>
-            <option value="untagged" <?= $state === 'untagged' ? 'selected' : '' ?>>Untagged</option>
-        </select>
-        <select name="source" class="browser-default compact">
-            <option value="all" <?= $source === 'all' ? 'selected' : '' ?>>All sources</option>
-            <option value="czds" <?= $source === 'czds' ? 'selected' : '' ?>>CZDS (zone files)</option>
-            <option value="ct" <?= $source === 'ct' ? 'selected' : '' ?>>OpenINTEL (CT)</option>
-        </select>
-        <label class="check-inline" title="Show excluded domains in the All states view">
-            <input type="checkbox" name="incl" value="1" <?= $includeExcluded ? 'checked' : '' ?>>
-            <span>Include excluded</span>
-        </label>
-        <label class="check-inline" title="Show domains already included in a report (All states view)">
-            <input type="checkbox" name="incl_reported" value="1" <?= $includeReported ? 'checked' : '' ?>>
-            <span>Include reported</span>
-        </label>
-        <label class="check-inline" title="Show only domains queued for the next report">
-            <input type="checkbox" name="queued" value="1" <?= $queuedOnly ? 'checked' : '' ?>>
-            <span>Only queued for report</span>
-        </label>
+        <details class="kwm-filters">
+            <summary class="btn btn-small btn-outline waves-effect"><i class="material-icons left">filter_list</i>Filtros</summary>
+            <div class="kwm-filters-body">
+                <label class="kwm-fld">Estado
+                    <select name="state" class="browser-default compact">
+                        <option value="all" <?= $state === 'all' ? 'selected' : '' ?>>All states</option>
+                        <option value="good" <?= $state === 'good' ? 'selected' : '' ?>>Good</option>
+                        <option value="bad" <?= $state === 'bad' ? 'selected' : '' ?>>Bad</option>
+                        <option value="observing" <?= $state === 'observing' ? 'selected' : '' ?>>Observing</option>
+                        <option value="excluded" <?= $state === 'excluded' ? 'selected' : '' ?>>Excluded</option>
+                        <option value="watchlist" <?= $state === 'watchlist' ? 'selected' : '' ?>>In watchlist</option>
+                        <option value="historical" <?= $state === 'historical' ? 'selected' : '' ?>>Historical</option>
+                        <option value="untagged" <?= $state === 'untagged' ? 'selected' : '' ?>>Untagged</option>
+                    </select>
+                </label>
+                <label class="kwm-fld">Fuente
+                    <select name="source" class="browser-default compact">
+                        <option value="all" <?= $source === 'all' ? 'selected' : '' ?>>All sources</option>
+                        <option value="czds" <?= $source === 'czds' ? 'selected' : '' ?>>CZDS (zone files)</option>
+                        <option value="ct" <?= $source === 'ct' ? 'selected' : '' ?>>OpenINTEL (CT)</option>
+                    </select>
+                </label>
+                <label class="check-inline" title="Show excluded domains in the All states view">
+                    <input type="checkbox" name="incl" value="1" <?= $includeExcluded ? 'checked' : '' ?>>
+                    <span>Include excluded</span>
+                </label>
+                <label class="check-inline" title="Show domains already included in a report (All states view)">
+                    <input type="checkbox" name="incl_reported" value="1" <?= $includeReported ? 'checked' : '' ?>>
+                    <span>Include reported</span>
+                </label>
+                <label class="check-inline" title="Show only domains queued for the next report">
+                    <input type="checkbox" name="queued" value="1" <?= $queuedOnly ? 'checked' : '' ?>>
+                    <span>Only queued for report</span>
+                </label>
+            </div>
+        </details>
         <button type="submit" class="btn btn-small waves-effect"><i class="material-icons left">search</i>Search</button>
         <?php if ($search !== '' || $state !== 'all' || $source !== 'all' || $includeExcluded || $includeReported || $queuedOnly): ?>
         <a href="/keyword_matches.php?id=<?= $keywordId ?>" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">clear</i>Clear</a>
@@ -302,39 +362,39 @@ require __DIR__ . '/templates/header.php';
     </form>
 
     <?php if (!empty($rows)): ?>
-    <div class="section-actions">
-        <label class="check-inline">
-            <input type="checkbox" id="select-all">
-            <span><strong>Select all visible</strong></span>
-        </label>
-        <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>Fetch WHOIS (worker)</button>
-        <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>Check VirusTotal (worker)</button>
-        <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleAbusech()"><i class="material-icons left">gpp_maybe</i>Check Abuse.ch</button>
-        <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleCfscan()"><i class="material-icons left">cloud</i>Check Cloudflare</button>
-        <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleCfdns()"><i class="material-icons left">public</i>Cloudflare DNS</button>
-        <label class="check-inline" title="Also re-scan domains that already have a good Cloudflare result (uses plan quota).">
-            <input type="checkbox" id="cf-force">
-            <span>Force re-scan</span>
-        </label>
-        <?php if (!empty($_SESSION['is_admin'])): ?>
-        <button type="button" class="btn btn-small btn-danger waves-effect" onclick="deleteVisibleCache()" title="Delete the cached WHOIS/VT/abuse.ch/Cloudflare data for the selected domains (keeps tags, watchlist, reports and Intelligence)."><i class="material-icons left">delete_sweep</i>Delete cache</button>
-        <?php endif; ?>
-        <label class="check-inline" title="Report group the selected domains will be sent to">
-            <span class="muted">Report group:</span>
-            <select id="report-group" class="browser-default compact">
-                <option value="" <?= $keyword['group_id'] === null ? 'selected' : '' ?>>Ungrouped</option>
-                <?php foreach ($keywordGroups as $g): ?>
-                <option value="<?= (int)$g['id'] ?>" <?= (string)$keyword['group_id'] === (string)$g['id'] ? 'selected' : '' ?>><?= htmlspecialchars($g['name']) ?></option>
-                <?php endforeach; ?>
-            </select>
-        </label>
-        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="createReportGroup(<?= (int)$keywordId ?>)" title="Create a new report group and assign this keyword to it"><i class="material-icons left">create_new_folder</i>New group</button>
-        <button type="button" class="btn btn-small waves-effect" onclick="sendSelectedToReport()"><i class="material-icons left">playlist_add</i>Send to report</button>
-        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="removeSelectedFromReport()"><i class="material-icons left">playlist_remove</i>Remove from report</button>
-        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="tagSelectedDomains('excluded')"><i class="material-icons left">block</i>Exclude selected</button>
-        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="tagSelectedDomains('')"><i class="material-icons left">restore</i>Unexclude selected</button>
-        <button type="button" class="btn btn-small btn-outline waves-effect" onclick="location.reload()"><i class="material-icons left">refresh</i>Refresh</button>
-    </div>
+    <form method="POST" id="bulk-form">
+        <?php csrfField(); ?>
+        <div class="section-actions context-toolbar">
+            <span class="sel-count">0 seleccionados</span>
+            <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleWhois()"><i class="material-icons left">cloud_download</i>WHOIS</button>
+            <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleVt()"><i class="material-icons left">verified_user</i>VirusTotal</button>
+            <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleAbusech()"><i class="material-icons left">gpp_maybe</i>Abuse.ch</button>
+            <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleCfscan()"><i class="material-icons left">cloud</i>Cloudflare</button>
+            <button type="button" class="btn btn-small waves-effect" onclick="fetchVisibleCfdns()"><i class="material-icons left">public</i>Cloudflare DNS</button>
+            <label class="check-inline" title="Also re-scan domains that already have a good Cloudflare result (uses plan quota).">
+                <input type="checkbox" id="cf-force">
+                <span>Force re-scan</span>
+            </label>
+            <?php if (!empty($_SESSION['is_admin'])): ?>
+            <button type="button" class="btn btn-small btn-danger waves-effect" onclick="deleteVisibleCache()" title="Delete the cached WHOIS/VT/abuse.ch/Cloudflare data for the selected domains (keeps tags, watchlist, reports and Intelligence)."><i class="material-icons left">delete_sweep</i>Delete cache</button>
+            <?php endif; ?>
+            <label class="check-inline" title="Report group the selected domains will be sent to">
+                <span class="muted">Report group:</span>
+                <select id="report-group" class="browser-default compact">
+                    <option value="" <?= $keyword['group_id'] === null ? 'selected' : '' ?>>Ungrouped</option>
+                    <?php foreach ($keywordGroups as $g): ?>
+                    <option value="<?= (int)$g['id'] ?>" <?= (string)$keyword['group_id'] === (string)$g['id'] ? 'selected' : '' ?>><?= htmlspecialchars($g['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <button type="button" class="btn btn-small btn-outline waves-effect" onclick="createReportGroup(<?= (int)$keywordId ?>)" title="Create a new report group and assign this keyword to it"><i class="material-icons left">create_new_folder</i>New group</button>
+            <button type="button" class="btn btn-small waves-effect" onclick="sendSelectedToReport()"><i class="material-icons left">playlist_add</i>Send to report</button>
+            <button type="button" class="btn btn-small btn-outline waves-effect" onclick="removeSelectedFromReport()"><i class="material-icons left">playlist_remove</i>Remove from report</button>
+            <button type="button" class="btn btn-small btn-outline waves-effect" onclick="tagSelectedDomains('excluded')"><i class="material-icons left">block</i>Exclude selected</button>
+            <button type="button" class="btn btn-small btn-outline waves-effect" onclick="tagSelectedDomains('')"><i class="material-icons left">restore</i>Unexclude selected</button>
+            <button type="button" class="btn btn-small btn-outline waves-effect" onclick="location.reload()"><i class="material-icons left">refresh</i>Refresh</button>
+        </div>
+    </form>
     <?php endif; ?>
 
     <?php if (empty($rows)): ?>
@@ -343,21 +403,16 @@ require __DIR__ . '/templates/header.php';
         <table class="striped highlight responsive-table">
             <thead>
                 <tr>
-                    <th style="width: 30px;"></th>
+                    <th style="width: 30px;"><input type="checkbox" id="select-all-head" aria-label="Select all visible"></th>
                     <th><?= kwmSortLink('domain', 'Domain', $sort, $dir, $sortDefaults) ?></th>
+                    <th>Risk</th>
+                    <th>Keyword</th>
                     <th><?= kwmSortLink('tld', 'TLD', $sort, $dir, $sortDefaults) ?></th>
-                    <th>VT</th>
-                    <th>Abuse.ch</th>
-                    <th>CF</th>
-                    <th>Tag</th>
-                    <th>Report</th>
-                    <th>Watchlist</th>
                     <th>Source</th>
-                    <th><?= kwmSortLink('first_seen', 'First Seen', $sort, $dir, $sortDefaults) ?></th>
-                    <th><?= kwmSortLink('created', 'Created', $sort, $dir, $sortDefaults) ?></th>
-                    <th><?= kwmSortLink('discovered', 'Discovered', $sort, $dir, $sortDefaults) ?></th>
-                    <th>Exclude</th>
+                    <th><?= kwmSortLink('discovered', 'Detected', $sort, $dir, $sortDefaults) ?></th>
+                    <th>Signals</th>
                     <th>Historical</th>
+                    <th style="width: 90px;">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -462,33 +517,33 @@ require __DIR__ . '/templates/header.php';
                     ])));
                 ?>
                 <tr data-domain="<?= htmlspecialchars($r['domain']) ?>"<?= $isExcluded ? ' data-excluded="1"' : '' ?>>
-                    <td><label><input type="checkbox" class="row-check"><span></span></label></td>
-                    <td>
-                        <a href="javascript:void(0)" class="domain-link" onclick="toggleKwDetail(this)" aria-expanded="false"><?= reportHighlightKeyword((string)$r['domain'], (string)$keyword['keyword']) ?></a><?= reportTldBadge((string)$r['domain']) ?><?php if ($isNew): ?> <span class="badge-new">NEW</span><?php endif; ?>
+                    <td><input type="checkbox" class="row-check" aria-label="Select <?= htmlspecialchars($r['domain']) ?>"></td>
+                    <td class="domain-cell">
+                        <a href="javascript:void(0)" class="domain-link" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes($r['domain'])) ?>')"><?= reportHighlightKeyword((string)$r['domain'], (string)$keyword['keyword']) ?></a><?= reportTldBadge((string)$r['domain']) ?><?php if ($isNew): ?> <span class="badge-new">NEW</span><?php endif; ?>
+                        <div class="kwm-sub">.<?= htmlspecialchars($r['tld']) ?> · <?= htmlspecialchars($sourceLabel) ?><?php if (!empty($r['in_watchlist'])): ?> · <i class="material-icons tiny" title="In watchlist">star</i>watchlist<?php endif; ?></div>
                     </td>
-                    <td><?= htmlspecialchars($r['tld']) ?></td>
-                    <td><?= $vtCell ?></td>
-                    <td><?= $abuseCell ?></td>
-                    <td><?= $cfCell ?></td>
-                    <td><?= $tagCell ?></td>
-                    <td><?= $reportCell ?></td>
-                    <td><?= !empty($r['in_watchlist']) ? '<i class="material-icons tiny" title="In watchlist">star</i>' : '<span class="muted">&mdash;</span>' ?></td>
-                    <td><?= $sourceLabel ?></td>
-                    <td><?= htmlspecialchars(fmt_date($r['first_seen'])) ?></td>
-                    <td><?= htmlspecialchars($creationDisplay) ?></td>
-                    <td><?= htmlspecialchars(fmt_date($r['discovered_at'])) ?></td>
                     <td>
+                        <span class="status-pill status-<?= htmlspecialchars($status) ?>"><?= htmlspecialchars(reportStatusLabel($status)) ?></span>
+                        <?php if (in_array($tagVal, ['good', 'bad', 'observing'], true)): ?> <?= $tagCell ?><?php endif; ?>
+                        <?php if ($isQueued): ?> <?= $reportCell ?><?php endif; ?>
+                    </td>
+                    <td><?= htmlspecialchars($keyword['keyword']) ?></td>
+                    <td><?= htmlspecialchars($r['tld']) ?></td>
+                    <td><?= htmlspecialchars($sourceLabel) ?></td>
+                    <td><?= htmlspecialchars(fmt_date($r['discovered_at'])) ?></td>
+                    <td class="signals-cell"><?= $vtCell ?> <?= $abuseCell ?> <?= $cfCell ?></td>
+                    <td><?= !empty($r['is_historical']) ? '<span class="status-badge status-cancelled">Yes</span>' : '<span class="muted">No</span>' ?></td>
+                    <td class="kwm-row-actions">
                         <?php if ($isExcluded): ?>
-                            <button type="button" class="btn btn-small btn-outline waves-effect js-kwm-tag" data-domain="<?= htmlspecialchars($r['domain']) ?>" data-tag=""><i class="material-icons left">restore</i>Unexclude</button>
+                            <button type="button" class="icon-btn js-kwm-tag" data-domain="<?= htmlspecialchars($r['domain']) ?>" data-tag="" title="Unexclude" aria-label="Unexclude"><i class="material-icons">restore</i></button>
                         <?php else: ?>
-                            <button type="button" class="btn btn-small btn-outline waves-effect js-kwm-tag" data-domain="<?= htmlspecialchars($r['domain']) ?>" data-tag="excluded"><i class="material-icons left">block</i>Exclude</button>
+                            <button type="button" class="icon-btn danger js-kwm-tag" data-domain="<?= htmlspecialchars($r['domain']) ?>" data-tag="excluded" title="Exclude" aria-label="Exclude"><i class="material-icons">block</i></button>
                         <?php endif; ?>
                     </td>
-                    <td><?= !empty($r['is_historical']) ? '<span class="status-badge status-cancelled">Yes</span>' : '<span class="muted">No</span>' ?></td>
                 </tr>
                 <tr class="domain-detail-row" style="display:none;">
-                    <td colspan="15">
-                        <?= renderDomainDetail($present, [(string)$keyword['keyword']], $rules) ?>
+                    <td colspan="10">
+                        <?= renderDomainDetail($present, [(string)$keyword['keyword']], $rules, true) ?>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -527,17 +582,8 @@ require __DIR__ . '/templates/header.php';
 </div>
 
 <script>
-// Toggle the per-domain detail row (same layout as the report view). Several
-// details can be open at the same time.
-function toggleKwDetail(link) {
-    var row = link.closest('tr');
-    if (!row) return;
-    var detail = row.nextElementSibling;
-    if (!detail || !detail.classList.contains('domain-detail-row')) return;
-    var open = detail.style.display === 'none' || detail.style.display === '';
-    detail.style.display = open ? 'table-row' : 'none';
-    link.setAttribute('aria-expanded', open ? 'true' : 'false');
-}
+// The domain detail opens in the shared side drawer (assets/ui.js overrides
+// toggleDomainDetail); the hidden .domain-detail-row stays for reports/print.
 // Exclude/unexclude a single domain through the shared tag endpoint. A reload
 // keeps the current state filter and counters consistent.
 document.addEventListener('click', function (e) {

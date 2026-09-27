@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.20.1] - 2026-09-27
+
+### Added - Keyword matches (v2 per-keyword list)
+
+- `keyword_matches.php` was redesigned with the v2 pattern: a **Keywords › keyword** breadcrumb, a compact header (count + **Volver a Keywords**), quick-filter **chips** (Todos / Malicious / Clean / Reportados, with server-side counts), a search box with the existing filters folded into a **Filtros** panel, and a dense table (Domain + TLD/source subline, **Risk** pill, Keyword, TLD, Source, Detected, Signals, Historical, Actions).
+- The domain detail now opens in the shared **side drawer** (`assets/ui.js`) with compact grouped actions; the hidden `.domain-detail-row` is kept for reports/print.
+- The bulk actions (WHOIS / VirusTotal / abuse.ch / Cloudflare / report queue / exclude) moved into a **contextual toolbar** that appears once rows are selected, reusing the same endpoints and handlers.
+
+### Tests
+
+- New `keyword-matches-v2` spec (breadcrumb/header/chips, side drawer with compact actions, contextual toolbar); the full Playwright suite is 34 green.
+
 ## [v1.20.0] - 2026-09-27
 
 ### Changed - v2 is now the only UI layout
