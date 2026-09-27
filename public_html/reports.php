@@ -414,11 +414,11 @@ require __DIR__ . '/templates/header.php';
             <span class="chip<?= $isActive ? ' active' : '' ?>">
                 <a href="<?= htmlspecialchars($tabBase . '&group=' . (int)$g['id']) ?>"><?= htmlspecialchars($g['name']) ?> <span class="chip-count"><?= $gCount ?></span></a>
                 <?php if ($tab === 'builder'): ?>
-                <form method="POST" onsubmit="return confirm('Delete group &quot;<?= htmlspecialchars(addslashes($g['name'])) ?>&quot;? Its keywords will become ungrouped.')">
+                <form method="POST">
                     <?php csrfField(); ?>
                     <input type="hidden" name="action" value="delete_group">
                     <input type="hidden" name="group_id" value="<?= (int)$g['id'] ?>">
-                    <button type="submit" class="chip-x" title="Delete group" aria-label="Delete group"><i class="material-icons">close</i></button>
+                    <button type="submit" class="chip-x" title="Delete group" aria-label="Delete group" data-confirm="Delete group &quot;<?= htmlspecialchars(addslashes($g['name'])) ?>&quot;? Its keywords will become ungrouped." data-confirm-ok="Delete" data-confirm-danger><i class="material-icons">close</i></button>
                 </form>
                 <?php endif; ?>
             </span>
@@ -462,12 +462,12 @@ require __DIR__ . '/templates/header.php';
                     <?php csrfField(); ?>
                     <input type="hidden" name="action" value="generate_queue_report">
                     <input type="hidden" name="group" value="<?= htmlspecialchars($groupFilter) ?>">
-                    <button type="submit" class="btn waves-effect" onclick="return confirm('Generate the report(s) for the selected group(s)? Those queue entries will be marked as reported.')"><i class="material-icons left">print</i><?= htmlspecialchars($generateLabel) ?></button>
+                    <button type="submit" class="btn waves-effect" data-confirm="Generate the report(s) for the selected group(s)? Those queue entries will be marked as reported."><i class="material-icons left">print</i><?= htmlspecialchars($generateLabel) ?></button>
                 </form>
-                <form method="POST" style="margin: 0;" onsubmit="return confirm('Empty the report queue? This removes all pending domains.')">
+                <form method="POST" style="margin: 0;">
                     <?php csrfField(); ?>
                     <input type="hidden" name="action" value="clear_queue">
-                    <button type="submit" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">clear_all</i>Clear queue</button>
+                    <button type="submit" class="btn btn-small btn-outline waves-effect" data-confirm="Empty the report queue? This removes all pending domains." data-confirm-ok="Clear" data-confirm-danger><i class="material-icons left">clear_all</i>Clear queue</button>
                 </form>
                 <span class="muted"><?= $queueCount ?> domain(s) pending<?= $queueOldest ? ' since ' . htmlspecialchars(fmt_date((string)$queueOldest)) : '' ?>.</span>
             </div>
@@ -584,8 +584,8 @@ require __DIR__ . '/templates/header.php';
 
             <div class="section-actions">
                 <label class="check-inline"><input type="checkbox" id="select-all"><span><strong>Select all</strong></span></label>
-                <button type="submit" form="history-bulk-form" name="action" value="delete_reports" class="btn btn-small btn-danger waves-effect" onclick="return confirm('Delete the selected report(s)?')"><i class="material-icons left">delete</i>Delete selected</button>
-                <button type="submit" form="history-bulk-form" name="action" value="delete_all_reports" class="btn btn-small btn-outline waves-effect" onclick="return confirm('Delete ALL reports shown (current group filter)? This cannot be undone.')"><i class="material-icons left">delete_sweep</i>Delete all shown</button>
+                <button type="submit" form="history-bulk-form" name="action" value="delete_reports" class="btn btn-small btn-danger waves-effect" data-confirm="Delete the selected report(s)?" data-confirm-ok="Delete" data-confirm-danger><i class="material-icons left">delete</i>Delete selected</button>
+                <button type="submit" form="history-bulk-form" name="action" value="delete_all_reports" class="btn btn-small btn-outline waves-effect" data-confirm="Delete ALL reports shown (current group filter)? This cannot be undone." data-confirm-ok="Delete" data-confirm-danger><i class="material-icons left">delete_sweep</i>Delete all shown</button>
             </div>
 
             <table class="striped highlight responsive-table">
@@ -611,12 +611,12 @@ require __DIR__ . '/templates/header.php';
                         <td class="num"><?= number_format((int)$h['domains']) ?></td>
                         <td>
                             <a href="/report_view.php?id=<?= (int)$h['id'] ?>" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">open_in_new</i>Open</a>
-                            <form method="POST" style="display: inline; margin: 0;" onsubmit="return confirm('Delete this report?')">
+                            <form method="POST" style="display: inline; margin: 0;">
                                 <?php csrfField(); ?>
                                 <input type="hidden" name="action" value="delete_report">
                                 <input type="hidden" name="report_id" value="<?= (int)$h['id'] ?>">
                                 <input type="hidden" name="return_group" value="<?= htmlspecialchars($groupFilter) ?>">
-                                <button type="submit" class="btn btn-small btn-danger waves-effect"><i class="material-icons left">delete</i>Delete</button>
+                                <button type="submit" class="btn btn-small btn-danger waves-effect" data-confirm="Delete this report?" data-confirm-ok="Delete" data-confirm-danger><i class="material-icons left">delete</i>Delete</button>
                             </form>
                         </td>
                     </tr>

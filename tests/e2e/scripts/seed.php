@@ -65,6 +65,43 @@ $db->prepare(
 $db->prepare("INSERT OR REPLACE INTO notifications (id, user_id, match_id, is_read, kind) VALUES (1, 1, 1, 0, 'match')")->execute();
 $db->prepare("INSERT OR REPLACE INTO notifications (id, user_id, match_id, is_read, kind) VALUES (2, 1, 2, 0, 'match')")->execute();
 
+// One saved report snapshot so report_view.php has something to render.
+$now = gmdate('Y-m-d H:i:s');
+$snapshot = [
+    'generated_at' => $now,
+    'group_name' => '',
+    'filter_summary' => 'Manual report queue',
+    'keywords' => ['acme'],
+    'truncated' => false,
+    'report' => [[
+        'keyword' => 'acme',
+        'counts' => ['domains' => 1, 'new' => 0, 'malicious' => 1, 'suspicious' => 0,
+                     'good' => 0, 'bad' => 0, 'observing' => 0, 'untagged' => 1],
+        'rows' => [[
+            'domain' => 'acme-phishing.test',
+            'tld' => 'test',
+            'source' => 'czds',
+            'tag' => '',
+            'discovered_at' => $now,
+            'first_seen' => $now,
+            'is_historical' => 0,
+            'verdict' => 'malicious',
+            'malicious' => 1,
+            'suspicious' => 0,
+            'harmless' => 0,
+            'undetected' => 0,
+            'creation_date' => null,
+        ]],
+    ]],
+];
+$db->prepare("INSERT OR REPLACE INTO report_history
+        (id, user_id, title, group_id, group_name, filters, keywords, data, domains, created_at)
+     VALUES (1, 1, 'E2E Report', NULL, '', ?, ?, ?, 1, datetime('now'))")
+   ->execute([json_encode(['note' => 'e2e']), json_encode(['acme']), gzcompress(json_encode($snapshot, JSON_UNESCAPED_UNICODE))]);
+
+// One pending queue entry so the Reports builder shows the "Generate report" button.
+$db->prepare("INSERT OR REPLACE INTO report_queue (id, user_id, domain, group_key, added_at, reported_at) VALUES (1, 1, 'acme-phishing.test', '', datetime('now'), NULL)")->execute();
+
 // Worker status with storage metrics, so the admin Storage tab has data.
 $db->exec(
     "INSERT OR REPLACE INTO worker_status

@@ -206,8 +206,6 @@ require __DIR__ . '/templates/header.php';
 
 <div class="report-toolbar no-print">
     <a href="/reports.php" class="btn btn-small btn-outline waves-effect"><i class="material-icons left">arrow_back</i>Back to Reports</a>
-    <button type="button" class="btn btn-small btn-outline waves-effect" onclick="toggleAllDetails(true)"><i class="material-icons left">unfold_more</i>Expand all</button>
-    <button type="button" class="btn btn-small btn-outline waves-effect" onclick="toggleAllDetails(false)"><i class="material-icons left">unfold_less</i>Collapse all</button>
     <a href="/report_view.php?id=<?= (int)$id ?>&print=1" target="_blank" rel="noopener" class="btn btn-small waves-effect" onclick="return openPrintWindow(this.href);"><i class="material-icons left">picture_as_pdf</i>Print / PDF</a>
 </div>
 
@@ -444,11 +442,11 @@ require __DIR__ . '/templates/header.php';
                                 <?php if ($rep['detail'] !== ''): ?><span class="rep-detail"><?= htmlspecialchars($rep['detail']) ?></span><?php endif; ?>
                             <?php endif; ?>
                         </td>
-                        <td class="no-print"><button type="button" class="btn btn-small btn-outline waves-effect detail-toggle" onclick="toggleDetail(this)" aria-expanded="false"><i class="material-icons left">expand_more</i>Details</button></td>
+                        <td class="no-print"><button type="button" class="btn btn-small btn-outline waves-effect detail-toggle" onclick="toggleDomainDetail(this, '<?= htmlspecialchars(addslashes((string)($r['domain'] ?? ''))) ?>')" aria-expanded="false"><i class="material-icons left">open_in_new</i>Details</button></td>
                     </tr>
                     <tr class="domain-detail-row" style="display:none;">
                         <td colspan="8">
-                            <?= renderDomainDetail($r, [(string)$sec['keyword']], $rules) ?>
+                            <?= renderDomainDetail($r, [(string)$sec['keyword']], $rules, true) ?>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -480,25 +478,8 @@ function openPrintWindow(url) {
     }
     return true;
 }
-// Expand/collapse a single domain detail row.
-function toggleDetail(btn) {
-    var row = btn.closest('tr');
-    if (!row) return;
-    var detail = row.nextElementSibling;
-    if (!detail || !detail.classList.contains('domain-detail-row')) return;
-    var open = detail.style.display === 'none' || detail.style.display === '';
-    detail.style.display = open ? 'table-row' : 'none';
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-}
-// Expand/collapse every detail row.
-function toggleAllDetails(open) {
-    document.querySelectorAll('.domain-detail-row').forEach(function (r) {
-        r.style.display = open ? 'table-row' : 'none';
-    });
-    document.querySelectorAll('.detail-toggle').forEach(function (b) {
-        b.setAttribute('aria-expanded', open ? 'true' : 'false');
-    });
-}
+// The domain detail opens in the shared side drawer (assets/ui.js overrides
+// toggleDomainDetail); the hidden .domain-detail-row is kept for printing.
 // Always print with every detail expanded.
 window.addEventListener('beforeprint', function () {
     document.querySelectorAll('.domain-detail-row').forEach(function (r) { r.style.display = 'table-row'; });

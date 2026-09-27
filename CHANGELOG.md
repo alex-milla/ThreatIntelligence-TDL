@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.21.2] - 2026-09-27
+
+### Changed - Reports: lateral domain detail + themed confirmations
+
+- `report_view.php`: the per-domain **Details** now opens in the shared **side drawer** (compact grouped actions), like Notifications/Keywords/Keyword matches, instead of expanding the row inline. The hidden `.domain-detail-row` is kept for printing and the screen-only "Expand all"/"Collapse all" buttons were removed (the Print/PDF popup already expands every detail via `beforeprint`).
+- `reports.php`: the native `confirm()` dialogs (generate report, clear queue, delete group, delete report and the bulk deletes) were replaced with the app's themed `[data-confirm]` dialog, which includes **Cancelar**.
+
+### Fixed
+
+- `keywords.php`: the client-side search/filter is re-applied after the live-section refresh, so the filter is no longer lost while the worker is active.
+
+### Tests
+
+- E2E: new `report-view-v2` spec (Details opens the lateral drawer), a themed-confirm test in `reports-v2`, and a seeded report snapshot + queue entry. Full suite: **54 green** (stable across runs).
+
 ## [v1.21.1] - 2026-09-27
 
 ### Added - Backups page + worker version sync

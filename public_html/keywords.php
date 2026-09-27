@@ -515,6 +515,8 @@ document.addEventListener('change', function (e) {
     }
     if (q) q.addEventListener('input', apply);
     if (filter) filter.addEventListener('change', apply);
+    // Re-apply after the live-section refresh replaces the table rows.
+    document.addEventListener('tdl:refreshed', apply);
 })();
 </script>
 
