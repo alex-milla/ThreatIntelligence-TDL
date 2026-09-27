@@ -79,19 +79,26 @@ test.describe('Notifications v2 layout', () => {
     await expect(page.locator('.app-sidebar')).toBeVisible();
   });
 
-  test('selecting two rows hides the sidebar and keeps the bulk bar', async ({ page }) => {
+  test('selecting two rows enters selection mode and closes the detail drawer', async ({ page }) => {
     await page.goto('/notifications.php?ui=v2');
+
+    // Open the detail drawer first.
+    await page.locator('a.domain-link').first().click();
+    await expect(page.locator('.drawer-panel.open')).toBeVisible();
+
     const checks = page.locator('tr[data-domain] .row-check');
     await checks.nth(0).check();
     await checks.nth(1).check();
+
+    // Selection mode: the detail panel closes, the left nav stays visible.
     await expect(page.locator('body')).toHaveClass(/selection-mode/);
-    await expect(page.locator('.app-sidebar')).toBeHidden();
+    await expect(page.locator('.drawer-panel.open')).toHaveCount(0);
+    await expect(page.locator('.app-sidebar')).toBeVisible();
     await expect(page.locator('.context-toolbar')).toBeVisible();
 
-    // Back to a single selection: the sidebar returns.
+    // Back to a single selection leaves selection mode.
     await checks.nth(1).uncheck();
     await expect(page.locator('body')).not.toHaveClass(/selection-mode/);
-    await expect(page.locator('.app-sidebar')).toBeVisible();
   });
 
   test('the classic layout still expands the detail inline', async ({ page }) => {

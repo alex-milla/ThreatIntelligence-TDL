@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.19.8] - 2026-09-27
+
+### Fixed - v2 Notifications selection mode targeted the wrong sidebar
+
+- v1.19.7 hid the **left navigation** sidebar on a multi-selection, but the intent was to close the **right detail panel** (the domain drawer). Now, selecting **2 or more** notifications closes the detail drawer and keeps the left navigation visible, leaving the sticky bulk-action bar and the table. With 1 selected the toolbar behaves as before; with 0 everything returns to normal.
+
+### Tests
+
+- Playwright: opening a domain then selecting two rows closes the drawer, keeps `.app-sidebar` visible and sets `body.selection-mode`.
+
 ## [v1.19.7] - 2026-09-27
 
 ### Added - v2 Notifications selection mode

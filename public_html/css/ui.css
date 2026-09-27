@@ -156,8 +156,8 @@
     font-size: 15px;
     margin-right: 4px;
 }
-/* From 2 selected rows: hide the nav sidebar and keep only the bulk bar. */
-.ui-v2.selection-mode .app-sidebar { display: none; }
+/* From 2 selected rows: close the detail panel and keep only the bulk bar.
+   The left navigation sidebar stays visible. */
 .ui-v2.selection-mode .context-toolbar {
     box-shadow: 0 6px 14px rgba(0, 0, 0, .14);
 }
